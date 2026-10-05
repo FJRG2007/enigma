@@ -156,6 +156,13 @@ function setBrowser(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
+/** Persist the headless choice and re-render the Chrome DevTools MCP entry in every agent. */
+function setBrowserHeadless(on: boolean, scope: Scope): ApplyResult {
+    const path = conf.setEnigmaToggle("browserHeadless", on, scope);
+    applyMcpToggle(scope);
+    return { path, changed: true };
+}
+
 /** Persist the codeGraph toggle and (de)register the enigma MCP server, which hosts its tools. */
 function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("codeGraph", on, scope);
@@ -388,6 +395,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "lets your agents open the app in a real Chrome to click through it and read the console, network, load-speed trace and Lighthouse audit before calling it done; runs an isolated profile, never your logins; needs Chrome and Node; toggling applies immediately; enigma default: on",
                 read: () => conf.readConfig().config.browser,
                 write: (value, scope) => setBrowser(value, scope),
+            },
+            {
+                key: "browser-headless",
+                label: "Headless browser",
+                hint: "run the agents' Chrome without a window, so testing never pops up on your screen; turn off only to watch an agent drive it; toggling applies immediately; enigma default: on",
+                read: () => conf.readConfig().config.browserHeadless,
+                write: (value, scope) => setBrowserHeadless(value, scope),
             },
             {
                 key: "code-graph",

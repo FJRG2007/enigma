@@ -207,19 +207,26 @@ interface ManagedServer {
  * real Chrome, drive it, and read the console, network, performance traces and a Lighthouse
  * audit - so a "it works" or "it loads fast" claim can be checked where the user sees it.
  * `--isolated` runs a throwaway profile, never the user's own cookies and logins; usage
- * statistics and the CrUX lookup (which sends trace URLs to Google) are off.
+ * statistics and the CrUX lookup (which sends trace URLs to Google) are off. `--headless`
+ * (the server defaults to a visible window) keeps an agent's testing off the user's screen;
+ * the `browserHeadless` setting turns it off for someone who wants to watch.
  */
 const BROWSER_MCP_PACKAGE = "chrome-devtools-mcp@1.10.1";
-const BROWSER_MCP_ARGS = ["-y", BROWSER_MCP_PACKAGE, "--isolated", "--no-usage-statistics", "--no-performance-crux"];
+const BROWSER_MCP_BASE_ARGS = ["-y", BROWSER_MCP_PACKAGE, "--isolated", "--no-usage-statistics", "--no-performance-crux"];
+
+function browserMcpArgs(headless: boolean): string[] {
+    return headless ? [...BROWSER_MCP_BASE_ARGS, "--headless"] : [...BROWSER_MCP_BASE_ARGS];
+}
 
 /**
  * How an agent launches the browser server. `npx` is an npm `.cmd` shim on Windows, which an
  * agent that spawns without a shell (claude, opencode, kimi) cannot start, so those get the
  * `cmd /c` form; Codex resolves `.cmd` itself.
  */
-export function browserInvocation(tool: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[]; } {
-    if (platform === "win32" && tool !== "codex") return { command: "cmd", args: ["/c", "npx", ...BROWSER_MCP_ARGS] };
-    return { command: "npx", args: [...BROWSER_MCP_ARGS] };
+export function browserInvocation(tool: string, platform: NodeJS.Platform = process.platform, headless: boolean = readConfig().config.browserHeadless): { command: string; args: string[]; } {
+    const args = browserMcpArgs(headless);
+    if (platform === "win32" && tool !== "codex") return { command: "cmd", args: ["/c", "npx", ...args] };
+    return { command: "npx", args };
 }
 
 const SERVERS: ManagedServer[] = [

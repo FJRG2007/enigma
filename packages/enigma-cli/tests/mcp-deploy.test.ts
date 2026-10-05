@@ -238,7 +238,29 @@ test("the browser server is registered per agent behind its own toggle", () => {
     expect(JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers?.["chrome-devtools"]).toBeUndefined();
     expect(browserInvocation("claude", "win32").command).toBe("cmd");
     expect(browserInvocation("codex", "win32").command).toBe("npx");
-    expect(browserInvocation("claude", "linux")).toEqual({ command: "npx", args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux"] });
+    expect(browserInvocation("claude", "linux")).toEqual({ command: "npx", args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux", "--headless"] });
+});
+
+// The server opens a visible window unless told otherwise, which put every agent's testing on the
+// user's screen. Headless is the default, and an entry an older enigma wrote without the flag is
+// rewritten on the next sync - the fix has to reach installs that already exist.
+test("the browser server runs headless by default and old entries are upgraded", () => {
+    setEnigmaValue("browser", true, "global");
+    const dir = join(HOME, ".enigma", "claude", "headless-acct");
+    mkdirSync(dir, { recursive: true });
+    const old = { type: "stdio", command: "npx", args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux"] };
+    writeFileSync(join(dir, ".claude.json"), JSON.stringify({ mcpServers: { "chrome-devtools": old } }));
+    expect(applyMcpForAccount("claude", dir)).toBe(true);
+    const read = (): string[] => JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers["chrome-devtools"].args;
+    expect(read()).toContain("--headless");
+    expect(applyMcpForAccount("claude", dir)).toBe(false);
+    setEnigmaValue("browserHeadless", false, "global");
+    applyMcpForAccount("claude", dir);
+    expect(read()).not.toContain("--headless");
+    setEnigmaValue("browserHeadless", true, "global");
+    applyMcpForAccount("claude", dir);
+    expect(read()).toContain("--headless");
+    expect(browserInvocation("codex", "linux", false).args).not.toContain("--headless");
 });
 
 // With two managed tables, re-appending each in turn moved one behind the other on every sync.

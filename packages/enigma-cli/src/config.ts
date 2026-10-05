@@ -228,6 +228,8 @@ export interface EnigmaConfig {
     codeGraph: boolean;
     /** Register the Chrome DevTools MCP server in managed agents, so they can open the app in a real (isolated) Chrome to test it (on by default). */
     browser: boolean;
+    /** Run that Chrome headless (no window on the user's screen). On by default; off only to watch an agent drive it. */
+    browserHeadless: boolean;
     /** EXPERIMENTAL but ON by default: the local AI quality gate. Deploys the /gate command AND renders an always-on memory block telling agents to auto-drive the gate once a code task is committed (auto `enigma gate init`, no prompt needed); per-project opt-out via a repo `.enigma.json` gate:false (nearest-wins). */
     gate: boolean;
     /**
@@ -416,7 +418,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", gateTidyBranches: true, ciWatch: true,
