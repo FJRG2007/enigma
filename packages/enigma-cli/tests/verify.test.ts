@@ -1619,28 +1619,14 @@ test("a failing suite that PRINTS 'command not found' is a finding, not a tool f
 
 // --- output style: the compression level, enforced instead of merely asked for -------------
 
-test("a reply that claims the work is done opens with its verdict", async () => {
+test("a done claim is not made to open with a verdict word", async () => {
     const { styleFindings } = await import("../src/verify");
-    const status = (m: string): string[] => blockingStyleFindings(styleFindings(m)).map((h) => h.key).filter((k) => k === "style:status");
-    // The report the user kept having to interrogate: evidence first, the verdict buried.
-    expect(status("Cambié `auth.ts:42` y pasé los tests.\n\nTodo listo, funciona correctamente.")).toEqual(["style:status"]);
-    expect(status("Updated the parser and the fixtures. Everything is done.")).toEqual(["style:status"]);
-    // A verdict line clears it, in either language and with the usual markdown in front.
-    for (const ok of [
-        "Listo. Cambié `auth.ts:42`; todo listo.",
-        "**Listo** - tests 12/12, todo listo.",
-        "Ready: parser updated, everything is done.",
-        "- Done. All done, tests pass.",
-        "Estado: **Listo**. Todo hecho.",
-        "Blocked on credentials - everything else is done.",
-    ]) expect(status(ok)).toEqual([]);
-    // Not a done claim, so not this rule's business: a progress note and a gap report.
-    expect(status("Cambié `auth.ts:42`. Falta el test de integración.")).toEqual([]);
-    expect(status("Reading the config loader next.")).toEqual([]);
-    // "Listo" as the start of a longer word is not a verdict.
-    expect(status("Listone updated. Everything is done.")).toEqual(["style:status"]);
-    // The escape hatch covers the opening line.
-    expect(status("Evidence first <!-- enigma:style-ignore -->\nEverything is done.")).toEqual([]);
+    // The forced "Ready / Not ready / Blocked" opening read unnaturally, and blocked replies that
+    // only explained something; a report leads with where each item stands instead (the kernel).
+    for (const m of [
+        "Cambié `auth.ts:42` y pasé los tests.\n\nTodo listo, funciona correctamente.",
+        "Updated the parser and the fixtures. Everything is done.",
+    ]) expect(blockingStyleFindings(styleFindings(m))).toEqual([]);
 });
 
 test("styleFindings catches the padding the style bans, and nothing else", async () => {
@@ -2023,7 +2009,7 @@ test("a turn that had something more important to say is still measured", () => 
     // turn that left work unfinished must hear about the work - but the record is the whole
     // justification for demoting the non-blocking rules, and a scan that only ran on the turns with
     // nothing else to say recorded "no padding" for every turn it never looked at.
-    // Opens with its verdict, so the only style finding this turn carries is the padded row.
+    // The only style finding this turn carries is the padded row.
     const claiming = hookRun(payload(dir, `Done. All done, everything is implemented.\n${row}`, { session_id: "style-measured-claim" }));
     expect(claiming[0]).toBe(2);
     expect(claiming[1]).not.toContain("breaks the output style");

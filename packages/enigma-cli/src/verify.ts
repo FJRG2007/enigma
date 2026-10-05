@@ -171,7 +171,7 @@ const CLAIM_RE = /\b(?:all done|everything (?:is )?(?:done|complete|completed|im
  * claim. Compounds where `fixed` is an adjective ("fixed-width", "fixed point") are left out,
  * and so is the explanatory voice: how something works ("así funciona el hook", "cómo funciona
  * X") and when a step happens ("released when the tag is pushed", "verified on each commit").
- * A question is never a claim either: claimIn reads only the clause in front of a trailing
+ * A question is never a claim either: claimsDone reads only the clause in front of a trailing
  * question ("Fixed in auth.ts:42, want me to push it?"), and nothing of a sentence that asks.
  */
 const SUCCESS_CLAIM_RE = /(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't|hasn't|haven't)\s(?:yet\s)?(?:been\s)?)\b(?:fixed(?![-\w]|\s(?:point|width|size|length|rate|cost|set|number)s?\b)|resolved|deployed|published|shipped)\b|(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't|hasn't|haven't)\s(?:yet\s)?(?:been\s)?)\b(?:released|verified|tested)\b(?!\s(?:when|if|once|until|before|on each|on every|every|each)\b)|\b(?:it|this|that|everything|all|now)\s(?:now\s)?works\b|\bworks\s(?:now|correctly|as expected|end to end|fine)\b|(?<!\bno\s(?:\S+\s)?(?:\S+\s)?)\b(?:arreglad|solucionad|corregid|desplegad|publicad|mergead|probad|comprobad|verificad|terminad)[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bresuelt[oa]s?\b|(?<!\b(?:no|c[oó]mo|qué|as[ií])\s(?:\S+\s)?)\bfuncionan?\b(?!\s(?:mal|a medias))/i;
@@ -197,26 +197,12 @@ const DISCLOSURE_RE = /\b(?:still (?:pending|missing|to do|needs)|remains? (?:pe
  * this module exists to prevent.
  */
 export function claimsDone(message: string): boolean {
-    return claimIn(message, true);
-}
-
-/**
- * The narrow half of claimsDone: the task list is finished ("all done", "ya esta todo"), without
- * the result words. The style gate's verdict-opening rule reads this one, because its blocking
- * was justified by a CLOSED surface; widening it to every "Fixed in auth.ts:42" would demand a
- * "Ready" opening from ordinary fix reports, which is not what that rule was measured on.
- */
-export function claimsFinished(message: string): boolean {
-    return claimIn(message, false);
-}
-
-function claimIn(message: string, results: boolean): boolean {
     if (!message || typeof message !== "string") return false;
     let claim = false;
     for (const [start, end] of sentenceSpans(message)) {
         const sentence = message.slice(start, end);
         if (DISCLOSURE_RE.test(sentence)) return false;
-        if (CLAIM_RE.test(sentence) || (results && SUCCESS_CLAIM_RE.test(statedPart(sentence)))) claim = true;
+        if (CLAIM_RE.test(sentence) || SUCCESS_CLAIM_RE.test(statedPart(sentence))) claim = true;
     }
     return claim;
 }
@@ -493,13 +479,6 @@ const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really|sure)\b(?![-./]\w
 const STYLE_IGNORE_RE = /enigma:style-ignore/;
 
 /**
- * The verdict a completion report opens with. Optional list/quote marker, bold, or a
- * `Status:`/`Estado:` label in front; then the verdict word in English, Spanish, Portuguese,
- * French, German or Italian.
- */
-const STYLE_STATUS_RE = /^\s*(?:[-*>]\s*)?(?:\*\*|__)?\s*(?:(?:status|estado)\s*:\s*(?:\*\*|__)?\s*)?(?:ready|not ready|blocked|done|listo|lista|no listo|no está listo|bloqueado|bloqueada|hecho|pronto|não está pronto|prêt|pas prêt|bloqué|fertig|nicht fertig|blockiert|non pronto|bloccato)(?![\p{L}\p{N}])/iu;
-
-/**
  * The phrases that report an item as NOT touched, in both languages. A table cell saying nothing
  * but these is route rather than outcome, which is what the style spec bans ("Report the outcome,
  * not the route"), and the shape that prompted this check: a release summary carried two table
@@ -601,14 +580,6 @@ export function styleFindings(message: string): VerifyGap[] {
         hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
     }
 
-    // A reply that claims the work is finished opens with its verdict, so "is it ready?" never
-    // has to be asked: the user reads one word before any evidence. Scoped to claimsFinished on
-    // purpose - that is the closed surface. A report that discloses a gap is not a done claim and
-    // is left to the kernel's wording.
-    if (openingAt !== -1 && !marked(openingAt) && claimsFinished(message) && !STYLE_STATUS_RE.test(opening)) {
-        hits.push({ rule: "status", detail: "the reply claims the work is done but does not open with its verdict (Ready / Not ready / Blocked, in the user's language)" });
-    }
-
     for (const line of lines) {
         const row = untouchedStatusRow(line);
         if (!row) continue;
@@ -652,11 +623,8 @@ export function styleFindings(message: string): VerifyGap[] {
  * reach it, and `sure` went with the other two because rarer false positives are still not a closed
  * surface.
  * Do not promote either back without new evidence; closing one more shape is not evidence.
- *
- * `status` blocks because its surface is closed by claimsDone: it only ever reads a reply that
- * already asserts completion, and the fix is one word at the top, never a rewrite.
  */
-const STYLE_BLOCKING_RULES = new Set(["filler", "preamble", "status"]);
+const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
 
 /** The rule name behind a style gap (`style:filler` -> `filler`). */
 function styleRuleOf(hit: VerifyGap): string {
