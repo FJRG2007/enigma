@@ -13,6 +13,7 @@ import { runDesign, type DesignOptions, type DesignResult, type Reporter, type S
 interface ParsedArgs {
     options: DesignOptions | null;
     error: string | null;
+    installChosen?: boolean;
 }
 
 const MAX_SCREENS = 20;
@@ -46,6 +47,7 @@ export function parseDesignArgs(argv: string[]): ParsedArgs {
     };
     const sources: Array<[SourceKind, string]> = [];
     let error: string | null = null;
+    let installChosen = false;
     for (let i = 0; i < argv.length && !error; i++) {
         const a = argv[i]!;
         const value = (): string => {
@@ -82,9 +84,9 @@ export function parseDesignArgs(argv: string[]): ParsedArgs {
             }
             case "--browser": opts.browser = value(); break;
             case "--no-browser": opts.useBrowser = false; break;
-            case "--no-install": opts.install = "none"; break;
-            case "-g": case "--global": opts.install = "global"; break;
-            case "-l": case "--local": opts.install = "local"; break;
+            case "--no-install": opts.install = "none"; installChosen = true; break;
+            case "-g": case "--global": opts.install = "global"; installChosen = true; break;
+            case "-l": case "--local": opts.install = "local"; installChosen = true; break;
             case "-a": case "--agent": {
                 const list = value().split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
                 const unknown = list.filter((x) => !AGENTS[x]);
@@ -114,7 +116,23 @@ export function parseDesignArgs(argv: string[]): ParsedArgs {
         opts.source = kind;
         opts.target = kind === "url" ? new URL(target).href : target;
     }
-    return { options: opts, error: null };
+    return { options: opts, error: null, installChosen };
+}
+
+/** Ask where the skill goes: it carries text taken from the source, so a global install is confirmed. */
+async function promptInstall(opts: DesignOptions): Promise<boolean> {
+    const scope = await p.select({
+        message: `Install the generated skill? It includes text taken from ${opts.target}.`,
+        initialValue: opts.install,
+        options: [
+            { value: "global", label: "Every detected agent, user level" },
+            { value: "local", label: "This project only" },
+            { value: "none", label: "Do not install, write the files only" },
+        ],
+    });
+    if (p.isCancel(scope)) return false;
+    opts.install = scope;
+    return true;
 }
 
 async function promptSource(opts: DesignOptions): Promise<boolean> {
@@ -203,6 +221,9 @@ export async function runDesignCli(argv: string[]): Promise<number> {
             return 2;
         }
         if (!(await promptSource(opts))) { p.cancel("Cancelled."); return 1; }
+    }
+    if (!parsed.installChosen && opts.format !== "design-md" && opts.install !== "none" && process.stdin.isTTY && process.stdout.isTTY) {
+        if (!(await promptInstall(opts))) { p.cancel("Cancelled."); return 1; }
     }
     // Ctrl+C mid-run: exit through 'exit', which stops the browser and removes its temp profile.
     const onSigint = (): void => process.exit(130);

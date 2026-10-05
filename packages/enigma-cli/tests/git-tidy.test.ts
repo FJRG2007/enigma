@@ -566,3 +566,14 @@ test("tracking refs of a remote that no longer exists go when merged, stay when 
     expect(git(dir, "for-each-ref", "refs/remotes/gone")).not.toContain("refs/remotes/gone/main");
     expect(result.notes.some((n) => n.includes("gone/wip"))).toBe(true);
 });
+
+test("tracking refs of a live remote whose name has a slash are not orphans", async () => {
+    const { dir } = repo("slash-remote");
+    branchWithWork(dir, "feat/merged", "m.txt");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge", "feat/merged");
+    git(dir, "remote", "add", "upstream/fork", git(dir, "remote", "get-url", "origin"));
+    git(dir, "update-ref", "refs/remotes/upstream/fork/main", git(dir, "rev-parse", "feat/merged"));
+    const result = await tidy(dir, { only: ["none"] });
+    expect(result.orphanRefs).toEqual([]);
+    expect(git(dir, "for-each-ref", "refs/remotes/upstream")).toContain("refs/remotes/upstream/fork/main");
+});

@@ -620,8 +620,7 @@ async function tidyOrphanRefs(dir: string, plan: TidyPlan, result: TidyResult, d
     const refs = (await git.run(dir, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"]).catch(() => ""))
         .split("\n").map((l) => l.trim().split(" ")).filter((p): p is [string, string] => p.length === 2);
     for (const [ref, sha] of refs) {
-        const remote = ref.split("/")[2];
-        if (!remote || remotes.has(remote) || ref.endsWith("/HEAD")) continue;
+        if ([...remotes].some((r) => ref.startsWith(`refs/remotes/${r}/`)) || ref.endsWith("/HEAD")) continue;
         if (!await containedInAny(dir, base, plan.defaultBranch, ref)) {
             result.notes.push(`kept ${ref.replace(/^refs\/remotes\//, "")}: its remote is gone and it holds commits ${base} lacks`);
             continue;

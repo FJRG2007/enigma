@@ -77,8 +77,10 @@ export function pageLinks(html: string, base: string, origin: string): string[] 
     const links: string[] = [];
     for (const m of html.matchAll(/<a[^>]+href\s*=\s*["']([^"'#]+)["']/gi)) {
         const url = resolveUrl(m[1]!, base);
-        if (!url || !url.startsWith(origin) || links.includes(url)) continue;
-        if (/\.(pdf|zip|png|jpe?g|gif|svg|ico|css|js|xml|json|txt|mp4|webm)$/i.test(new URL(url).pathname)) continue;
+        if (!url || links.includes(url)) continue;
+        const parsed = new URL(url);
+        if (parsed.origin !== origin) continue;
+        if (/\.(pdf|zip|png|jpe?g|gif|svg|ico|css|js|xml|json|txt|mp4|webm)$/i.test(parsed.pathname)) continue;
         links.push(url);
     }
     return links;

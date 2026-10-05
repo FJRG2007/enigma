@@ -40,8 +40,6 @@
     --inset: rgba(0, 0, 0, 0.25);
     --dot: rgba(255, 255, 255, 0.045);
     --sheen: rgba(255, 255, 255, 0.10);
-    --glow-1: rgba(224, 164, 88, 0.10);
-    --glow-2: rgba(111, 207, 151, 0.05);
     --focus: rgba(224, 164, 88, 0.6);
     --scrollbar: #2b3340;
     --scrollbar-hover: #3a4150;
@@ -101,8 +99,6 @@
         --inset: rgba(22, 24, 29, 0.035);
         --dot: rgba(22, 24, 29, 0.07);
         --sheen: rgba(255, 255, 255, 0.6);
-        --glow-1: rgba(224, 164, 88, 0.16);
-        --glow-2: rgba(111, 207, 151, 0.10);
         --focus: rgba(163, 96, 26, 0.55);
         --scrollbar: #cfcabe;
         --scrollbar-hover: #b7b1a3;

@@ -9,6 +9,7 @@ import { test, expect } from "bun:test";
 import { inflateRawSync } from "node:zlib";
 import { normalize } from "../../src/design/normalize";
 import { parseDesignArgs } from "../../src/design/cli";
+import { pageLinks } from "../../src/design/extract/http";
 import { skillName } from "../../src/design/write/skill-md";
 import { emptyRawTokens } from "../../src/design/raw-tokens";
 import { buildZip, crc32 } from "../../src/design/write/zip";
@@ -125,4 +126,11 @@ test("arguments are validated before anything runs", () => {
     expect(ok).toMatchObject({ source: "url", target: "https://site.test/x", ultra: true, screens: 3, install: "none", agents: ["claude"] });
     expect(parseDesignArgs(["https://github.com/org/repo"]).options?.source).toBe("repo");
     expect(parseDesignArgs(["."]).options?.source).toBe("dir");
+    expect(parseDesignArgs(["https://site.test"]).installChosen).toBe(false);
+    expect(parseDesignArgs(["https://site.test", "-l"]).installChosen).toBe(true);
+});
+
+test("page links stay on the exact origin", () => {
+    const html = `<a href="/about">a</a><a href="https://site.test.evil.test/x">b</a><a href="https://site.test:8443/y">c</a><a href="https://site.test/z.pdf">d</a>`;
+    expect(pageLinks(html, "https://site.test/", "https://site.test")).toEqual(["https://site.test/about"]);
 });
