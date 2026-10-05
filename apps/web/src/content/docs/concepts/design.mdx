@@ -1,0 +1,45 @@
+---
+title: Design extraction
+description: Turn a live site, a local project or a git repository into a DESIGN.md and an agent skill that holds its colors, type, spacing, motion and components.
+group: Concepts
+order: 32
+---
+import Cmd from "../../../components/Cmd.astro";
+
+`enigma design` reverse-engineers a design system and hands it to your agents as a skill, so the UI they build matches what already exists: the palette with each color's role, the type scale, the spacing grid, radii, shadows, breakpoints, motion and the components in use.
+
+It is static analysis - no model and no API key. A site is crawled over HTTP; a repository's code is read, never executed.
+
+## Usage
+
+<Cmd name="enigma design <url|path|git-url>" ex={["enigma design https://stripe.com", "enigma design ./apps/web", "enigma design https://github.com/org/repo"]}>
+A bare argument is detected: an http(s) URL is crawled, an existing folder is scanned, a git URL is shallow-cloned and scanned. Spell it out with `--url`, `--dir` or `--repo`. Run with no argument in a terminal to be asked step by step.
+</Cmd>
+
+## What it writes
+
+Everything lands in `<name>-design/` under `--out` (default: the current folder):
+
+- `DESIGN.md` - the full reference: theme, palette and roles, typography, components, layout, elevation, motion, do's and don'ts, breakpoints and prompt recipes.
+- `SKILL.md` and `references/` - the skill an agent loads, with the reference files inlined.
+- `tokens/` - colors, spacing and typography as JSON.
+- `fonts/` - the typefaces, downloaded from Google Fonts. Fonts a site hosts itself are copied only with `--bundle-site-fonts`, because their license usually covers that site alone; `--no-fonts` skips downloads.
+- `<name>-design.skill` - the folder packed as one archive.
+
+`--format design-md` (or `--no-skill`) writes only `DESIGN.md`; `--format skill` skips the top-level copy. A rerun replaces a folder it created; a folder it did not create is left alone unless you pass `--force`.
+
+## Installing the skill
+
+The skill folder is copied into the skills directory of every agent detected on the machine (Claude Code, Codex, opencode, Kimi Code). `-l` installs into the current project instead, `-a claude,codex` picks the agents, `--no-install` writes the files only. An existing skill of the same name that `enigma design` did not create is never overwritten without `--force`.
+
+## With a browser
+
+When Chrome, Edge, Chromium or Brave is installed, a URL is also rendered headless, so styles computed at runtime and client-rendered markup count too, and the homepage is captured. Point at a specific browser with `--browser <path>` or `ENIGMA_BROWSER`, or skip it with `--no-browser`. Nothing is downloaded, and each run uses a throwaway profile - never your own.
+
+<Cmd name="enigma design <url> --ultra" ex={["enigma design https://stripe.com --ultra", "enigma design https://stripe.com --ultra --screens 10"]}>
+Adds a scroll journey, full-page and section screenshots of up to `--screens` pages (1-20, default 5), hover and focus states with their style changes, every `@keyframes`, the layout containers and the repeated DOM components. They go to `screens/` and to `ANIMATIONS.md`, `LAYOUT.md`, `INTERACTIONS.md`, `COMPONENTS.md` and `VISUAL_GUIDE.md` under `references/`.
+</Cmd>
+
+## Extracted text is data
+
+Names, labels, class names and HTML samples come from someone else's site or code and end up in an agent's context. Each one stays inside the code span or code block it was put in, so nothing extracted can become a heading, a link or an instruction-looking paragraph, and the skill tells the agent to treat it as design data.

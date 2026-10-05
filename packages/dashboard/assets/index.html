@@ -25,6 +25,9 @@
             --elev: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0) 42%);
             --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
             --shadow-2: 0 18px 40px -22px rgba(0,0,0,0.75);
+            /* Hover borders, scrollbars and the text that sits on a filled accent or good pill. */
+            --border-strong: #2f3744; --scrollbar: #2b3340;
+            --on-accent: #1a1206; --on-good: #06210f;
         }
         * { box-sizing: border-box; }
         /* An icon never gives up its size to the text beside it. Every svg here is an icon, and
@@ -60,6 +63,8 @@
            otherwise stay glued to the sidebar with all the empty space piled on the right. */
         .content { flex: 1; min-width: 0; padding: 30px 30px 48px; max-width: 1560px; margin-inline: auto; }
         .iconbtn.nav-burger { display: none; }
+        /* The rail carries the wordmark; once the rail is a drawer the header shows it instead. */
+        .wordmark.mob-brand { display: none; }
         .nav-scrim { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,0.6); }
         a { color: var(--accent2); }
         /* Quality floor: one visible keyboard-focus ring for every interactive control
@@ -133,7 +138,7 @@
         }
         /* A faint top-edge highlight so a card reads as a lit surface, not a flat rectangle. */
         .card::before { content: ""; position: absolute; inset: 0; background: var(--elev); pointer-events: none; }
-        .card:hover { border-color: #2f3744; transform: translateY(-2px); box-shadow: var(--shadow-1), var(--shadow-2); }
+        .card:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-1), var(--shadow-2); }
         /* Hero KPI (Money Saved): spans two columns, accent-lit - the loudest thing on the page. */
         .card.hero { grid-column: span 2; border-color: rgba(224,164,88,0.35); background: linear-gradient(135deg, var(--accent-weak), transparent 62%), var(--surface); }
         .card.hero .value { font-size: 42px; }
@@ -171,7 +176,7 @@
             transition: color .15s, background .15s, border-color .15s;
         }
         .ranges button:hover { color: var(--text); }
-        .ranges button.active { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
+        .ranges button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
         .chartwrap { position: relative; width: 100%; height: 280px; }
         /* Suppress the charting library's attribution logo. */
         #tv-attr-logo { display: none !important; }
@@ -271,8 +276,8 @@
         .iconbtn.spinning svg { animation: spin .7s linear infinite; }
         .toggle.with-icon { display: inline-flex; align-items: center; gap: 6px; }
         .toggle.with-icon svg { width: 14px; height: 14px; display: block; }
-        .toggle:hover { color: var(--text); border-color: #2f3744; }
-        .toggle.on { background: var(--good); color: #06210f; border-color: var(--good); font-weight: 600; }
+        .toggle:hover { color: var(--text); border-color: var(--border-strong); }
+        .toggle.on { background: var(--good); color: var(--on-good); border-color: var(--good); font-weight: 600; }
         /* Boolean settings render as a sliding switch. Only the bool controls carry
            data-kind="bool" - action buttons reuse .toggle and stay buttons. The On/Off
            text is kept for screen readers but pushed off-screen; the knob is drawn with
@@ -288,12 +293,12 @@
             width: 18px; height: 18px; border-radius: 50%; background: #cdd2da;
             transition: left .18s, background .18s;
         }
-        .toggle[data-kind="bool"]:hover { border-color: #2f3744; }
+        .toggle[data-kind="bool"]:hover { border-color: var(--border-strong); }
         .toggle[data-kind="bool"].on { background: var(--good); border-color: var(--good); }
-        .toggle[data-kind="bool"].on::after { left: 23px; background: #06210f; }
+        .toggle[data-kind="bool"].on::after { left: 23px; background: var(--on-good); }
         /* Compact icon-only button (e.g. Edit), instead of a text button. */
         .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: color .15s, border-color .15s, transform .1s; }
-        .iconbtn:hover { color: var(--accent); border-color: #2f3744; }
+        .iconbtn:hover { color: var(--accent); border-color: var(--border-strong); }
         .iconbtn svg { width: 15px; height: 15px; display: block; }
         select.choice {
             background: var(--surface2); color: var(--text); border: 1px solid var(--border);
@@ -432,8 +437,8 @@
         /* Per-agent skill toggles: one pill per app (the app's icon), green when the skill is on for it; the app name is the tooltip. */
         .set-agents { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .achip { display: inline-flex; align-items: center; justify-content: center; padding: 5px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; text-decoration: none; transition: color .15s, background .15s, border-color .15s; }
-        .achip:hover { border-color: #2f3744; color: var(--text); }
-        .achip.on { background: var(--good); color: #06210f; border-color: var(--good); }
+        .achip:hover { border-color: var(--border-strong); color: var(--text); }
+        .achip.on { background: var(--good); color: var(--on-good); border-color: var(--good); }
         .achip:disabled { opacity: .35; cursor: not-allowed; }
         .achip svg { width: 14px; height: 14px; display: block; }
         /* Inline app icons in the "where deployed" tag (static, name in tooltip). */
@@ -494,10 +499,10 @@
         /* Both halves hold text of unpredictable length (a setting label, a port, a model id, a
            command), so the row is built to shrink rather than to push: min-width:0 defeats the
            default min-width:auto that makes a flex/grid item refuse to go below its content
-           width, flex-wrap lets the value drop to its own line instead of spilling out of the
-           card, and overflow-wrap:anywhere lets a long unbroken label break (unlike break-word,
+           width, the two grid columns keep the state on the right of every card (a wrapping
+           flex row put it under the label in some cards and beside it in others), and overflow-wrap:anywhere lets a long unbroken label break (unlike break-word,
            it also lowers min-content, which is what stops the grid track being forced wider). */
-        .sys-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 11px 14px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+        .sys-item { display: grid; grid-template-columns: minmax(min(100%, 140px), 1fr) minmax(0, auto); align-items: center; gap: 6px 12px; min-width: 0; padding: 11px 14px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
         .sys-item .k { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
         .sys-item .v { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
         .sys-item .v .tag { overflow-wrap: anywhere; }
@@ -505,13 +510,13 @@
         .sys-item .pill.off { background: transparent; }
         /* Rows whose value is a list of chips span the full width and let the chips wrap with
            even spacing, instead of cramming many tags into one compact half-column cell. */
-        .sys-item.wide { grid-column: 1 / -1; flex-direction: column; align-items: stretch; gap: 8px; }
+        .sys-item.wide { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
         .sys-item.wide .v { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
         .sys-item.wide .v .tag { margin-left: 0; }
         .pill { font-size: 11px; border-radius: 6px; padding: 2px 9px; border: 1px solid var(--border); white-space: nowrap; }
-        .pill.on { color: #06210f; background: var(--good); border-color: var(--good); font-weight: 600; }
+        .pill.on { color: var(--on-good); background: var(--good); border-color: var(--good); font-weight: 600; }
         .pill.off { color: var(--muted); background: var(--surface2); }
-        .pill.lvl { color: #1a1206; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+        .pill.lvl { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 600; }
         /* Claude operational-status pill (status.claude.com). */
         .cstatus { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 5px 11px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 999px; white-space: nowrap; }
         .cdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
@@ -577,6 +582,7 @@
             }
             .sidebar.open { transform: none; }
             .iconbtn.side-x, .iconbtn.nav-burger { display: inline-flex; }
+            .wordmark.mob-brand { display: inline-flex; font-size: 18px; }
             .content { padding: 18px; }
             .tabs .tab { padding: 11px 12px; font-size: 13.5px; }
             body.nav-open { overflow: hidden; }
@@ -585,7 +591,9 @@
             .content { padding: 16px; }
             .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             header { gap: 12px; }
-            .nav { margin-left: auto; flex-wrap: wrap; gap: 10px; }
+            /* Burger and wordmark share the first row; the toolbar takes a full row below. */
+            .nav { margin-left: 0; flex-basis: 100%; flex-wrap: wrap; gap: 10px; }
+            .nav .cmdk { flex: 1 1 auto; }
             /* A settings row is label + controls side by side, and the control cluster is
                flex-shrink: 0 so a wide one (account actions, a select plus three buttons)
                pushes the row past the viewport. Here the row wraps and the cluster is
@@ -600,11 +608,11 @@
             .set-ctl { flex-shrink: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
         }
         /* Pretty scrollbars across the whole dashboard (thin, rounded, themed). */
-        * { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
+        * { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-corner { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #2b3340; border-radius: 999px; }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
         ::-webkit-scrollbar-thumb:hover { background: #3a4150; }
         /* Scope selector (global vs a project) in the header. */
         .scope-wrap { display: inline-flex; align-items: center; gap: 6px; }
@@ -719,7 +727,7 @@
            picker is a custom listbox - the logo shows on the button AND inside every option. */
         .dd { position: relative; }
         .dd-btn { display: inline-flex; align-items: center; gap: 8px; min-width: 170px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer; }
-        .dd-btn:hover { border-color: #2f3744; }
+        .dd-btn:hover { border-color: var(--border-strong); }
         .dd-btn .dd-label { flex: 1; text-align: left; }
         .dd-btn .dd-caret { width: 13px; height: 13px; flex: 0 0 auto; color: var(--muted); }
         .dd-ic { display: inline-flex; align-items: center; }
@@ -749,7 +757,7 @@
             border-radius: var(--radius-sm); padding: 11px 13px; font-size: 13px; font-family: var(--mono);
             transition: border-color .15s, background .15s, transform .1s;
         }
-        .pick-card:hover { border-color: #2f3744; }
+        .pick-card:hover { border-color: var(--border-strong); }
         .pick-card:active { transform: scale(0.98); }
         .pick-card.sel { border-color: var(--accent); }
         .pick-card svg { width: 20px; height: 20px; display: block; flex: none; color: var(--muted); }
@@ -897,6 +905,7 @@
         <button type="button" id="navOpen" class="iconbtn nav-burger" title="Menu" aria-label="Open the menu" aria-expanded="false" aria-controls="sidebar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
+        <div class="wordmark mob-brand" aria-hidden="true">Enigma<span>.</span></div>
         <div class="nav">
             <button type="button" id="palOpen" class="cmdk" aria-label="Search views and projects" aria-haspopup="dialog">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>

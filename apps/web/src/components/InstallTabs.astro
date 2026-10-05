@@ -1,8 +1,7 @@
 ---
-// Reusable install-method picker: tabs (curl / npm / pnpm / yarn / bun / npx) and a copy
-// button, sharing the single source of truth in lib/shell.ts with the landing and /start.
-// On Windows the curl tab becomes the PowerShell one-liner. Used in the docs and the landing
-// so the package managers are selectable instead of listed all at once.
+// Reusable install-method picker: tabs (curl / powershell / npm / pnpm / yarn / bun / npx) and
+// a copy button, sharing the single source of truth in lib/shell.ts with the landing and
+// /start. The tab matching the visitor's OS is preselected and marked "recommended".
 //
 // Uses <code> (not <pre>) for the command so the docs' global ".doc pre" styling and its
 // copy-button script never touch it - this widget brings its own copy button.
@@ -14,16 +13,29 @@ interface Props {
 }
 const { next } = Astro.props;
 const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, yarn, bun, npx
+// The OS script tabs can each be the recommended one; the server picks curl, the client
+// moves the mark to powershell on Windows by flipping `data-rec`, never by inserting markup.
+const recommendable = new Set(["curl", "powershell"]);
 ---
 <div class="install-tabs" data-next={next ?? ""}>
-    <div class="it-tabs" role="tablist">
+    <div class="it-tabs" role="tablist" aria-label="Install method">
         {methods.map((m, i) => (
-            <button class={i === 0 ? "active" : ""} data-cmd={m} role="tab">
-                {m}{m === "curl" && <span class="it-rec">recommended</span>}
+            <button
+                type="button"
+                role="tab"
+                class={i === 0 ? "active" : ""}
+                aria-selected={i === 0 ? "true" : "false"}
+                tabindex={i === 0 ? 0 : -1}
+                data-cmd={m}
+                data-rec={m === "curl" ? "" : undefined}
+                aria-label={m}
+            >
+                <span class="it-name">{m}</span>
+                {recommendable.has(m) && <span class="it-rec" aria-hidden="true">recommended</span>}
             </button>
         ))}
     </div>
-    <div class="it-row">
+    <div class="it-row" role="tabpanel">
         <code class="it-text">{INSTALL_METHODS.curl}</code>
         <button class="it-copy" type="button" title="Copy command" aria-label="Copy command">
             <svg class="ic-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -34,12 +46,23 @@ const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, ya
 
 <style>
     .install-tabs { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; text-align: left; margin: 18px 0; }
-    .it-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
-    .it-tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: color .15s, background .15s; }
+    .it-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; background: var(--inset); border-bottom: 1px solid var(--border-soft); }
+    .it-tabs button {
+        display: inline-flex; align-items: center; gap: 8px;
+        font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted);
+        background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 12px;
+        cursor: pointer; transition: color .15s, background .15s, border-color .15s;
+    }
     .it-tabs button:hover { color: var(--text); }
     .it-tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
-    .it-rec { color: var(--good); font-size: 9px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
-    .it-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
+    /* The badge is its own pill with its own gap, and only on the tab that carries data-rec. */
+    .it-rec {
+        display: none; font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1;
+        color: var(--good); background: var(--good-weak); border: 1px solid var(--good-line);
+        border-radius: 999px; padding: 3px 6px;
+    }
+    .it-tabs button[data-rec] .it-rec { display: inline-flex; }
+    .it-row { display: flex; align-items: center; gap: 12px; padding: 16px 18px; }
     /* Scoped under .install-tabs so these win over the docs' global ".doc code" pill styling.
        One line, scrolled: a shell command broken across three lines stops reading as
        something you paste. The scrollbar is hidden because the global themed ones are
@@ -59,7 +82,7 @@ const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, ya
     .install-tabs .it-text :global(.t-url) { color: var(--good); }
     .install-tabs .it-text :global(.t-op) { color: var(--muted); }
     .it-copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; transition: color .15s, border-color .15s; }
-    .it-copy:hover { color: var(--accent); border-color: #2f3744; }
+    .it-copy:hover { color: var(--accent); border-color: var(--border-strong); }
     .it-copy.done { color: var(--good); border-color: var(--good); }
     .it-copy svg { width: 15px; height: 15px; display: block; }
     /* Both icons live in the DOM; toggle by class. Injecting the check via innerHTML left an
@@ -67,6 +90,10 @@ const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, ya
     .it-copy .ic-check { display: none; }
     .it-copy.done .ic-copy { display: none; }
     .it-copy.done .ic-check { display: block; }
+    @media (max-width: 480px) {
+        .it-tabs button { padding: 6px 9px; }
+        .it-row { padding: 14px; }
+    }
 </style>
 
 <script>
@@ -74,38 +101,46 @@ const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, ya
 
     // Wire every instance on the page (the component may appear more than once).
     document.querySelectorAll<HTMLElement>(".install-tabs").forEach((root) => {
-        const tabs = root.querySelectorAll<HTMLButtonElement>(".it-tabs button");
+        const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".it-tabs [role=tab]"));
         const text = root.querySelector<HTMLElement>(".it-text")!;
         const copyBtn = root.querySelector<HTMLButtonElement>(".it-copy")!;
         const next = root.dataset.next || "";
 
         const commands: Record<string, string> = { ...INSTALL_METHODS };
-        const setCmd = (cmd: string) => { text.innerHTML = highlightShell(cmd); };
         const resetCopy = () => { copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
+        const label = (b: HTMLButtonElement) => b.dataset.cmd + (b.hasAttribute("data-rec") ? ", recommended" : "");
 
-        // curl (macOS/Linux) and powershell (Windows) are both always shown; recommend and
-        // pre-select the one matching the visitor's OS (curl is the SSR default).
-        if (isWindows()) {
-            root.querySelector('.it-tabs button[data-cmd="curl"] .it-rec')?.remove();
-            const ps = root.querySelector<HTMLButtonElement>('.it-tabs button[data-cmd="powershell"]');
-            if (ps && !ps.querySelector(".it-rec")) {
-                const rec = document.createElement("span");
-                rec.className = "it-rec"; rec.textContent = "recommended";
-                ps.appendChild(rec);
+        const select = (b: HTMLButtonElement, focus = false) => {
+            for (const t of tabs) {
+                const on = t === b;
+                t.classList.toggle("active", on);
+                t.setAttribute("aria-selected", String(on));
+                t.tabIndex = on ? 0 : -1;
             }
-            tabs.forEach((x) => x.classList.toggle("active", x.dataset.cmd === "powershell"));
-        }
-
-        const initial = (root.querySelector<HTMLButtonElement>(".it-tabs button.active")?.dataset.cmd) || "curl";
-        setCmd(commands[initial]);
-        saveInstallMethod(initial);
-
-        tabs.forEach((b) => b.addEventListener("click", () => {
-            tabs.forEach((x) => x.classList.toggle("active", x === b));
-            setCmd(commands[b.dataset.cmd!]);
+            text.innerHTML = highlightShell(commands[b.dataset.cmd!]);
             saveInstallMethod(b.dataset.cmd!); // keep /start in sync with the chosen method
             resetCopy();
-        }));
+            if (focus) b.focus();
+        };
+
+        // curl (macOS/Linux) and powershell (Windows) are both always shown; the one matching
+        // the visitor's OS is recommended and preselected (curl is the server default).
+        if (isWindows()) {
+            for (const t of tabs) t.toggleAttribute("data-rec", t.dataset.cmd === "powershell");
+        }
+        for (const t of tabs) t.setAttribute("aria-label", label(t));
+        select(tabs.find((t) => t.hasAttribute("data-rec")) ?? tabs[0]);
+
+        tabs.forEach((b, i) => {
+            b.addEventListener("click", () => select(b));
+            // Arrow keys move between tabs, as a tablist should.
+            b.addEventListener("keydown", (e) => {
+                const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+                if (e.key === "Home") { e.preventDefault(); select(tabs[0], true); }
+                else if (e.key === "End") { e.preventDefault(); select(tabs[tabs.length - 1], true); }
+                else if (step) { e.preventDefault(); select(tabs[(i + step + tabs.length) % tabs.length], true); }
+            });
+        });
 
         copyBtn.addEventListener("click", async () => {
             if (!(await copyText(text.textContent || ""))) return;

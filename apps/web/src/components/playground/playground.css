@@ -9,13 +9,13 @@
     display: grid; place-items: center; gap: 12px;
     min-height: 190px; padding: 28px 22px;
     /* A faint grid, so a transparent component still reads as sitting on a surface. */
-    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-image: radial-gradient(var(--dot) 1px, transparent 1px);
     background-size: 15px 15px;
 }
 
 .pg-controls {
     display: grid; align-content: start; gap: 10px;
-    padding: 16px; border-left: 1px solid var(--border-soft); background: rgba(0, 0, 0, 0.2);
+    padding: 16px; border-left: 1px solid var(--border-soft); background: var(--inset);
 }
 @media (max-width: 720px) { .pg-controls { border-left: 0; border-top: 1px solid var(--border-soft); } }
 

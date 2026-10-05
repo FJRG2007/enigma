@@ -18,9 +18,10 @@ export default defineConfig({
     trailingSlash: "ignore",
     integrations: [mdx(), react()],
     markdown: {
-        // Warm, low-contrast dark theme that sits well on the surface palette; the code
-        // block background is overridden in CSS to match the design exactly.
-        shikiConfig: { theme: "vesper" },
+        // One theme per colour scheme, emitted as CSS variables (defaultColor: false) so the
+        // site's stylesheet picks the one matching the visitor's scheme. The block background
+        // is overridden in CSS to match the design exactly.
+        shikiConfig: { themes: { dark: "vesper", light: "github-light" }, defaultColor: false },
     },
     vite: {
         // Expose the build token to import.meta.env for asset() cache-busting.

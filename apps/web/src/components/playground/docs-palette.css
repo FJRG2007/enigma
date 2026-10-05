@@ -1,9 +1,9 @@
 /*
  * The palette, in this site's colours.
  *
- * The package's stylesheet follows `prefers-color-scheme`; this site does not - it is dark
- * whatever the operating system says - so a reader on a light desktop got a white panel over
- * a dark page. Overriding the tokens is the whole fix, and it is also the shortest possible
+ * The package's stylesheet carries its own light and dark palettes; the site has its own
+ * tokens for both, so the palette is pointed at those and follows the site rather than the
+ * package. Overriding the tokens is the whole fix, and it is also the shortest possible
  * demonstration of what those tokens are for.
  */
 
@@ -22,7 +22,7 @@
     --enigma-palette-shadow: var(--shadow-2, 0 20px 60px rgb(0 0 0 / 55%));
 }
 
-/* The site is dark at every OS setting, so the package's light block must not win here. */
+/* The package's own light block must not win over the site's light tokens. */
 @media (prefers-color-scheme: light) {
     :root:root {
         --enigma-palette-bg: var(--surface);

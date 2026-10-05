@@ -7,18 +7,14 @@ import InstallTabs from "../components/InstallTabs.astro";
 const title = "Enigma - everything you need to work with a coding agent, in one command";
 const description = "Enigma makes your coding agent ship more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills for Claude Code, OpenAI Codex, opencode and Kimi Code, portable git security hooks, and a local dashboard to manage and measure it all - from one command.";
 
-// One source for the nav: rendered both as the desktop links and the mobile drawer list.
+// One source for the nav, rendered as the desktop links and the mobile drawer list. Only
+// destinations that leave this page: its own sections are one scroll away, and each extra
+// anchor was one more item competing with the two that matter (Docs and Install).
 const navLinks = [
-    { href: "#features", label: "Features" },
-    { href: "#difference", label: "Before/after" },
-    { href: "#efficiency", label: "Defaults" },
-    { href: "#skills", label: "Skills" },
-    { href: "#components", label: "Components" },
-    { href: "#contribute", label: "Contribute" },
-    { href: "#dashboard", label: "Dashboard" },
-    { href: "#compare", label: "Why" },
-    { href: url("demo/"), label: "Demo" },
     { href: docHref("getting-started/introduction"), label: "Docs" },
+    { href: docHref("components/overview"), label: "Components" },
+    { href: docHref("packs"), label: "Packs" },
+    { href: url("demo/"), label: "Demo" },
 ];
 
 // Before/after artifacts for the comparison section. Rendered with set:html (controlled,
@@ -63,24 +59,68 @@ const termGood = `<span class="k">$</span> git add .env
 <span class="r">  x .env  [env file with secrets]</span>
 <span class="r">  x src/config.ts:12  [secret: Anthropic API key]</span>
 <span class="dim">commit aborted.</span>`;
+const REPO = "https://github.com/FJRG2007/enigma";
+
+// The feature list, grouped so it scales: a new capability is one entry in the group it
+// belongs to, not another card appended to a wall of fourteen. `body` is trusted static
+// markup (inline <code>/<strong> only).
+interface Feature { title: string; body: string; href?: string; link?: string; }
+const featureGroups: { title: string; items: Feature[]; }[] = [
+    {
+        title: "Inside your agent",
+        items: [
+            { title: "Dynamic Skills, everywhere", body: "Senior-engineering policies (security, testing, git, style, debugging...) on Claude Code, Codex, opencode and Kimi Code. Each adapts to the agent and your config, loads by context, and updates itself.", href: docHref("concepts/dynamic-skills") },
+            { title: "Per-agent scoping", body: "Keep a skill for Claude Code but not opencode. Turn any skill on or off per agent, from the CLI, the TUI or the dashboard." },
+            { title: "Codebase memory", body: "A local graph of your code that agents query instead of re-exploring the repo: where a task's code lives, what a change breaks, a file's API surface.", href: docHref("concepts/code-graph") },
+            { title: "Session recall", body: "A searchable memory of your past coding sessions, built from your own transcripts and served to agents over MCP. Stays on your machine.", href: docHref("concepts/recall") },
+            { title: "Browser testing", body: "Agents open the app in a real, isolated Chrome to click through it and read the console, network, trace and Lighthouse audit before calling a UI change done." },
+            { title: "Context compression", body: "A native engine that shrinks large tool outputs, logs and text before they reach the model - the same information in far fewer tokens, reversibly." },
+        ],
+    },
+    {
+        title: "Guards and checks",
+        items: [
+            { title: "Git security hooks", body: "A portable, dependency-free commit guard: blocks secrets, <code>.env</code> files and dependency dirs before they are committed. Set it up once and the whole team inherits it." },
+            { title: "Convention guardrails", body: "Skills persuade; guardrails <strong>enforce</strong>. A post-edit hook scans what the agent writes and feeds any violation back so it self-corrects - zero tokens until there is one.", href: docHref("concepts/guardrails") },
+            { title: "Verified completion", body: "When an agent says it is done, enigma checks the claim against what the turn produced and <strong>denies the stop</strong> when the evidence contradicts it.", href: docHref("concepts/verify") },
+            { title: "AI quality gate", body: "Validates a branch in a disposable worktree - review, test, docs, lint, push, PR, CI - and opens a clean PR only when every check is green.", href: docHref("concepts/gate") },
+            { title: "Built-in <code>/improve</code>", body: "A slash command on every agent: implement mode edits a focused area (ui, security, performance...); advisor mode audits and writes plans for another agent to run.", href: docHref("slash-commands/improve") },
+            { title: "Built-in <code>/qa</code>", body: "Where <code>/improve</code> reviews the code, <code>/qa</code> reviews the experience: it uses the product like someone who depends on it and fixes what fails them.", href: docHref("slash-commands/qa") },
+        ],
+    },
+    {
+        title: "Around your agent",
+        items: [
+            { title: "Local dashboard", body: "A loopback control panel for accounts, skills, settings and system cleanup, with real Claude usage and measured savings. Nothing leaves your machine." },
+            { title: "Multi-account and profiles", body: "Several logins per tool without logging out, each in its own config dir. Profiles pin one account per tool and drive every launch." },
+            { title: "Design extraction", body: "<code>enigma design</code> turns a live site, a project or a git repo into a <code>DESIGN.md</code> and a skill: palette, type scale, spacing, motion and components.", href: docHref("concepts/design") },
+            { title: "Packs", body: "Isolated harness packs on demand: <strong>Helio</strong> for bug bounty, <strong>Orion</strong> for broken flows, speed and scale. Neither loads into your normal agent.", href: docHref("packs") },
+            { title: "Auto-detect skills by stack", body: "<code>enigma autoskills</code> reads your project and installs the matching community skills for React, Next.js, Astro, Prisma, Rails and ~90 more.", href: docHref("concepts/autoskills") },
+            { title: "Local agent API and SSH", body: "<code>enigma api</code> serves your local agents over one OpenAI-compatible API; <code>enigma ssh</code> saves each server once and tunnels ports by name.", href: docHref("concepts/api") },
+        ],
+    },
+];
+
+const GITHUB_PATH = "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12";
+const DISCORD_PATH = "M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.0741 0 0 0-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 0 0-.0785-.037 19.7363 19.7363 0 0 0-4.8852 1.515.0699.0699 0 0 0-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 0 0 .0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 0 0 .0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 0 0-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 0 1-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 0 1 .0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 0 1 .0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 0 1-.0066.1276 12.2986 12.2986 0 0 1-1.873.8914.0766.0766 0 0 0-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 0 0 .0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 0 0 .0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 0 0-.0312-.0286ZM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189Zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9461 2.4189-2.1568 2.4189Z";
 ---
 <Base title={title} description={description}>
-    <nav>
-        <div class="wrap">
+    <nav class="site-nav">
+        <div class="wrap bar">
             <button class="nav-toggle" id="navToggle" type="button" aria-label="Open menu" aria-controls="mobileMenu" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
-            <span class="brand">Enigma<span class="caret" aria-hidden="true"></span></span>
+            <a class="brand" href={url("")} aria-label="Enigma home">Enigma<span class="caret" aria-hidden="true"></span></a>
             <span class="links">
                 {navLinks.map((l) => <a href={l.href} class="hide-sm">{l.label}</a>)}
-                <span class="ghb">
-                    <a class="ghb-btn" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" aria-label="Star FJRG2007/enigma on GitHub">
-                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"></path></svg>
+                <span class="ghb hide-sm">
+                    <a class="ghb-btn" href={REPO} target="_blank" rel="noopener noreferrer" aria-label="Star FJRG2007/enigma on GitHub">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH}></path></svg>
                         Star
                     </a>
-                    <a class="ghb-count" href="https://github.com/FJRG2007/enigma/stargazers" target="_blank" rel="noopener noreferrer" aria-label="enigma stargazers"><span id="stars">&middot;</span></a>
+                    <a class="ghb-count" href={`${REPO}/stargazers`} target="_blank" rel="noopener noreferrer" aria-label="enigma stargazers"><span id="stars">&middot;</span></a>
                 </span>
-                <a href={url("start/")} class="cta">Install</a>
+                <a href={url("start/")} class="btn sm">Install</a>
             </span>
         </div>
     </nav>
@@ -93,28 +133,28 @@ const termGood = `<span class="k">$</span> git add .env
             </div>
             <nav class="mnav-links">
                 {navLinks.map((l) => <a href={l.href} data-close>{l.label}</a>)}
-                <a class="mnav-gh" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" data-close>GitHub</a>
-                <a href={url("start/")} class="cta" data-close>Install</a>
+                <a class="mnav-gh" href={REPO} target="_blank" rel="noopener noreferrer" data-close>GitHub</a>
+                <a href={url("start/")} class="btn" data-close>Install</a>
             </nav>
         </aside>
     </div>
 
     <header class="hero">
         <div class="wrap">
-            <span class="eyebrow">One command. Every agent.</span>
-            <h1>Ship better code with your coding agent</h1>
-            <p class="lede">Enigma makes your agent produce more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills that adapt to each agent, portable git security hooks, and a local dashboard to manage and measure it all - from one command.</p>
+            <span class="hero-pill"><span class="dot" aria-hidden="true"></span>One command. Every agent.</span>
+            <h1>Ship better code with your <span class="hl">coding agent</span></h1>
+            <p class="lede">Enigma makes your agent produce more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills, git security hooks and a local dashboard, from one command.</p>
 
             <div class="install-wrap">
                 <InstallTabs next={url("start/")} />
             </div>
 
             <div class="works">
-                <span>Works with</span>
-                <span class="row"><img src={asset("logos/claude.svg")} alt="Claude Code" /> Claude Code</span>
-                <span class="row"><img src={asset("logos/openai.svg")} alt="OpenAI Codex" /> Codex</span>
-                <span class="row"><img src={asset("logos/opencode.svg")} alt="opencode" /> opencode</span>
-                <span class="row"><img src={asset("logos/kimi.svg")} alt="Kimi Code" /> Kimi Code</span>
+                <span class="works-label">Works with</span>
+                <span class="row"><img src={asset("logos/claude.svg")} alt="" width="22" height="22" /> Claude Code</span>
+                <span class="row"><img src={asset("logos/openai.svg")} alt="" width="22" height="22" /> Codex</span>
+                <span class="row"><img src={asset("logos/opencode.svg")} alt="" width="22" height="22" /> opencode</span>
+                <span class="row"><img src={asset("logos/kimi.svg")} alt="" width="22" height="22" /> Kimi Code</span>
             </div>
 
             <div class="hero-cta">
@@ -124,36 +164,33 @@ const termGood = `<span class="k">$</span> git add .env
                 </a>
                 <a class="btn ghost" href={url("demo/")}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                    See a live demo of the dashboard
+                    Dashboard demo
                 </a>
             </div>
         </div>
     </header>
 
-    <section id="features">
+    <section id="features" class="band">
         <div class="wrap">
             <div class="s-head">
                 <span class="eyebrow">What you get</span>
                 <h2>Production engineering, deployed into your agent</h2>
-                <p>Authored once, deployed to every agent you select - and kept current automatically.</p>
+                <p>Authored once, deployed to every agent you select, and kept current automatically.</p>
             </div>
-            <div class="grid">
-                <div class="card"><h3>Dynamic Skills, everywhere</h3><p>Senior-engineering policies (security, testing, git, style, debugging...) on Claude Code, Codex, opencode and Kimi Code - each adapts to the agent and your config, loads by context, and updates itself.</p></div>
-                <div class="card"><h3>Per-agent scoping</h3><p>Keep a skill for Claude Code but not opencode. Turn any skill on or off per agent, from the CLI, the TUI or the dashboard.</p></div>
-                <div class="card"><h3>Git security hooks</h3><p>A portable, dependency-free commit guard for any repo: blocks secrets, <code>.env</code> files and dependency dirs before they are committed. Set it up once and the whole team inherits it.</p></div>
-                <div class="card"><h3>Local dashboard</h3><p>A loopback browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.</p></div>
-                <div class="card"><h3>Multi-account + profiles</h3><p>Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Profiles pin one account per tool and drive every launch.</p></div>
-                <div class="card"><h3>Context compression</h3><p>A native, dependency-free engine that shrinks large tool outputs, logs and text before they reach the model - the same information in far fewer tokens, reversibly.</p></div>
-                <div class="card"><h3>Convention guardrails</h3><p>Skills only persuade; guardrails <strong>enforce</strong>. A post-edit hook scans what the agent writes (UUID keys, Prisma as default ORM, your own rules) and feeds any violation back so it self-corrects - zero tokens until there is one. <a href={docHref("concepts/guardrails")}>How guardrails work &rarr;</a></p></div>
-                <div class="card"><h3>Verified completion</h3><p>Agents report work as finished when it is not. On by default, enigma checks that claim against what the turn actually produced - unfinished markers, unimplemented paths, your own test command - and <strong>denies the stop</strong> when the evidence contradicts it. Zero tokens on a turn that claims nothing. <a href={docHref("concepts/verify")}>How the completion gate works &rarr;</a></p></div>
-                <div class="card"><h3>Local agent API</h3><p><code>enigma api</code> serves your local coding agents over one OpenAI-compatible HTTP API - Claude Code, and Codex/OpenCode where installed - all their tools, skills, MCP and sessions. One server, many backends: route per request by the model field. Loopback-only. <a href={docHref("concepts/api")}>How the API works &rarr;</a></p></div>
-                <div class="card"><h3>Auto-detect skills by stack</h3><p><code>enigma autoskills</code> scans your project (packages, config files, gems) and installs the matching community skills for your stack - React, Next.js, Astro, Prisma, Rails and ~90 more - hash-verified and kept separate from the policy skills.</p></div>
-                <div class="card"><h3>Marketplace packs</h3><p>Add optional harness packs on demand - like <strong>Helio</strong> for bug bounty. Each runs in its own isolated agent context, so its skills and commands never load into or overload your normal agent. <a href={docHref("packs")}>How packs work &rarr;</a></p></div>
-                <div class="card"><h3>SSH connections</h3><p>Save each server once - key or encrypted password, jump host, port forwards - and reach it with <code>enigma ssh server1</code>. Tunnel a remote port with a friendly <code>9090:db:5432</code> spec. Managed from the CLI, TUI and dashboard. <a href={docHref("concepts/ssh")}>How SSH works &rarr;</a></p></div>
-                <div class="card"><h3>Built-in <code>/improve</code></h3><p>A slash command on every agent: an implement mode that edits a focused area (ui, security, performance...) and a read-only advisor mode that audits and writes plans for another agent to execute.</p></div>
-                <div class="card"><h3>Built-in <code>/qa</code></h3><p>Where <code>/improve</code> reviews the code, <code>/qa</code> reviews the experience: it uses the product the way someone who depends on it would and fixes what fails them - dead ends, empty and error states, keyboard and screen-reader access, real-data extremes. <a href={docHref("slash-commands/qa")}>How /qa works &rarr;</a></p></div>
-                <div class="card"><h3>AI quality gate</h3><p>An opt-in local gate that validates a branch in a disposable worktree - review, test, docs, lint, push, PR, CI - and opens a clean PR only when every check is green. Your checkout stays untouched. <a href={docHref("concepts/gate")}>How the gate works &rarr;</a></p></div>
-            </div>
+            {featureGroups.map((group) => (
+                <div class="fgroup">
+                    <h3 class="fgroup-h">{group.title}</h3>
+                    <div class="grid">
+                        {group.items.map((f) => (
+                            <div class="card">
+                                <h4 set:html={f.title}></h4>
+                                <p set:html={f.body}></p>
+                                {f.href && <a class="card-link" href={f.href}>{f.link ?? "Learn more"} &rarr;</a>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ))}
         </div>
     </section>
 
@@ -183,13 +220,13 @@ const termGood = `<span class="k">$</span> git add .env
                     </Fragment>
                 </Compare>
 
-                <Compare topic="Secrets &amp; .env guard" badFile="bash" goodFile="bash" note="The commit guard ships in every repo you run enigma security in - it blocks secrets, .env files and dependency dirs before they ever reach a commit.">
+                <Compare topic="Secrets and .env guard" badFile="bash" goodFile="bash" note="The commit guard ships in every repo you run enigma security in - it blocks secrets, .env files and dependency dirs before they ever reach a commit.">
                     <svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                     <pre slot="without" class="cmp-code" set:html={termBad}></pre>
                     <pre slot="with" class="cmp-code" set:html={termGood}></pre>
                 </Compare>
 
-                <Compare topic="Descriptions &amp; copy" badFile="README.md" goodFile="README.md">
+                <Compare topic="Descriptions and copy" badFile="README.md" goodFile="README.md">
                     <svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="14" y2="12"></line><line x1="4" y1="17" x2="18" y2="17"></line></svg>
                     <p slot="without" class="cmp-prose">Our revolutionary, next-generation platform &mdash; engineered from the ground up &mdash; leverages cutting-edge AI to seamlessly supercharge your workflow, unlock unprecedented synergy, and deliver world-class results &mdash; and so much more.</p>
                     <p slot="with" class="cmp-prose">Installs shared engineering skills into your coding agent, blocks secrets before they reach a commit, and manages everything from one local dashboard.</p>
@@ -204,7 +241,7 @@ const termGood = `<span class="k">$</span> git add .env
         </div>
     </section>
 
-    <section id="efficiency">
+    <section id="efficiency" class="band">
         <div class="wrap">
             <div class="s-head">
                 <span class="eyebrow">Less friction, fewer tokens</span>
@@ -233,7 +270,7 @@ const termGood = `<span class="k">$</span> git add .env
         </div>
     </section>
 
-    <section id="components">
+    <section id="components" class="band">
         <div class="wrap">
             <div class="s-head">
                 <span class="eyebrow">Headless components</span>
@@ -276,7 +313,7 @@ const termGood = `<span class="k">$</span> git add .env
         </div>
     </section>
 
-    <section id="compare">
+    <section id="compare" class="band">
         <div class="wrap">
             <div class="s-head">
                 <span class="eyebrow">Why Enigma</span>
@@ -315,32 +352,31 @@ const termGood = `<span class="k">$</span> git add .env
 
     <section class="bottom">
         <div class="wrap">
-            <span class="eyebrow">Ready in one line</span>
-            <h2>Install Enigma</h2>
-            <p class="lede" style="margin-top:8px">Free and open source. <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a>.</p>
-            <a class="btn" href={url("start/")}>Get the command</a>
-            <a class="btn ghost" href={url("demo/")}>Live demo</a>
-            <a class="btn ghost" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener">View on GitHub</a>
+            <div class="bottom-card">
+                <span class="eyebrow">Ready in one line</span>
+                <h2>Install Enigma</h2>
+                <p class="lede">Free and open source under Apache-2.0.</p>
+                <div class="bottom-cta">
+                    <a class="btn" href={url("start/")}>Get the command</a>
+                    <a class="btn ghost" href={url("demo/")}>Dashboard demo</a>
+                </div>
+            </div>
         </div>
     </section>
 
-    <footer>
+    <footer class="site-foot">
         <div class="wrap">
-            <span class="brand" style="font-size:15px">Enigma<span class="caret" aria-hidden="true"></span></span>
-            <nav class="foot-links">
-                <a href={docHref("getting-started/introduction")}>Docs</a>
-                <a href={url("demo/")}>Demo</a>
-                <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">Repository</a>
-                <a href="https://github.com/FJRG2007/enigma/issues/new/choose" target="_blank" rel="noopener noreferrer">Create issue</a>
-                <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
-                <a href="https://tpe.li/dsc" target="_blank" rel="noopener noreferrer">Discord</a>
+            <a class="brand" href={url("")} aria-label="Enigma home">Enigma<span class="caret" aria-hidden="true"></span></a>
+            <nav class="foot-links" aria-label="Footer">
+                <a href={`${REPO}/issues/new/choose`} target="_blank" rel="noopener noreferrer">Create issue</a>
+                <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">License</a>
             </nav>
-            <span class="links">
-                <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" title="GitHub" aria-label="GitHub">
-                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"></path></svg>
+            <span class="foot-icons">
+                <a href={REPO} target="_blank" rel="noopener noreferrer" title="GitHub" aria-label="GitHub repository">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH}></path></svg>
                 </a>
                 <a href="https://tpe.li/dsc" target="_blank" rel="noopener noreferrer" title="Discord" aria-label="Discord">
-                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.0741 0 0 0-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 0 0-.0785-.037 19.7363 19.7363 0 0 0-4.8852 1.515.0699.0699 0 0 0-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 0 0 .0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 0 0 .0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 0 0-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 0 1-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 0 1 .0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 0 1 .0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 0 1-.0066.1276 12.2986 12.2986 0 0 1-1.873.8914.0766.0766 0 0 0-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 0 0 .0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 0 0 .0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 0 0-.0312-.0286ZM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189Zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9461 2.4189-2.1568 2.4189Z"></path></svg>
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={DISCORD_PATH}></path></svg>
                 </a>
                 <a href="https://ko-fi.com/fjrg2007" target="_blank" rel="noopener noreferrer" title="Ko-fi" aria-label="Support on Ko-fi">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8h1a4 4 0 1 1 0 8h-1"></path><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"></path><line x1="6" y1="2" x2="6" y2="4"></line><line x1="14" y1="2" x2="14" y2="4"></line></svg>
@@ -353,22 +389,11 @@ const termGood = `<span class="k">$</span> git add .env
 <style is:global>
     body {
         background:
-            radial-gradient(1100px 620px at 80% -10%, rgba(224, 164, 88, 0.10), transparent 58%),
-            radial-gradient(820px 520px at 4% 2%, rgba(111, 207, 151, 0.05), transparent 52%),
+            radial-gradient(1100px 620px at 80% -10%, var(--glow-1), transparent 58%),
+            radial-gradient(820px 520px at 4% 2%, var(--glow-2), transparent 52%),
             var(--bg);
         background-attachment: fixed;
     }
-    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-
-    nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(8, 10, 16, 0.72); border-bottom: 1px solid var(--border-soft); }
-    nav .wrap { display: flex; align-items: center; gap: 18px; height: 60px; }
-    .brand { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); display: inline-flex; align-items: center; }
-    .brand .caret { display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px; background: var(--accent); transform: translateY(1px); animation: caret 1.1s steps(1, end) infinite; }
-    @keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
-    nav .links { margin-left: auto; display: flex; gap: 20px; align-items: center; font-family: var(--mono); font-size: 13px; }
-    nav .links a { color: var(--muted); }
-    nav .links a:hover { color: var(--text); }
-    nav .cta { color: #1a1206 !important; background: var(--accent); padding: 7px 14px; border-radius: 9px; font-weight: 600; }
 
     /* Mobile nav: a hamburger button (hidden on desktop) opens a left off-canvas drawer. */
     .nav-toggle { display: none; flex-direction: column; justify-content: center; gap: 4px; width: 40px; height: 40px; padding: 0 9px; margin-left: -8px; background: none; border: 0; cursor: pointer; }
@@ -379,127 +404,160 @@ const termGood = `<span class="k">$</span> git add .env
 
     .mnav { position: fixed; inset: 0; z-index: 40; }
     .mnav[hidden] { display: none; }
-    .mnav-panel { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--bg); padding: 16px 20px 28px; display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1); overflow-y: auto; overscroll-behavior: contain; }
+    .mnav-panel { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--bg); padding: var(--s-4) var(--s-5) var(--s-8); display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1); overflow-y: auto; overscroll-behavior: contain; }
     .mnav.open .mnav-panel { transform: none; }
-    .mnav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .mnav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s-2); }
     .mnav-close { background: none; border: 0; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 8px; }
     .mnav-close:hover { color: var(--text); }
-    .mnav-links { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; font-family: var(--mono); font-size: 15px; }
-    .mnav-links a { color: var(--muted); padding: 12px 8px; border-radius: 8px; }
-    .mnav-links a:hover { color: var(--text); background: var(--surface2); }
-    .mnav-links .mnav-gh { border-top: 1px solid var(--border-soft); margin-top: 8px; padding-top: 15px; }
-    .mnav-links .cta { color: #1a1206 !important; background: var(--accent); text-align: center; font-weight: 600; margin-top: 12px; padding: 12px; }
+    .mnav-links { display: flex; flex-direction: column; gap: 2px; margin-top: var(--s-2); font-size: var(--fs-md); }
+    .mnav-links a:not(.btn) { color: var(--muted); padding: 12px 8px; border-radius: 8px; }
+    .mnav-links a:not(.btn):hover { color: var(--text); background: var(--surface2); }
+    /* A divider above the external link, drawn apart from the link so its rounded hover box stays rounded. */
+    .mnav-links .mnav-gh { position: relative; margin-top: 17px; }
+    .mnav-links .mnav-gh::before { content: ""; position: absolute; left: 0; right: 0; top: -9px; height: 1px; background: var(--border-soft); }
+    .mnav-links .btn { margin-top: var(--s-3); padding: 13px; }
 
-    header.hero { padding: 80px 0 40px; text-align: center; }
-    .eyebrow { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); }
-    .skill-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .skill-h h3 { font-family: var(--mono); }
-    .vtag { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
-    .skill-f { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 12px; }
+    /* Hero. */
+    header.hero { padding: var(--s-20) 0 var(--s-12); text-align: center; }
+    .hero-pill {
+        display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600;
+        letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);
+        background: var(--accent-weak); border: 1px solid var(--accent-line); border-radius: 999px; padding: 6px 12px;
+    }
+    .hero-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-weak); }
+    h1 {
+        font-family: var(--sans); font-size: var(--fs-h1); line-height: 1.04; font-weight: 800;
+        letter-spacing: -0.035em; margin: var(--s-5) auto 0; max-width: 15ch; text-wrap: balance;
+    }
+    h1 .hl {
+        background: linear-gradient(100deg, var(--accent) 10%, var(--accent2) 90%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .lede { color: var(--muted); font-size: var(--fs-lg); line-height: 1.6; max-width: 58ch; margin: var(--s-5) auto 0; text-wrap: pretty; }
+
+    /* The install picker itself lives in InstallTabs.astro; the hero only centers it. */
+    .install-wrap { max-width: 640px; margin: var(--s-8) auto 0; }
+
+    .works { margin: var(--s-6) auto 0; display: flex; align-items: center; justify-content: center; gap: var(--s-3) var(--s-5); flex-wrap: wrap; color: var(--muted); font-size: var(--fs-sm); }
+    .works-label { color: var(--subtle); font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 1px; }
+    .works img { width: 22px; height: 22px; }
+    .works .row { display: inline-flex; align-items: center; gap: var(--s-2); white-space: nowrap; }
+
+    .hero-cta { margin: var(--s-8) 0 0; display: flex; gap: var(--s-3); justify-content: center; flex-wrap: wrap; }
+
+    /* Sections: alternate a faint band so long pages read as distinct chapters. */
+    section { padding: var(--s-20) 0; }
+    section.band { background: var(--bg-band); border-block: 1px solid var(--border-soft); }
+    .s-head { text-align: center; max-width: 62ch; margin: 0 auto var(--s-10); }
+    .s-head .eyebrow { display: block; }
+    h2 { font-family: var(--sans); font-size: var(--fs-h2); font-weight: 750; line-height: 1.15; letter-spacing: -0.025em; margin: var(--s-3) 0 0; text-wrap: balance; }
+    .s-head p { color: var(--muted); margin: var(--s-3) auto 0; text-wrap: pretty; }
+    .s-cta { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-8); justify-content: center; }
+    .muted { color: var(--muted); }
+
+    .fgroup + .fgroup { margin-top: var(--s-10); }
+    .fgroup-h { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin: 0 0 var(--s-4); display: flex; align-items: center; gap: var(--s-3); }
+    .fgroup-h::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--s-4); }
+    .card {
+        display: flex; flex-direction: column; min-width: 0;
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+        padding: var(--s-6); box-shadow: var(--shadow-1); transition: border-color .18s, transform .18s, box-shadow .18s;
+    }
+    .card:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-2); }
+    .card h3, .card h4 { font-family: var(--sans); font-size: var(--fs-h3); font-weight: 650; letter-spacing: -0.01em; margin: 0; display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .card h3::before, .card h4::before { content: ""; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); flex: 0 0 auto; }
+    .card p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: var(--s-2) 0 0; overflow-wrap: anywhere; }
+    .card code { font-family: var(--mono); font-size: 12px; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
+    .card-link { margin-top: auto; padding-top: var(--s-3); font-size: var(--fs-sm); font-weight: 600; }
+
+    .skill-h { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-width: 0; }
+    .skill-h h3 { font-family: var(--mono); font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+    .vtag { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: 0 0 auto; }
+    .skill-f { font-family: var(--mono); font-size: 11px; color: var(--subtle); margin-top: var(--s-3); }
     /* A skill's description is its activation text, written for the model and often
        past a thousand characters. Show the opening; the script adds the toggle only
        to the cards where it is genuinely cut. */
     .skill-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
     .skill-desc.is-open { display: block; overflow: visible; }
-    .skill-more { margin-top: 8px; padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: 12px; color: var(--accent); }
+    .skill-more { align-self: flex-start; margin-top: var(--s-2); padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: 12px; color: var(--accent); }
     .skill-more:hover { text-decoration: underline; }
-    .card-link { display: inline-block; margin-top: 12px; font-size: 13px; }
-    .s-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-    .muted { color: var(--muted); }
-    h1 { font-family: var(--mono); font-size: clamp(34px, 6vw, 58px); line-height: 1.05; font-weight: 600; letter-spacing: -1px; margin: 16px auto 0; max-width: 14ch; }
-    .lede { color: var(--muted); font-size: clamp(16px, 2.4vw, 20px); max-width: 56ch; margin: 18px auto 0; }
-
-    /* The install picker itself lives in InstallTabs.astro; the hero only centers it. */
-    .install-wrap { max-width: 620px; margin: 36px auto 0; }
-
-    .works { margin: 30px auto 0; display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; color: var(--muted); font-family: var(--mono); font-size: 12px; }
-    .works img { width: 26px; height: 26px; opacity: .9; }
-    .works .row { display: flex; align-items: center; gap: 16px; }
-
-    section { padding: 64px 0; }
-    .s-head { text-align: center; max-width: 60ch; margin: 0 auto 36px; }
-    .s-head .eyebrow { display: block; }
-    h2 { font-family: var(--mono); font-size: clamp(24px, 4vw, 34px); font-weight: 600; letter-spacing: -0.5px; margin: 10px 0 0; }
-    .s-head p { color: var(--muted); margin: 12px auto 0; }
-
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-1); transition: border-color .18s, transform .18s; }
-    .card:hover { border-color: #2f3744; transform: translateY(-2px); }
-    .card h3 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 9px; }
-    .card h3::before { content: ""; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); }
-    .card p { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
-    .card code { font-family: var(--mono); font-size: 12px; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
 
     /* Before/after comparison: a faint dot-grid backdrop fades in behind the cards. */
     #difference { position: relative; }
     #difference::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-        background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0); background-size: 22px 22px;
+        background-image: radial-gradient(circle at 1px 1px, var(--dot) 1px, transparent 0); background-size: 22px 22px;
         -webkit-mask: radial-gradient(62% 56% at 50% 42%, #000, transparent 75%); mask: radial-gradient(62% 56% at 50% 42%, #000, transparent 75%); }
     #difference .wrap { position: relative; z-index: 1; }
 
     /* Comparison content (the window chrome lives in Compare.astro). */
-    .cmp-list { max-width: 900px; margin: 0 auto; }
+    .cmp-list { max-width: 920px; margin: 0 auto; }
     .cmp-code { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre; overflow-x: auto; }
-    .cmp-win.bad .cmp-code { color: #b9aaa4; }
+    .cmp-win.bad .cmp-code { color: var(--muted); }
     .cmp-code .kw { color: var(--accent); }
     .cmp-code .str { color: var(--good); }
-    .cmp-code .dim { color: #5d6675; }
+    .cmp-code .dim { color: var(--subtle); }
     .cmp-code .k { color: var(--good); user-select: none; }
     .cmp-code .g { color: var(--good); }
-    .cmp-code .r { color: #e0564f; }
+    .cmp-code .r { color: var(--danger); }
     .cmp-prose { margin: 0; font-size: 13.5px; line-height: 1.62; }
     .cmp-win.bad .cmp-prose { color: var(--muted); }
     .cmp-win.good .cmp-prose { color: var(--text); }
     .cmp-lines { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.3px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; margin-bottom: 10px; }
 
-    .shot { margin: 8px auto 0; max-width: var(--max); }
-    .shot img { width: 100%; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); display: block; }
+    .shot { margin: var(--s-2) auto 0; }
+    .shot img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); display: block; }
+    .dash-cta { text-align: center; margin-top: var(--s-6); }
 
-    .compare { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-1); }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 13px 18px; border-bottom: 1px solid var(--border-soft); }
-    th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
-    thead th:nth-child(2) { color: var(--accent); }
-    tbody tr:last-child td { border-bottom: none; }
-    td:first-child { color: var(--muted); }
+    .compare { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; box-shadow: var(--shadow-1); }
+    .compare table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 520px; }
+    .compare th, .compare td { text-align: left; padding: 13px 18px; border-bottom: 1px solid var(--border-soft); }
+    .compare th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+    .compare thead th:nth-child(2) { color: var(--accent); }
+    .compare tbody tr:last-child td { border-bottom: none; }
+    .compare td:first-child { color: var(--muted); }
     .yes { color: var(--good); } .no { color: var(--accent2); }
 
-    .bottom { text-align: center; }
-    .bottom h2 { margin-bottom: 8px; }
-    .btn { display: inline-block; font-family: var(--mono); font-size: 14px; font-weight: 600; color: #1a1206; background: var(--accent); padding: 12px 24px; border-radius: 11px; margin-top: 22px; }
-    .btn.ghost { color: var(--text); background: var(--surface2); border: 1px solid var(--border); margin-left: 10px; }
-    .btn:hover { color: #1a1206; background: #e8b06a; }
-    .btn.ghost:hover { color: var(--text); background: var(--surface); border-color: #2f3744; }
+    .bottom-card {
+        text-align: center; padding: var(--s-12) var(--s-6); border-radius: calc(var(--radius) + 4px);
+        background: radial-gradient(600px 260px at 50% 0%, var(--accent-weak), transparent 70%), var(--surface);
+        border: 1px solid var(--border); box-shadow: var(--shadow-2);
+    }
+    .bottom-card .lede { margin-top: var(--s-3); }
+    .bottom-cta { display: flex; gap: var(--s-3); justify-content: center; flex-wrap: wrap; margin-top: var(--s-6); }
 
-    .hero-cta { margin: 26px 0 0; }
-    .hero-cta .btn { display: inline-flex; align-items: center; gap: 9px; margin-top: 0; }
-    .hero-cta .btn svg { width: 16px; height: 16px; }
-    .dash-cta { text-align: center; margin-top: 22px; }
-
-    .ghb { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 12px; }
-    .ghb a { color: var(--text) !important; }
+    .ghb { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 12px; margin: 0 var(--s-2); }
+    .ghb a { color: var(--text); }
     .ghb-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px 0 0 8px; padding: 6px 11px; font-weight: 600; }
-    .ghb-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
-    .ghb-btn:hover { color: var(--accent) !important; background: #20262f; }
+    .ghb-btn svg { width: 14px; height: 14px; }
+    .ghb-btn:hover { color: var(--accent); background: var(--surface-hover); }
     .ghb-count { position: relative; background: var(--surface); border: 1px solid var(--border); border-left: none; border-radius: 0 8px 8px 0; padding: 6px 11px 6px 12px; font-variant-numeric: tabular-nums; }
     .ghb-count::before { content: ""; position: absolute; left: -4.5px; top: 50%; transform: translateY(-50%) rotate(45deg); width: 8px; height: 8px; background: var(--surface); border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    .ghb-count:hover { color: var(--accent) !important; }
+    .ghb-count:hover { color: var(--accent); }
 
-    footer .links a { color: var(--muted); display: inline-flex; }
-    footer .links a:hover { color: var(--accent); }
-    footer .links svg { width: 18px; height: 18px; display: block; }
-    footer { border-top: 1px solid var(--border-soft); padding: 30px 0; color: var(--muted); font-size: 13px; }
-    footer .wrap { display: flex; gap: 16px 24px; align-items: center; flex-wrap: wrap; }
-    footer .foot-links { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; }
-    footer .foot-links a { color: var(--muted); }
-    footer .foot-links a:hover { color: var(--text); }
-    footer .links { margin-left: auto; display: flex; gap: 18px; }
+    .site-foot { border-top: 1px solid var(--border-soft); padding: var(--s-8) 0; color: var(--muted); font-size: var(--fs-sm); }
+    .site-foot .wrap { display: flex; gap: var(--s-4) var(--s-6); align-items: center; flex-wrap: wrap; }
+    .site-foot .brand { font-size: 15px; }
+    .foot-links { display: flex; gap: var(--s-2) var(--s-5); flex-wrap: wrap; }
+    .foot-links a { color: var(--muted); }
+    .foot-links a:hover { color: var(--text); }
+    .foot-icons { margin-left: auto; display: flex; gap: var(--s-2); }
+    .foot-icons a { color: var(--muted); display: inline-flex; padding: 6px; border-radius: 8px; }
+    .foot-icons a:hover { color: var(--accent); background: var(--surface); }
+    .foot-icons svg { width: 18px; height: 18px; display: block; }
 
-    @media (max-width: 640px) {
-        nav .links a.hide-sm { display: none; }
-        nav .ghb { display: none; }
+    @media (max-width: 760px) {
+        .site-nav .links .hide-sm { display: none; }
         .nav-toggle { display: flex; }
-        header.hero { padding: 56px 0 28px; }
+        header.hero { padding: var(--s-12) 0 var(--s-8); }
+        section { padding: var(--s-16) 0; }
+        .hero-cta .btn { flex: 1 1 100%; }
+        .card { padding: var(--s-5); }
+    }
+    @media (max-width: 480px) {
+        .wrap { padding: 0 var(--s-4); }
+        .foot-icons { margin-left: 0; }
     }
 </style>
 

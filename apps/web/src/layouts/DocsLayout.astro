@@ -79,15 +79,17 @@ const source = componentName ? sourcePath(componentName) : null;
 const componentSource = source ? `${REPO}/blob/main/${source}` : null;
 ---
 <Base title={`${title} - Enigma docs`} description={description}>
-    <nav>
-        <div class="in">
-            <a href={url("")} class="brand">Enigma<span class="c"></span></a>
+    <nav class="site-nav">
+        <div class="in bar">
+            <a href={url("")} class="brand" aria-label="Enigma home">Enigma<span class="caret" aria-hidden="true"></span></a>
             <div class="tabs">
-                <a href={docHref("getting-started/introduction")} class={space === "core" ? "active" : ""}>Core</a>
-                <a href={docHref("components/overview")} class={space === "components" ? "active" : ""}>Components</a>
-                <a href={docHref("packs")} class={space === "packs" ? "active" : ""}>Packs</a>
+                <a href={docHref("getting-started/introduction")} class={space === "core" ? "active" : ""} aria-current={space === "core" ? "page" : undefined}>Docs</a>
+                <a href={docHref("components/overview")} class={space === "components" ? "active" : ""} aria-current={space === "components" ? "page" : undefined}>Components</a>
+                <a href={docHref("packs")} class={space === "packs" ? "active" : ""} aria-current={space === "packs" ? "page" : undefined}>Packs</a>
             </div>
-            <a class="home" href={url("")}>&larr; Home</a>
+            <a class="gh" href={REPO} target="_blank" rel="noopener noreferrer" aria-label="GitHub repository" title="GitHub">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"></path></svg>
+            </a>
         </div>
     </nav>
 
@@ -98,6 +100,11 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
                 <span>Search docs</span>
                 <kbd>&#8984;K</kbd>
             </button>
+            <button class="side-toggle" type="button" aria-expanded="false" aria-controls="sideList">
+                <span>{current?.data.title ?? "Contents"}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+            </button>
+            <div class="side-list" id="sideList">
             {space === "packs" && pack && (
                 <>
                     <a class="backlink" href={docHref("packs")}>&larr; All packs</a>
@@ -121,6 +128,7 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
                     </>
                 ))
             )}
+            </div>
         </aside>
 
         <main>
@@ -161,7 +169,7 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
     </div>
 
     <footer>
-        Enigma - <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">GitHub</a> - <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a>
+        Enigma - <a href={`${REPO}/issues/new/choose`} target="_blank" rel="noopener noreferrer">Create issue</a> - <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">Apache-2.0</a>
     </footer>
 
     <!-- The site's search IS the component the site documents. `client:idle` because nobody
@@ -170,16 +178,17 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
 </Base>
 
 <style is:global>
-    nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(8, 10, 16, 0.72); border-bottom: 1px solid var(--border-soft); }
-    nav .in { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; height: 56px; }
-    .brand { font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); }
-    .brand .c { display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px; background: var(--accent); transform: translateY(2px); }
-    nav .tabs { display: flex; gap: 2px; margin-left: 10px; }
-    nav .tabs a { font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 6px 12px; border-radius: 7px; transition: color .15s, background .15s; }
-    nav .tabs a:hover { color: var(--text); }
-    nav .tabs a.active { color: var(--accent); background: var(--surface); }
-    nav .in a.home { margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--muted); }
-    nav .in a.home:hover { color: var(--text); }
+    .site-nav .in { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+    .site-nav .brand { font-size: 17px; }
+    .site-nav .brand .caret { animation: none; }
+    .site-nav .tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .site-nav .tabs::-webkit-scrollbar { display: none; }
+    .site-nav .tabs a { font-size: var(--fs-sm); font-weight: 500; color: var(--muted); padding: 6px 12px; border-radius: var(--radius-xs); transition: color .15s, background .15s; white-space: nowrap; }
+    .site-nav .tabs a:hover { color: var(--text); background: var(--surface); }
+    .site-nav .tabs a.active { color: var(--accent); background: var(--accent-weak); }
+    .site-nav .gh { margin-left: auto; color: var(--muted); display: inline-flex; padding: 7px; border-radius: 8px; }
+    .site-nav .gh:hover { color: var(--text); background: var(--surface); }
+    .site-nav .gh svg { width: 18px; height: 18px; display: block; }
 
     aside .backlink { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 4px 0; }
     aside .backlink:hover { color: var(--text); }
@@ -248,11 +257,11 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
     .docsearch kbd { font-family: var(--mono); font-size: 10.5px; background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
 
     main { padding: 28px 0 80px; min-width: 0; }
-    main > h1 { font-family: var(--mono); font-size: 28px; font-weight: 600; letter-spacing: -0.5px; margin: 0; }
+    main > h1 { font-family: var(--sans); font-size: clamp(26px, 3.4vw, 34px); font-weight: 750; letter-spacing: -0.025em; line-height: 1.15; margin: 0; text-wrap: balance; }
     main > .sub { color: var(--muted); margin: 8px 0 0; }
 
     /* MDX content (slotted, so these are global selectors scoped under .doc). */
-    .doc h2 { font-family: var(--mono); font-size: 18px; font-weight: 600; margin: 48px 0 4px; scroll-margin-top: 72px; display: flex; align-items: center; gap: 9px; }
+    .doc h2 { font-family: var(--sans); font-size: 21px; font-weight: 700; letter-spacing: -0.015em; margin: 48px 0 4px; scroll-margin-top: 72px; display: flex; align-items: center; gap: 9px; }
     .doc h2::before { content: ""; width: 3px; height: 16px; border-radius: 2px; background: var(--accent); flex: 0 0 auto; }
     .doc h2 + p { color: var(--muted); margin-top: 6px; }
     .doc p { line-height: 1.65; }
@@ -273,32 +282,79 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
     /* Code blocks: theme the Shiki output to the surface palette and host the copy button. */
     .doc pre { position: relative; background: var(--surface) !important; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.7; margin: 14px 0; }
     .doc pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+    /* Shiki emits both themes as variables; the scheme picks which one paints. */
+    .doc .astro-code, .doc .astro-code span { color: var(--shiki-dark); }
+    @media (prefers-color-scheme: light) { .doc .astro-code, .doc .astro-code span { color: var(--shiki-light); } }
+    .doc h3 { font-family: var(--sans); font-size: 16px; font-weight: 650; margin: 28px 0 4px; scroll-margin-top: 72px; }
     .doc .code-copy {
         position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center;
         color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 7px;
         padding: 6px; cursor: pointer; opacity: 0; transition: opacity .14s, color .14s, border-color .14s;
     }
     .doc pre:hover .code-copy, .doc .code-copy:focus-visible { opacity: 1; }
-    .doc .code-copy:hover { color: var(--accent); border-color: #2f3744; }
+    .doc .code-copy:hover { color: var(--accent); border-color: var(--border-strong); }
     .doc .code-copy.done { color: var(--good); border-color: var(--good); opacity: 1; }
     .doc .code-copy svg { width: 14px; height: 14px; display: block; }
 
     .doc table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 14px 0; display: block; overflow-x: auto; }
-    .doc th, .doc td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
+    .doc th, .doc td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
     .doc th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
     .doc td:first-child code { color: var(--accent); }
-    .doc td.w { white-space: normal; min-width: 240px; }
+    /* The last column is prose (a description, a reason): it wraps, the identifiers before it do not. */
+    .doc td.w, .doc td:last-child:not(:first-child) { white-space: normal; min-width: 240px; }
     .doc .def { color: var(--good); }
 
     footer { border-top: 1px solid var(--border-soft); margin-top: 40px; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
 
     /* Stacked on narrow screens: the sidebar is part of the page flow again, so it must drop
        the viewport height cap and its own scrollbar or it becomes a tiny scrolling box. */
+    .side-toggle { display: none; }
     @media (max-width: 820px) {
-        .layout { grid-template-columns: 1fr; }
+        .layout { grid-template-columns: 1fr; padding: 0 16px; row-gap: 0; }
         aside { position: static; padding: 16px 0 0; max-height: none; overflow-y: visible; }
+        /* The section list folds behind one button, so the page starts with its content. */
+        .side-toggle {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; cursor: pointer;
+            font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
+            border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px;
+        }
+        .side-toggle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .side-toggle svg { width: 16px; height: 16px; transition: transform .18s; }
+        .side-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+        .side-list { display: none; padding: 4px 4px 8px; }
+        .side-list.is-open { display: block; }
+        .site-nav .in { padding: 0 16px; gap: 12px; }
+        main { padding-top: 20px; }
+    }
+    /* Narrow screens: a table row becomes a small card, each cell on its own line, so no
+       column is cut or scrolled sideways. */
+    @media (max-width: 600px) {
+        .doc table { display: block; overflow: visible; }
+        .doc thead { display: none; }
+        .doc tbody, .doc tr { display: block; }
+        .doc tr { padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
+        .doc td { display: block; border: 0; padding: 3px 0; white-space: normal; min-width: 0 !important; }
+        .doc td[data-label]:not(:first-child)::before { content: attr(data-label) ": "; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
     }
 </style>
+
+<script>
+    // Each cell learns its column name, which the narrow-screen card layout prints before it.
+    for (const table of document.querySelectorAll<HTMLTableElement>(".doc table")) {
+        const heads = Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent?.trim() ?? "");
+        for (const row of table.querySelectorAll("tbody tr")) {
+            Array.from(row.children).forEach((cell, i) => { if (heads[i]) cell.setAttribute("data-label", heads[i]); });
+        }
+    }
+
+    // Narrow screens: the section list opens from its toggle.
+    const sideToggle = document.querySelector<HTMLButtonElement>(".side-toggle");
+    const sideList = document.getElementById("sideList");
+    sideToggle?.addEventListener("click", () => {
+        const open = sideList?.classList.toggle("is-open") ?? false;
+        sideToggle.setAttribute("aria-expanded", String(open));
+    });
+</script>
 
 <script>
     // Highlight the heading the reader is actually at.

@@ -1,0 +1,36 @@
+---
+title: Commands
+description: Every Orion slash command, skill and sub-agent - what each checks and what it reports.
+group: Reference
+order: 3
+space: packs
+pack: orion
+---
+
+Every command reports first and fixes only when you ask. Each finding comes with its shortest reproduction or a measurement, the cause in the code (`file:line`) and the fix, followed by what was checked and held.
+
+## Slash commands
+
+| Command | What it does |
+| --- | --- |
+| `/sweep [area]` | The full pass: starts the app, ranks the main flows, then runs the bug hunt, the speed audit, the scale audit and the search check, delegating to the sub-agents in parallel. One merged report, most severe first. |
+| `/flow <flow>` | One user flow end to end (for example `checkout`): done once as a daily user would, then again changing one condition at a time - another role, empty and full data, a reload, the back button, a double submit, a slow network, a narrow viewport - plus every round trip it implies. |
+| `/perf [page or flow]` | A performance trace of the load and the heaviest interaction, plus Lighthouse: LCP, INP, CLS and blocking time against their targets, the request waterfall and the slowest server calls. A fix is measured again the same way. |
+| `/scale [area]` | Lists the entities that grow and every path that reads or writes them, states each path's cost in N, checks the slow ones with the query plan, and times them at the target data size. |
+
+## Skills
+
+| Skill | Finds |
+| --- | --- |
+| `bug-hunt` | Flows that fail on the second step, state lost on reload, round trips that do not round-trip, roles that see a dead button, existing data the change never handled. |
+| `perf-audit` | Core Web Vitals from a real trace, request waterfalls, oversized bundles and payloads, N+1 queries, render-blocking work, slow interactions. |
+| `scale-audit` | Unbounded queries and lists, missing indexes, per-row work, in-memory filtering, missing pagination, connection and rate limits, work that belongs in a background job. |
+| `search-quality` | Fuzzy matching so loose it returns everything, missing typo tolerance, bad ranking, no empty state. |
+
+## Sub-agents
+
+| Agent | Role |
+| --- | --- |
+| `flow-breaker` | Runs one flow in the browser and tries to break it; returns only reproduced failures. |
+| `perf-profiler` | Measures a page or flow with a trace and Lighthouse and names the cause of each slow part. |
+| `scale-auditor` | Reads the data paths and backs each limit with a query plan or a timing. |

@@ -13,9 +13,9 @@ A **pack** is an optional harness bundle - skills, slash commands, sub-agents an
 ## Available packs
 
 - <a href={docHref("helio/overview")}><strong>Helio</strong></a> - a bug-bounty and offensive-security harness: recon, vulnerability hunting, web2/web3 audit, Active Directory, cloud, triage and report writing. Created in collaboration with the Dymo Intelligence Team.
-- <strong>Orion</strong> - hunts what looks finished but is not: broken flows, slow loads, unbounded queries, scaling limits and searches that never say "no results" - each finding proved with a trace, a number or a failing input, in a real browser via the built-in Chrome DevTools MCP server.
+- <a href={docHref("orion/overview")}><strong>Orion</strong></a> - hunts what looks finished but is not: broken flows, slow loads, unbounded queries, scaling limits and searches that never say "no results" - each finding proved with a trace, a number or a failing input, in a real browser via the built-in Chrome DevTools MCP server.
 
-More packs are on the way. Each one gets its own section here with full documentation.
+More packs are on the way; each gets its own section in this sidebar.
 
 ## Why isolation matters
 
@@ -23,8 +23,8 @@ Agents keep every installed skill's name and description in context at all times
 
 ## Install and launch
 
-<Cmd name="enigma pack <subcommand>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma pack use helio work", "enigma pack setup helio", "enigma pack remove helio"]}>
-`list` shows every pack and its install state. `install <id>` fetches the pack. `enigma <id>` (e.g. `enigma helio`) launches an agent in the pack's isolated context. `use <id> <account>` pins which login seeds the pack. `setup <id>` registers the pack's MCP servers. `update`/`remove` keep or delete it.
+<Cmd name="enigma pack <subcommand>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma orion", "enigma pack use helio work", "enigma pack setup helio", "enigma pack remove helio"]}>
+`list` shows every pack and its install state. `install <id>` fetches the pack. `enigma <id>` (e.g. `enigma helio`, `enigma orion`) launches an agent in the pack's isolated context. `use <id> <account>` pins which login seeds the pack. `setup <id>` registers the pack's MCP servers. `update`/`remove` keep or delete it.
 </Cmd>
 
 You can also manage packs from the dashboard's **Packs** tab (install, update, remove, pick the seeding account, and copy the launch command).

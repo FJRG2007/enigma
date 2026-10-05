@@ -1,0 +1,40 @@
+---
+title: Getting started
+description: Install Orion, launch it in its isolated context with a real browser, and choose which of your logins seeds it.
+group: Guide
+order: 2
+space: packs
+pack: orion
+---
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
+
+Orion installs on demand and launches into its own agent context with a browser already wired. It reuses one of your existing logins.
+
+## Requirements
+
+Chrome and Node on the machine. The browser runs an isolated profile, never your own logins.
+
+## Install and launch
+
+<Cmd name="enigma pack install orion" ex={["enigma pack install orion", "enigma pack list"]}>
+Fetch the pack (the `@enigmax/orion` asset package) into `~/.enigma/packs/orion`. You can skip this - launching also fetches on demand.
+</Cmd>
+
+<Cmd name="enigma orion [account]" ex={["enigma orion", "enigma orion work", "enigma orion --tool codex"]}>
+Launch a coding agent inside Orion's isolated context with only Orion's skills, commands and browser. With no account it uses the pinned pack account, else your active profile's account, else the tool's active account. Defaults to Claude Code; target another agent with `--tool`.
+</Cmd>
+
+Inside the session, start with `/sweep` for a full pass, or `/flow`, `/perf` and `/scale` for one area. See <a href={docHref("orion/commands")}>Commands</a>.
+
+## The browser
+
+Orion's Chrome DevTools MCP server is registered on every launch - there is no `enigma pack setup orion` step. It follows the same `browser` toggle as your other agents: turn it off with `enigma config browser off` and the next launch removes it from Orion's context.
+
+## Which account Orion uses
+
+<Cmd name="enigma pack use orion <account|->" ex={["enigma pack use orion work", "enigma pack use orion -"]}>
+Pin which login seeds Orion by default (`-` clears the pin). `enigma orion <account>` overrides it for a single launch.
+</Cmd>
+
+You can also manage Orion from the dashboard's **Packs** tab. See <a href={docHref("packs")}>Packs</a> for how isolation and seeding work across every pack.

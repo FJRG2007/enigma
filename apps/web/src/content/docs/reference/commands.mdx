@@ -76,6 +76,14 @@ Detect the project's tech stack and install the matching community skills, kept 
 Scans packages, config files, file types and gems; installs the matched, hash-verified skills into the project. `--dry-run` previews; `-a <agent>` limits targets.
 </Cmd>
 
+## design
+
+Reverse-engineer a design system from a live site, a local project or a git repo into `DESIGN.md` and an agent skill. See <a href={docHref("concepts/design")}>Design extraction</a> for detail.
+
+<Cmd name="enigma design <url|path|git-url>" ex={["enigma design https://stripe.com --ultra", "enigma design ./apps/web --format design-md", "enigma design https://github.com/org/repo --no-install"]}>
+Writes `<name>-design/` with `DESIGN.md`, `SKILL.md`, references, tokens and fonts, packs it as a `.skill` archive and installs the skill into each detected agent (`-l` for this project, `--no-install` to skip). `--ultra` adds screenshots, motion, layout and hover states through a local Chrome, Edge, Chromium or Brave.
+</Cmd>
+
 ## recall
 
 Local, searchable memory of your coding sessions, built from your own transcripts and exposed to agents over MCP. Off by default. See <a href={docHref("concepts/recall")}>Recall</a> for detail.
@@ -100,10 +108,10 @@ Shared flags: `--in <path>` narrows to a subtree, `--limit N` caps results, `--p
 
 ## pack
 
-Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Packs</a> for detail.
+Marketplace of optional, isolated harness packs: Helio for bug bounty, Orion for broken flows, speed and scale. Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Packs</a> for detail.
 
-<Cmd name="enigma pack <list|install|remove|update|setup|use|run>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma helio work", "enigma pack use helio work", "enigma pack setup helio"]}>
-`install <id>` fetches a pack; `enigma <id> [account]` (e.g. `enigma helio`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the pack; `setup <id>` registers the pack's MCP servers (needs Python); `update`/`remove` keep or delete it.
+<Cmd name="enigma pack <list|install|remove|update|setup|use|run>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma orion", "enigma helio work", "enigma pack use helio work", "enigma pack setup helio"]}>
+`install <id>` fetches a pack; `enigma <id> [account]` (e.g. `enigma helio`, `enigma orion`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the pack; `setup <id>` registers a pack's script MCP servers (Helio's need Python; Orion's browser is wired on launch); `update`/`remove` keep or delete it.
 </Cmd>
 
 ## ssh
@@ -222,6 +230,42 @@ A plain number is a port, so `enigma kill 3000` kills whatever is listening ther
 
 <Cmd name="enigma resources [action]" ex={["enigma resources", "enigma resources free-port 3000"]}>
 No argument prints the snapshot: memory in use, whether WSL and Docker are up, the top processes by memory and every listening port with its owner. The actions (`wsl`, `docker`, `free-port <port>`, `kill <pid>`) are the long form of `enigma kill`. The same view is a tab in the dashboard and in the TUI, where each action confirms before it runs.
+</Cmd>
+
+## add
+
+<Cmd name="enigma add [name...]" ex={["enigma add", "enigma add marquee cache", "enigma add select --copy"]}>
+Add headless components and utilities to the project as a dependency, with its own package manager. No name lists the catalogue; `--copy` vendors the source instead. See <a href={docHref("components/overview")}>Components</a>.
+</Cmd>
+
+## config
+
+<Cmd name="enigma config [key value]" ex={["enigma config", "enigma config browser off", "enigma config gate off -l"]}>
+No argument opens the settings menu; `config <key> <value>` sets one (`-l` for this project only, `-g` for every project). See <a href={docHref("reference/configuration")}>Configuration</a> for every key.
+</Cmd>
+
+## shim, doctor & statusline
+
+<Cmd name="enigma shim [on|off]" ex={["enigma shim on", "enigma shim"]}>
+Launch each installed agent under its own name (`claude`, not `enigma claude`) through a shell function, so terminals that detect the agent from the typed command keep doing so. No argument shows what your profile holds.
+</Cmd>
+
+<Cmd name="enigma doctor [hooks]" ex="enigma doctor hooks">
+Time every hook wired into Claude Code (settings files and enabled plugins) and name the slow one behind a `hook timed out` message.
+</Cmd>
+
+<Cmd name="enigma statusline">
+Render the agent status bar: badge, model, context, cost and live gate progress. Wired by `enigma install`; you rarely run it by hand.
+</Cmd>
+
+## branches & completion
+
+<Cmd name="enigma branches [tidy]" ex={["enigma branches", "enigma branches tidy"]}>
+Report working branches that are finished; `tidy` removes the ones the default branch already contains, locally and on the remote.
+</Cmd>
+
+<Cmd name="enigma completion [shell]" ex={["enigma completion bash", "enigma completion powershell"]}>
+Print a completion script for bash, zsh, fish or PowerShell; install it wherever your shell reads completions.
 </Cmd>
 
 ## fix-path & issue

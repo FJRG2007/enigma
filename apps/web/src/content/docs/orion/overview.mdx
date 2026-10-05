@@ -1,0 +1,32 @@
+---
+title: Overview
+description: Orion is enigma's QA pack - it hunts broken flows, slow loads, scaling limits and searches that never say "no results", in a real browser, with evidence for every finding.
+group: Guide
+order: 1
+space: packs
+pack: orion
+---
+import { docHref } from "../../../lib/url";
+
+**Orion** is an enigma <a href={docHref("packs")}>pack</a> that hunts what looks finished but is not: flows that break on the second step, pages that load slowly, queries that grow with the table, limits that only show up at scale, and searches that never say "no results". Like every pack it runs in a **dedicated, isolated agent context**, so its skills never load into the agent you code with.
+
+## The rule every finding obeys
+
+A finding exists only with evidence produced in the session:
+
+- **a reproduction** - the exact steps or input, run, and what happened versus what should have;
+- **or a measurement** - a number from a trace, a query plan, a timing or a payload size, with the threshold it breaks.
+
+"This might be slow" is not a finding. Orion measures it or drops it, and says what it could not verify.
+
+## What's in the pack
+
+- **4 skills** - `bug-hunt`, `perf-audit`, `scale-audit`, `search-quality`.
+- **4 slash commands** - `/sweep` (everything), `/flow` (one user flow end to end), `/perf` (load and runtime speed), `/scale` (what breaks as data and traffic grow).
+- **3 sub-agents** - `flow-breaker` and `perf-profiler` work in the browser; `scale-auditor` reads the data paths.
+- **A real browser** - the Chrome DevTools MCP server, registered automatically on every launch.
+
+## Where to go next
+
+- <a href={docHref("orion/getting-started")}>Getting started</a> - install Orion, launch it, and pick which account seeds it.
+- <a href={docHref("orion/commands")}>Commands</a> - every slash command, skill and sub-agent.

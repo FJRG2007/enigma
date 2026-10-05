@@ -43,10 +43,10 @@ Today recall reads **Claude Code** transcripts; Codex and OpenCode are supported
 
 ## LLM enrichment (optional)
 
-Turn on `recall-llm` to have an LLM rewrite the deterministic observations into richer summaries, using your **local Claude login** (read-only). It runs in the background, batched per session and capped per pass to keep quota use small, and falls back to the deterministic text on any failure. Off by default; Claude Code only.
+`recall-llm` (on by default) has an LLM curate the store: it keeps the observations worth remembering and discards trivial ones. It runs in the background, batched per session and capped per pass to keep quota use small, and falls back to the deterministic heuristic when no login is available. The model comes from `recall-provider`: `claude-local` reuses your Claude Code login; `anthropic` and `openai` take `recall-model`, `recall-api-base` and an encrypted `recall-api-key`.
 
-<Cmd name="enigma config recall-llm on" ex={["enigma config recall-llm on", "enigma recall enrich"]}>
-Enable enrichment, then `enrich` processes the un-enriched sessions on demand (it also runs automatically after a sync).
+<Cmd name="enigma config recall-llm off" ex={["enigma config recall-llm off", "enigma recall enrich"]}>
+`enrich` curates the sessions not processed yet, on demand (it also runs after every sync). Turn curation off to keep only the deterministic observations.
 </Cmd>
 
 ## Retention
