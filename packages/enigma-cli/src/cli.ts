@@ -818,7 +818,9 @@ e.g. eval "$(enigma completion zsh)" in ~/.zshrc.`,
 Report which working branches are finished, and remove the ones that are. A branch is
 only removed when the default branch already contains every change it made, byte for
 byte - unmerged commits, uncommitted or stashed work, a remote copy that is ahead or
-unreadable, or a branch checked out elsewhere are reported and kept.
+unreadable, or a branch checked out elsewhere are reported and kept. 'tidy' also clears
+idle, merged branches from the gate's own mirror and tracking refs left by a remote
+that no longer exists.
 
   tidy [branch...]   Remove the finished branches (all of them, or just those named)
       --dry-run      Show what tidy would remove
