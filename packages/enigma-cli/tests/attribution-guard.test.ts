@@ -106,6 +106,11 @@ test("a home path in the message is refused, a home path in the cd is not", asyn
         const cdOnly = "cd C:/Users/fixture-op/repo && git commit -q -m \"fix: tidy the loader\"";
         expect(messageText(cdOnly)).not.toContain("fixture-op");
         expect(runAttributionGuardHook(payload(cdOnly))).toBe(0);
+        // Claude Code runs the hook when it cannot evaluate the `if` filter (a heredoc): a script
+        // written with a home path in it is not a commit message and must go through.
+        const script = "cat > /tmp/x.mjs <<'EOF'\nconst p = \"C:/Users/fixture-op/repo/a.ts\";\nEOF\nbun /tmp/x.mjs";
+        expect(messageText(script)).toBe("");
+        expect(runAttributionGuardHook(payload(script))).toBe(0);
         for (const leaking of [
             "cd C:/Users/fixture-op/repo && git commit -q -m \"test: evidence in C:\\Users\\fixture-op\\AppData\\Local\\Temp\\shot.png\"",
             "git commit -q -F - <<'EOF'\nfeat: x\n\nRan from /c/Users/fixture-op/repo\nEOF",

@@ -56,6 +56,9 @@ const ATTRIBUTION_RE = new RegExp(String.raw`(?:^|(?:-m|--message|-b|--body)(?:=
 /** One message line that is an attribution line and nothing else. */
 const ATTRIBUTION_LINE_RE = new RegExp(`^(?:${CO_AUTHOR}|${FOOTER})$`, "i");
 
+/** A `git commit` (also `git -C <dir> commit`) or a `gh pr create|edit|merge` anywhere in a command. */
+const COMMIT_OR_PR_RE = /\b(?:git(?:\s+-C\s+(?:"[^"]*"|'[^']*'|\S+))?\s+commit|gh\s+pr\s+(?:create|edit|merge))\b/;
+
 /** Commands the hook is spawned for, in Claude Code's permission-rule syntax. */
 const COMMAND_PATTERNS = ["git commit*", "git -C * commit*", "gh pr create*", "gh pr edit*", "gh pr merge*"];
 
@@ -130,6 +133,11 @@ export function parseGuardPayload(raw: string): GuardPayload | null {
 export function runAttributionGuardHook(raw: string): number {
     const payload = parseGuardPayload(raw);
     if (payload === null) return 0;
+    // The handlers' `if` filters spawn this only for commit and PR commands, but Claude Code runs a
+    // hook whose filter it cannot evaluate - and a command with a heredoc is one of those - so any
+    // `cat > x.mjs <<'EOF' ... EOF` naming a home path was refused as a "commit message". Judge
+    // only what really commits or publishes a PR.
+    if (!COMMIT_OR_PR_RE.test(payload.command)) return 0;
     const off = attributionOff();
     let found = off ? attributionLine(payload.command) : "";
     for (const file of found === "" && off ? messageFiles(payload.command) : []) {
@@ -159,8 +167,9 @@ export function runAttributionGuardHook(raw: string): number {
  */
 export function messageText(command: string): string {
     const heredoc = /<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*?)\n\s*\1\s*(?:\n|$)/.exec(command);
-    const head = /\b(?:git(?:\s+-C\s+(?:"[^"]*"|'[^']*'|\S+))?\s+commit|gh\s+pr\s+(?:create|edit|merge))\b/.exec(command);
-    if (!head) return heredoc ? heredoc[2]! : "";
+    const head = COMMIT_OR_PR_RE.exec(command);
+    // No commit or PR in the command: nothing it runs is published, a heredoc included.
+    if (!head) return "";
     let tail = command.slice(head.index + head[0].length);
     // Cut at the heredoc marker (its body is added below), then at the next chained command.
     tail = tail.split(/<<-?\s*['"]?\w+/)[0] ?? "";

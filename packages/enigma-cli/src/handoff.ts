@@ -131,7 +131,9 @@ export function ageOf(savedAt: number, now = Date.now()): string {
 /** What a new session is told: continue the work, without waiting to be asked. */
 export function resumeText(h: Handoff, now = Date.now()): string {
     return [
-        `[enigma] Handoff from the previous session in this project (saved ${ageOf(h.savedAt, now)}). That session was cleared to save tokens; this page is everything it left. Continue the work it describes now, starting from its next step, without asking whether to.`,
+        // A new session can also open on a different task the same day, so the user's own message
+        // wins: the handoff is continued unasked only when nothing else was asked for.
+        `[enigma] Handoff from the previous session in this project (saved ${ageOf(h.savedAt, now)}). That session was cleared to save tokens; this page is everything it left. If the user's message is a continuation (or empty, or "continue"), continue the work it describes now, starting from its next step, without asking whether to. If the user asks for something else, do that instead and mention in one line that this unfinished handoff is kept (\`enigma handoff show\`).`,
         "",
         h.text,
     ].join("\n");

@@ -45,7 +45,9 @@ test("one handoff per project, found from any subdirectory, delivered once", () 
     expect(hook("claude", { cwd: PROJ, source: "resume" })).toBe("");
     const out = JSON.parse(hook("claude", { cwd: join(PROJ, "src"), source: "clear" }));
     expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
-    expect(out.hookSpecificOutput.additionalContext).toContain("Continue the work it describes now");
+    expect(out.hookSpecificOutput.additionalContext).toContain("continue the work it describes now");
+    // A different request in the same session wins over the handoff.
+    expect(out.hookSpecificOutput.additionalContext).toContain("If the user asks for something else, do that instead");
     expect(out.hookSpecificOutput.additionalContext).toContain("wire the CLI");
     // Delivered: the next fresh session in the project is not handed it again.
     expect(hook("claude", { cwd: PROJ, source: "startup" })).toBe("");
