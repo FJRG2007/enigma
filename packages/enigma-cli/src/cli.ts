@@ -8,6 +8,7 @@ import * as packs from "./packs";
 import * as acct from "./accounts";
 import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
+import { RELAY_HELP } from "./relay";
 import * as skillsMod from "./skills";
 import { isDir, readJson } from "./util";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,7 @@ import { pinnedRef } from "./skills-remote";
 import { DESIGN_HELP } from "./design/help";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
+import { HANDOFF_HELP } from "./handoff-cli";
 import { runDoctorCli } from "./doctor-hooks";
 import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
@@ -187,7 +189,7 @@ function parseArgs(argv: string[]): CliOptions {
         }
         // `design` owns its whole flag set (--url, --out, --format, ...), so it parses its own
         // argv; only the shared help flags stay here.
-        if (opts.command === "design" && a !== "-h" && a !== "--help") {
+        if ((opts.command === "design" || opts.command === "handoff" || opts.command === "relay") && a !== "-h" && a !== "--help") {
             opts.positionals.push(a);
             continue;
         }
@@ -428,6 +430,10 @@ Commands:
   design <source>      Reverse-engineer a design system from a URL, a project or a git
                        repo into DESIGN.md and an agent skill (--ultra adds screenshots,
                        motion and hover states through a local Chrome/Edge)
+  handoff <save|show>  Keep a one-page handoff so the context can be cleared: the next
+                       session in the project receives it and continues (also /handoff)
+  relay "<task>"       Run a long task as a chain of fresh sessions that hand off to each
+                       other (--agent claude|codex|opencode|kimi, --max N)
   add [name...]        Headless primitives and utilities: behaviour, timing and a11y with
                        no styles of their own. No name lists the catalogue. Add them as a
                        DEPENDENCY: that is how a fix reaches your project. --copy vendors the
@@ -752,6 +758,8 @@ and commands never load into your normal agent.
   list | install <id> | remove <id> | update <id> | setup <id> | use <id> <acct|-> | run <id> [account]`,
 
     design: DESIGN_HELP,
+    handoff: HANDOFF_HELP,
+    relay: RELAY_HELP,
 
     resources: `usage: enigma resources [action]
 System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.
@@ -3108,6 +3116,13 @@ export async function run(argv: string[]): Promise<void> {
     }
     // Hidden: the subagent budget (PreToolUse on Agent, SubagentStart, SubagentStop). Spawned only
     // around a subagent launch, never for other tool calls (the PreToolUse entry matches Agent).
+    // Hidden: hands a saved handoff to a session that starts fresh (Claude Code, Codex, Kimi, OpenCode).
+    if (argv[0] === "__handoff-hook") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runHandoffHook } = await import("./handoff-cli");
+        process.exit(runHandoffHook(argv[1] ?? "", payload));
+    }
     if (argv[0] === "__subagent-hook") {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
@@ -3254,6 +3269,14 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "design") {
         const { runDesignCli } = await import("./design/cli");
         process.exit(await runDesignCli(opts.positionals));
+    }
+    if (opts.command === "handoff") {
+        const { runHandoffCli } = await import("./handoff-cli");
+        process.exit(runHandoffCli(opts.positionals));
+    }
+    if (opts.command === "relay") {
+        const { runRelayCli } = await import("./relay");
+        process.exit(runRelayCli(opts.positionals));
     }
 
     // No command: non-interactive default installs skills; a TTY gets the hub.

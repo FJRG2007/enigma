@@ -26,6 +26,7 @@ import { setGuardrails } from "./guardrails-deploy";
 import type { GuardListMeta } from "./guard-config";
 import { applyCodeGraphWiring } from "./codegraph-deploy";
 import { applySubagentWiring, parseCompactWindow } from "./subagent-deploy";
+import { applyHandoffWiring, parseRelayAt, setRelay } from "./handoff-deploy";
 import { BYPASS_GLOBAL_ONLY, BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
@@ -163,6 +164,13 @@ function setBrowser(on: boolean, scope: Scope): ApplyResult {
 function setBrowserHeadless(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("browserHeadless", on, scope);
     applyMcpToggle(scope);
+    return { path, changed: true };
+}
+
+/** Persist the relay threshold and rewrite the relay mod (or remove it at 0). */
+function setRelayAt(tokens: number): ApplyResult {
+    const path = conf.setEnigmaValue("relayAt", tokens, "global");
+    applyHandoffWiring();
     return { path, changed: true };
 }
 
@@ -387,6 +395,25 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value, scope) => ({ path: conf.setEnigmaValue("subagentLimit", value ? conf.CONFIG_DEFAULTS.subagentLimit : -1, scope), changed: true }),
                 readValue: () => (conf.readConfig().config.subagentLimit < 0 ? "off" : String(conf.readConfig().config.subagentLimit)),
                 writeValue: (value, scope) => ({ path: conf.setEnigmaValue("subagentLimit", parseSubagentLimit(value), scope), changed: true }),
+            },
+            {
+                key: "relay",
+                label: "Hand work to a fresh session",
+                hint: "a handoff saved with /handoff reaches the next session in the project (Claude Code, Codex, Kimi, OpenCode) once, and Claude Code relays a long session on its own past relay-at; enigma default: on",
+                read: () => conf.readConfig().config.relay,
+                write: (value, scope) => ({ path: setRelay(scope, value), changed: true }),
+            },
+            {
+                key: "relay-at",
+                label: "Relay a session at",
+                hint: "context size at which Claude Code saves a handoff, clears and continues on its own; off = only when you run /handoff; enigma default: 300k",
+                kind: "value",
+                globalOnly: true,
+                valueHint: "tokens, 50k-1000k, or off (default 300k)",
+                read: () => conf.readConfig().config.relayAt > 0,
+                write: (value) => setRelayAt(value ? conf.CONFIG_DEFAULTS.relayAt : 0),
+                readValue: () => (conf.readConfig().config.relayAt > 0 ? String(conf.readConfig().config.relayAt) : "off"),
+                writeValue: (value) => setRelayAt(parseRelayAt(value)),
             },
             {
                 key: "compact-window",

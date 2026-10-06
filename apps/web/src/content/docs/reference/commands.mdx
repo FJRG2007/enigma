@@ -80,6 +80,14 @@ Scans packages, config files, file types and gems; installs the matched, hash-ve
 
 Reverse-engineer a design system from a live site, a local project or a git repo into `DESIGN.md` and an agent skill. See <a href={docHref("concepts/design")}>Design extraction</a> for detail.
 
+<Cmd name="enigma handoff <save|show|status|clear>" ex={["enigma handoff save < next.md", "enigma handoff status"]}>
+Keep a one-page handoff for this project so the context can be cleared; the next session receives it once and continues. Agents write it through `/handoff`.
+</Cmd>
+
+<Cmd name="enigma relay [--agent claude|codex|opencode|kimi] [--max N] <task>" ex={["enigma relay \"fix every failing test\""]}>
+Run a long task as a chain of fresh headless sessions that hand off to each other, until one reports `STATUS: done`.
+</Cmd>
+
 <Cmd name="enigma design <url|path|git-url>" ex={["enigma design https://stripe.com --ultra", "enigma design ./apps/web --format design-md", "enigma design https://github.com/org/repo --no-install"]}>
 Writes `<name>-design/` with `DESIGN.md`, `SKILL.md`, references, tokens and fonts, packs it as a `.skill` archive and installs the skill into each detected agent (`-l` for this project, `--no-install` to skip). `--ultra` adds screenshots, motion, layout and hover states through a local Chrome, Edge, Chromium or Brave.
 </Cmd>

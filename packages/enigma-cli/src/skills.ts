@@ -29,6 +29,7 @@ import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
+import { applyHandoffWiring, mirrorHandoffWiring } from "./handoff-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applySubagentWiring, mirrorSubagentWiring } from "./subagent-deploy";
 import { applyCodeGraphWiring, mirrorCodeGraphWiring } from "./codegraph-deploy";
@@ -1297,7 +1298,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const applyCiWatchConfig = (): void => { if (wires("post-edit")) applyCiWatchWiring(); };
 
     // Subagent budget and compact window: the launch hooks and Claude Code's autoCompactWindow.
-    const applySubagentConfig = (): void => { if (wires("post-edit")) applySubagentWiring(); };
+    const applySubagentConfig = (): void => { if (wires("post-edit")) { applySubagentWiring(); applyHandoffWiring(); } };
 
     // Completion gate: re-assert the turn-end hook wiring to match the toggle (default
     // on). Same side-effect shape as the guardrails hook; skipped on a dry run.
@@ -1658,6 +1659,8 @@ export function syncDeployed(agentNames?: string[]): string[] {
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
         // The subagent budget, same reasoning: hook wiring plus autoCompactWindow that an install from
         // before it existed only gains here. Said once, since a refused launch is new behavior.
+        // Handoff delivery and the relay mod, same reasoning: settings wiring an existing install gains here.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) applyHandoffWiring();
         if (agent.name === "claude" && hasDeployment(agent, "global") && applySubagentWiring()) {
             const { subagentLimit } = conf.readConfig().config;
             if (subagentLimit >= 0) notices.push(`Subagent limit is on: a session runs at most ${subagentLimit} subagent(s) at once. Change with 'enigma config subagent-limit', and where conversations compact with 'enigma config compact-window'.`);
@@ -1814,6 +1817,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorTrimWiring(toolName, dir);
     mirrorCiWatchWiring(toolName, dir);
     mirrorSubagentWiring(toolName, dir);
+    mirrorHandoffWiring(toolName, dir);
     mirrorVerifyWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
     const total = changed + (mcpChanged ? 1 : 0);

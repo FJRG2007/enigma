@@ -114,6 +114,13 @@ export interface EnigmaConfig {
      * conversation and subagents alike (subagent-deploy.ts). 0 leaves Claude Code's own value.
      */
     compactWindow: number;
+    /**
+     * Hand work across a cleared context: deliver a saved handoff to the next session on every host
+     * with a session-start event, and (with relayAt) relay a long Claude Code session on its own.
+     */
+    relay: boolean;
+    /** Context size, in tokens, at which Claude Code relays a session (handoff, /clear, continue). 0 = never on its own. */
+    relayAt: number;
     outputStyle: OutputStyle;
     /** Anti-overengineering intensity for code the agent writes; deployed as a memory section. */
     minimalCode: MinimalCode;
@@ -437,7 +444,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     gateTrivialLines: 20,
-    subagentLimit: 4, compactWindow: 400_000,
+    subagentLimit: 4, compactWindow: 400_000, relay: true, relayAt: 300_000,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", gateTidyBranches: true, ciWatch: true,
 };

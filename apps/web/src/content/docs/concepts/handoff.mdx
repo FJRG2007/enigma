@@ -1,0 +1,41 @@
+---
+title: Handoffs and relay
+description: Clear an agent's context without losing the work - a one-page handoff the next session picks up on its own, and a relay that clears and continues for you.
+group: Concepts
+order: 35
+---
+import Cmd from "../../../components/Cmd.astro";
+
+Every model call re-reads the whole conversation, so a long session pays for its history on every step. Clearing it is the cheapest way back down, but it forgets the task. A handoff is the bridge: the agent writes one page (goal, what is done, the next step, decisions, how to verify, the files that matter), the context is cleared, and the next session starts from that page instead of from the transcript.
+
+## By hand: `/handoff`, then clear
+
+Run `/handoff` in Claude Code, Codex or OpenCode. The agent saves the page with `enigma handoff save`. Then clear: `/clear` in Claude Code and Codex, `/new` in Kimi Code and OpenCode. The next session in that project receives the handoff once, at start, and carries on from its next step without being asked.
+
+A handoff is kept per project, outside the repository, and delivered once. It is not delivered when it says `STATUS: done` or is more than a day old.
+
+| Agent | How the next session receives it |
+| --- | --- |
+| Claude Code | Session-start hook (after `/clear` or in a new session) |
+| Codex | Session-start hook in `~/.codex/hooks.json` |
+| Kimi Code | Session-start hook in `config.toml` (new sessions) |
+| OpenCode | Plugin that posts it into the new session |
+
+## On its own: relay in Claude Code
+
+When a Claude Code turn ends past `relay-at` tokens (300k by default), enigma asks the agent for a handoff, then clears the context and continues from it on its own. Nothing is cleared until a handoff is saved, and a handoff marked `STATUS: done` stops the relay instead. It runs as a Claude Code plugin enigma installs; `enigma config relay-at off` keeps only the manual way.
+
+Codex, Kimi Code and OpenCode do not let a hook or plugin clear their own session, so for them the automatic version is `enigma relay`.
+
+## Unattended: `enigma relay`
+
+<Cmd name="enigma relay [--agent claude|codex|opencode|kimi] [--max N] <task>" ex={["enigma relay \"migrate the remaining routes to the new API\"", "enigma relay --agent codex --max 5 \"fix every failing test\""]}>
+Runs the task as a chain of fresh headless sessions. Each one works, saves a handoff and stops; the next starts with the task and that handoff and a clean context. The chain ends when a handoff says `STATUS: done`, when a step saves none, or at `--max` steps (10 by default).
+</Cmd>
+
+## Settings
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `relay` | on | Delivers handoffs to the next session on every agent above, and allows the Claude Code relay. |
+| `relay-at` | 300k | Context size at which Claude Code relays a session on its own; `off` for manual only. |

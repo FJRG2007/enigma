@@ -1,0 +1,1 @@
+{ "name": "enigma-relay", "version": "0.1.0", "description": "Hands a long Claude Code session to a fresh context: handoff, /clear, continue.", "author": { "name": "enigma" } }
