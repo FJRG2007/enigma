@@ -7,7 +7,7 @@ argument-hint: [what the next session should focus on]
 
 Write the handoff for this project so the context can be cleared. Extra direction from the user: **$ARGUMENTS**
 
-Every model call re-reads the whole conversation, so a long one costs more on every step. A handoff carries the work across a `/clear` (or `/new`) at a fraction of the size: the next session in this project receives it once, at start, and continues from it without being asked.
+Every model call re-reads the whole conversation, so a long one costs more on every step. A handoff carries the work across a `/clear` (or `/new`) at a fraction of the size: the next session in this project receives it once, at start, and continues from it without being asked - unless that session opens on a different request, in which case it does that instead and just mentions the handoff is kept.
 
 ## Write it
 
