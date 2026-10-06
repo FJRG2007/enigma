@@ -92,9 +92,12 @@ export function applyClaudeSubagentWiring(settingsPath: string): boolean {
     return changed;
 }
 
-/** Re-asserts the wiring for the default account. Called on install and when a setting changes. */
-export function applySubagentWiring(): void {
-    applyClaudeSubagentWiring(claudeGlobalSettings());
+/**
+ * Re-asserts the wiring for the default account. Called on install, on every sync (so `enigma
+ * update` reaches an existing install) and when a setting changes. Returns true when it changed.
+ */
+export function applySubagentWiring(): boolean {
+    return applyClaudeSubagentWiring(claudeGlobalSettings());
 }
 
 /** Mirrors the wiring into a managed account's config dir. */

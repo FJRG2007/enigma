@@ -1656,6 +1656,12 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // before the guard existed only gains it here. Always on - its attribution check reads
         // the setting at run time, its home-path check applies either way.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
+        // The subagent budget, same reasoning: hook wiring plus autoCompactWindow that an install from
+        // before it existed only gains here. Said once, since a refused launch is new behavior.
+        if (agent.name === "claude" && hasDeployment(agent, "global") && applySubagentWiring()) {
+            const { subagentLimit } = conf.readConfig().config;
+            if (subagentLimit >= 0) notices.push(`Subagent limit is on: a session runs at most ${subagentLimit} subagent(s) at once. Change with 'enigma config subagent-limit', and where conversations compact with 'enigma config compact-window'.`);
+        }
         // The destructive-command guard rides with the bypass, and like the rest of this block it
         // is settings.json wiring an existing install only receives here. Silent: nothing the
         // agent is allowed to do changes except wiping a machine or force-pushing main.
