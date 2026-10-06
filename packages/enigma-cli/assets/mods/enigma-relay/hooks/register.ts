@@ -3,7 +3,9 @@
 // When a turn ends with the context past RELAY_AT tokens, ask the agent for a handoff
 // (`enigma handoff save`); when the next turn ends with a fresh one saved for this project, run
 // /clear and continue the work from it in the cleared session. Nothing is cleared without a saved
-// handoff, and a handoff marked "STATUS: done" ends the relay instead of continuing it.
+// handoff, and a handoff marked "STATUS: done" ends the relay instead of continuing it. When a
+// relay keeps the context (nothing saved, or the work is done), it is not asked again until the
+// context has grown by another half of RELAY_AT.
 import type { EngineInterface, Register } from "claude-code";
 
 const RELAY_AT = 300000;
@@ -35,6 +37,7 @@ async function latest($: EngineInterface): Promise<Latest | null> {
 export const register: Register = (on) => {
     let askedAt = 0;
     let relays = 0;
+    let nextAt = RELAY_AT;
 
     on("turn.complete", async ($, e, next) => {
         const result = await next(e);
@@ -46,15 +49,19 @@ export const register: Register = (on) => {
             askedAt = 0;
             const saved = await latest($);
             const cwd = await $.session.cwd();
+            const kept = async (): Promise<void> => { nextAt = ((await $.session.usage()).context.tokens ?? 0) + Math.round(RELAY_AT / 2); };
             if (!saved || saved.savedAt < asked || !under(cwd, saved.root)) {
+                await kept();
                 $.ui.toast("enigma relay: no handoff was saved, so the context was kept.");
                 return result;
             }
             if (saved.done) {
+                await kept();
                 $.ui.toast("enigma relay: the work is finished; the context was kept for questions about it.");
                 return result;
             }
             relays++;
+            nextAt = RELAY_AT;
             void (async () => {
                 await $.command.run({ command: "clear" });
                 // The session-start hook delivers the handoff after /clear and marks it consumed; when it
@@ -69,7 +76,9 @@ export const register: Register = (on) => {
         }
 
         const { context } = await $.session.usage();
-        if ((context.tokens ?? 0) < RELAY_AT) return result;
+        // Back under the threshold (a manual /clear, a compaction): the next crossing asks again.
+        if ((context.tokens ?? 0) < RELAY_AT) nextAt = RELAY_AT;
+        if ((context.tokens ?? 0) < nextAt) return result;
         askedAt = Date.now();
         void $.prompt.submit({ text: ASK.replace("%TOKENS%", String(Math.round((context.tokens ?? 0) / 1000) * 1000)) });
         return result;

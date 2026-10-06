@@ -18,6 +18,7 @@ const { extractDocFile } = await import("../src/codegraph-extract-docs");
 const { clusterFiles } = await import("../src/codegraph-cluster");
 const { codeGraphReport, formatReport } = await import("../src/codegraph-report");
 const { parityReport } = await import("../src/verify-parity");
+const { scanFiles } = await import("../src/codegraph-extract");
 
 const PROJ = mkdtempSync(join(tmpdir(), "enigma-cg-docs-proj-"));
 const write = (rel: string, text: string): void => {
@@ -120,3 +121,16 @@ test("a parity check counts code only", () => {
         rmSync(target, { recursive: true, force: true });
     }
 });
+
+test("without git, a docs-heavy tree does not push source out of the walk", () => {
+    const tree = mkdtempSync(join(tmpdir(), "enigma-cg-docs-walk-"));
+    try {
+        for (let i = 0; i < 8100; i++) writeFileSync(join(tree, `note-${i}.md`), "# Note\n");
+        mkdirSync(join(tree, "src"));
+        writeFileSync(join(tree, "src", "main.ts"), "export function main(): void {}\n");
+        const { files } = scanFiles(tree);
+        expect(files.some((f) => f.path === "src/main.ts")).toBe(true);
+    } finally {
+        rmSync(tree, { recursive: true, force: true });
+    }
+}, 60_000);

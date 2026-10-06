@@ -13,7 +13,7 @@
  * prompt (quotes, `%`, `&`) on a cmd.exe line is an injection waiting to happen.
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import * as handoff from "./handoff";
 import { readConfig } from "./config";
 import { spawnSync } from "node:child_process";
@@ -68,15 +68,26 @@ export function parseRelayArgs(argv: string[], cwd = process.cwd()): RelayOption
     return { agent, max, task, cwd };
 }
 
-/** The argv that runs one headless step of `agent` on the prompt in `promptFile`. */
+/**
+ * The argv that runs one headless step of `agent` on the prompt in `promptFile`. Every step must be
+ * able to run `enigma handoff save`, which writes next to the prompt (`dirname(promptFile)`), outside
+ * the workspace: Claude without bypass is allowed that one command, and Codex's workspace-write
+ * sandbox gets that directory as an extra writable root.
+ */
 export function stepArgv(agent: RelayAgent, promptFile: string): string[] {
     const ask = `Read ${promptFile} and do what it says.`;
     switch (agent) {
         case "claude": {
             const bypass = readConfig().config.permissionBypass;
-            return ["claude", "-p", ask, "--permission-mode", bypass ? "bypassPermissions" : "acceptEdits"];
+            return bypass
+                ? ["claude", "-p", ask, "--permission-mode", "bypassPermissions"]
+                : ["claude", "-p", ask, "--permission-mode", "acceptEdits", "--allowedTools", "Bash(enigma handoff save:*)"];
         }
-        case "codex": return ["codex", "exec", "--sandbox", "workspace-write", ask];
+        case "codex": {
+            const store = dirname(promptFile).split("\\").join("/");
+            if (store.includes("'")) throw new Error(`the handoff folder ${store} cannot be named in a Codex config value`);
+            return ["codex", "exec", "--sandbox", "workspace-write", "-c", `sandbox_workspace_write.writable_roots=['${store}']`, ask];
+        }
         case "opencode": return ["opencode", "run", ask];
         // Kimi Code: `-p` runs one prompt non-interactively (it refuses `--auto` beside it).
         case "kimi": return ["kimi", "-p", ask];
@@ -90,12 +101,13 @@ function runStep(agent: RelayAgent, promptFile: string, cwd: string): number {
     const [cmd, ...args] = stepArgv(agent, promptFile);
     const bin = resolveBin(cmd!);
     if (!bin) throw new Error(`${cmd} is not on PATH`);
-    // `env` is passed on purpose: Bun does not hand a child the variables changed at run time unless told to.
     const shim = /\.(cmd|bat)$/i.test(bin);
     if (shim && !SAFE_PATH.test(promptFile)) throw new Error(`the prompt path ${promptFile} cannot be passed to a .cmd shim safely`);
+    // `env` is passed on purpose: Bun does not hand a child the variables changed at run time unless told to.
+    const env = { ...process.env, [handoff.RELAY_STEP_ENV]: "1" };
     const r = shim
-        ? spawnSync([bin, ...args].map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" "), { cwd, env: process.env, stdio: "inherit", shell: true, windowsHide: true })
-        : spawnSync(bin, args, { cwd, env: process.env, stdio: "inherit", windowsHide: true });
+        ? spawnSync([bin, ...args].map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" "), { cwd, env, stdio: "inherit", shell: true, windowsHide: true })
+        : spawnSync(bin, args, { cwd, env, stdio: "inherit", windowsHide: true });
     return r.status ?? 1;
 }
 

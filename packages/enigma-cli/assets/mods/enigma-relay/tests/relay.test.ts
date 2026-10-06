@@ -51,4 +51,15 @@ describe("enigma relay", () => {
         await $.turn.complete(turn);
         expect(seen.commands).toEqual([]);
     });
+
+    test("does not ask again at the same size after a turn that saved nothing", async ($, on) => {
+        const { seen, submitted } = engine(on, { tokens: 400_000, latest: () => null });
+        await $.turn.complete(turn);
+        await submitted;
+        await $.turn.complete(turn);
+        await $.turn.complete(turn);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(seen.prompts.length).toBe(1);
+        expect(seen.commands).toEqual([]);
+    });
 });

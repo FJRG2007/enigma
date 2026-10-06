@@ -470,25 +470,26 @@ function walk(root: string): { files: string[]; truncated: boolean; } {
     // never found a .git of its own), and taking that literally indexes a real codebase as an
     // empty graph reported as complete. Nothing to list is exactly when the walk has to run.
     if (tracked && tracked.length) return { files: tracked, truncated: tracked.length >= MAX_FILES };
-    const files: string[] = [];
+    // Code first, docs only into what the cap leaves - the same order as the git listing - so a
+    // docs-heavy tree never pushes source out: only code counts against the cap during the walk.
+    const code: string[] = [];
+    const docs: string[] = [];
     // Breadth-first, so when the budget does run out it has been spent on the shallow directories
     // a project keeps its source in, not on one deep tree it happened to descend into first.
     const queue = [root];
     let visited = 0;
-    for (let head = 0; head < queue.length && files.length < MAX_FILES && visited < MAX_ENTRIES; head++) {
+    for (let head = 0; head < queue.length && code.length < MAX_FILES && visited < MAX_ENTRIES; head++) {
         let entries: import("node:fs").Dirent[];
         try { entries = readdirSync(queue[head], { withFileTypes: true }); } catch { continue; }
         for (const e of entries) {
-            if (files.length >= MAX_FILES || ++visited >= MAX_ENTRIES) break;
+            if (code.length >= MAX_FILES || ++visited >= MAX_ENTRIES) break;
             if (e.isDirectory()) { if (!e.name.startsWith(".") && !IGNORE_DIRS.has(e.name)) queue.push(join(queue[head], e.name)); continue; }
-            if (!e.isFile()) continue;
-            if (LANG_BY_EXT[extname(e.name).toLowerCase()]) files.push(join(queue[head], e.name));
+            if (!e.isFile() || !LANG_BY_EXT[extname(e.name).toLowerCase()]) continue;
+            (isDocPath(e.name) ? docs : code).push(join(queue[head], e.name));
         }
     }
-    // Same order as the git listing: code first, so docs never displace source under the cap.
-    const code = files.filter((p) => !isDocPath(p));
-    const ordered = [...code, ...pickDocs(root, files.filter((p) => isDocPath(p)), MAX_FILES - code.length)];
-    return { files: ordered, truncated: files.length >= MAX_FILES || visited >= MAX_ENTRIES };
+    const ordered = [...code, ...pickDocs(root, docs, MAX_FILES - code.length)];
+    return { files: ordered, truncated: code.length >= MAX_FILES || visited >= MAX_ENTRIES };
 }
 
 /** Repo-relative, forward-slashed path - the one path form every stored id and query uses. */

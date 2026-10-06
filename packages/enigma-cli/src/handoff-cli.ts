@@ -44,6 +44,9 @@ function parsePayload(raw: string): StartPayload | null {
  * never a reason to break the session start.
  */
 export function runHandoffHook(host: string, raw: string, now = Date.now()): number {
+    // A step of `enigma relay` gets its task and handoff from the relay; an earlier handoff left
+    // pending in the project must neither steer that step nor be spent on it.
+    if (process.env[handoff.RELAY_STEP_ENV]) return 0;
     const payload = parsePayload(raw);
     if (!payload || !FRESH_SOURCES.has(payload.source)) return 0;
     const pending = handoff.pendingHandoff(payload.cwd, now);

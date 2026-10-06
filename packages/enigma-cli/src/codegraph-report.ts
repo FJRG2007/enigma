@@ -117,23 +117,34 @@ export function codeGraphReport(opts: ReportOptions = {}): GraphReport | null {
     const maxAreas = opts.maxAreas ?? DEFAULT_MAX_AREAS;
     const ranked = [...members.entries()].filter(([, paths]) => paths.length >= 2).sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
 
-    const keyOf = (paths: string[]): ReportSymbol[] => {
-        const inArea = new Set(paths);
-        return nodes
-            .filter((n) => n.kind !== "file" && inArea.has(n.path) && !rank.isTestPath(n.path))
+    const symbolsOf = new Map<number, typeof nodes>();
+    for (const n of nodes) {
+        if (n.kind === "file" || rank.isTestPath(n.path)) continue;
+        const area = areaOf.get(n.path);
+        if (area === undefined) continue;
+        const list = symbolsOf.get(area);
+        if (list) list.push(n); else symbolsOf.set(area, [n]);
+    }
+    const keys = new Map<number, ReportSymbol[]>();
+    const keyOf = (area: number): ReportSymbol[] => {
+        let key = keys.get(area);
+        if (key) return key;
+        key = (symbolsOf.get(area) ?? [])
             .map((n) => ({ name: n.name, kind: n.kind, path: n.path, line: n.line, inDegree: deg.get(n.id) ?? 0 }))
             .filter((sym) => sym.inDegree > 0)
             .sort((a, b) => b.inDegree - a.inDegree || a.name.localeCompare(b.name))
             .slice(0, KEY_SYMBOLS);
+        keys.set(area, key);
+        return key;
     };
-    const keys = new Map(ranked.map(([area, paths]) => [area, keyOf(paths)]));
     // Two areas under one directory get told apart by what they are built around.
     const base = new Map(ranked.map(([area, paths]) => [area, areaLabel(paths)]));
     const seenLabel = new Map<string, number>();
     for (const label of base.values()) seenLabel.set(label, (seenLabel.get(label) ?? 0) + 1);
-    const labels = new Map([...base.entries()].map(([area, label]) => {
-        const around = keys.get(area)?.[0]?.name;
-        return [area, (seenLabel.get(label) ?? 0) > 1 && around ? `${label} ~ ${around}` : label];
+    const labels = new Map([...base.entries()].map(([area, label]): [number, string] => {
+        if ((seenLabel.get(label) ?? 0) < 2) return [area, label];
+        const around = keyOf(area)[0]?.name;
+        return [area, around ? `${label} ~ ${around}` : label];
     }));
 
     // Each doc belongs to the area whose code it links or names most.
@@ -161,7 +172,7 @@ export function codeGraphReport(opts: ReportOptions = {}): GraphReport | null {
             label: labels.get(area)!,
             files: paths.length,
             languages: [...new Set(paths.map((p) => langByPath.get(p)).filter((l): l is string => !!l))].sort(),
-            keySymbols: keys.get(area) ?? [],
+            keySymbols: keyOf(area),
             docs: (docsOf.get(area) ?? []).sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b)).slice(0, AREA_DOCS),
             dependsOn: [...out.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, DEPENDS_ON).map(([t]) => labels.get(t)!),
         };

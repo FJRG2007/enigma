@@ -119,12 +119,22 @@ test("the relay chains fresh sessions through handoffs and stops on STATUS: done
     const counter = join(HOME, "steps.txt");
     const script = join(bin, "fake-agent.mjs");
     const enigmaEntry = join(import.meta.dir, "..", "src", "handoff.ts").split("\\").join("/");
+    const hookEntry = join(import.meta.dir, "..", "src", "handoff-cli.ts").split("\\").join("/");
     writeFileSync(script, `import { readFileSync, writeFileSync, existsSync } from "node:fs";
 const n = existsSync(${JSON.stringify(counter)}) ? Number(readFileSync(${JSON.stringify(counter)}, "utf8")) + 1 : 1;
 writeFileSync(${JSON.stringify(counter)}, String(n));
+if (process.env.ENIGMA_RELAY_STEP !== "1") throw new Error("not marked as a relay step");
+const { runHandoffHook } = await import(${JSON.stringify(hookEntry)});
+let said = "";
+process.stdout.write = (c) => { said += c; return true; };
+runHandoffHook("claude", JSON.stringify({ cwd: process.cwd(), source: "startup" }));
+if (said) throw new Error("a relay step was handed the old handoff");
 const { saveHandoff } = await import(${JSON.stringify(enigmaEntry)});
 saveHandoff(process.cwd(), n === 1 ? "# Task\\n\\n## Next\\n1. step two" : "# Task\\n\\nSTATUS: done");
 `);
+    // An unrelated handoff already waiting in the project: no step is handed it.
+    handoff.saveHandoff(PROJ, "# Old task\n\n## Next\n1. something else");
+    expect(handoff.pendingHandoff(PROJ)).not.toBeNull();
     if (process.platform === "win32") writeFileSync(join(bin, "claude.cmd"), `@bun "${script}"\r\n`);
     else { writeFileSync(join(bin, "claude"), `#!/bin/sh\nexec bun "${script}"\n`); chmodSync(join(bin, "claude"), 0o755); }
     const sep = process.platform === "win32" ? ";" : ":";
@@ -150,6 +160,12 @@ test("relay arguments are validated", () => {
     expect(relay.parseRelayArgs([])).toContain("name the task");
     expect(relay.parseRelayArgs(["--agent", "vim", "x"])).toContain("--agent takes one of");
     expect(relay.parseRelayArgs(["--max", "0", "x"])).toContain("--max takes");
-    expect(relay.stepArgv("codex", "/p.md")).toEqual(["codex", "exec", "--sandbox", "workspace-write", "Read /p.md and do what it says."]);
+    // The handoff store sits outside the workspace, so Codex's sandbox is told it may write there.
+    expect(relay.stepArgv("codex", "/store/p.md")).toEqual(["codex", "exec", "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.writable_roots=['/store']", "Read /store/p.md and do what it says."]);
+    expect(() => relay.stepArgv("codex", "/it's/p.md")).toThrow();
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ permissionBypass: false }));
+    try {
+        expect(relay.stepArgv("claude", "/p.md")).toEqual(["claude", "-p", "Read /p.md and do what it says.", "--permission-mode", "acceptEdits", "--allowedTools", "Bash(enigma handoff save:*)"]);
+    } finally { rmSync(join(HOME, ".enigma.json"), { force: true }); }
     expect(relay.stepArgv("kimi", "/p.md")).toEqual(["kimi", "-p", "Read /p.md and do what it says."]);
 });

@@ -31,6 +31,9 @@ export const MAX_AGE_MS = 24 * 60 * 60_000;
 /** The line a handoff carries when the work it describes is finished: nothing left to resume. */
 const DONE_RE = /^\s*status\s*:\s*done\b/im;
 
+/** Set on every `enigma relay` step: the session-start hook leaves that step's context to the relay. */
+export const RELAY_STEP_ENV = "ENIGMA_RELAY_STEP";
+
 export interface HandoffMeta { savedAt: number; root: string; consumedAt: number | null; done: boolean; }
 
 export interface Handoff extends HandoffMeta { text: string; }
