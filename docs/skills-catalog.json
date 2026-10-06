@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.58.0",
+  "cliVersion": "1.59.0",
   "count": 20,
   "skills": [
     {
@@ -104,7 +104,7 @@
       "version": "1.7.0",
       "description": "Git & contribution policy (senior engineering standards).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-02T14:54:11+02:00",
+      "updated": "2026-10-05T14:00:39+02:00",
       "sha": "3863620f77993eff848d52da383cabb658a14a370f4a977929e60af216eb6d8d"
     },
     {
@@ -152,7 +152,7 @@
       "version": "1.2.0",
       "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-16T17:11:49+02:00",
+      "updated": "2026-10-04T06:11:13+02:00",
       "sha": "5dd665ba23faf604db1a89421c5d9d9a03a489c5784d1da8b90f57b09f95d1ca"
     },
     {
