@@ -18,6 +18,7 @@
  */
 
 import { scanFiles } from "./codegraph";
+import { isCodeLang } from "./codegraph-extract";
 import type { CodeFile } from "./codegraph";
 
 /** Coverage of one source module (file) in the target codebase. */
@@ -86,8 +87,12 @@ function symbolNames(files: CodeFile[]): Set<string> {
  * source module. Directories are scanned read-only; neither project is indexed or stored.
  */
 export function parityReport(sourceDir: string, targetDir: string): ParityReport {
-    const source = scanFiles(sourceDir);
-    const target = scanFiles(targetDir);
+    // Code only: a port carries over modules, not the source repo's notes, schemas or CI files,
+    // and counting their headings and keys as symbols would mark a complete port as missing them.
+    const source = { ...scanFiles(sourceDir) };
+    source.files = source.files.filter((f) => isCodeLang(f.lang));
+    const target = { ...scanFiles(targetDir) };
+    target.files = target.files.filter((f) => isCodeLang(f.lang));
     const targetNames = symbolNames(target.files);
 
     const modules: ModuleParity[] = [];

@@ -732,6 +732,8 @@ Retrieval (refreshes the graph first, so answers include uncommitted edits):
   callees <symbol>      what it depends on
   skeleton <file>       every signature, no bodies
   map                   directory clusters, hubs and hotspots
+  report                one page a new session reads: functional areas, their key
+                        symbols and docs, and the project's notes
   grep "<regex>"        every hit, grouped by enclosing symbol   -i  --fixed
   graph [focus]         a drawable slice: nodes and edges around a symbol, file or
                         the whole repo    --scope files|symbols  --depth N  --dot
@@ -1649,12 +1651,12 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         return 0;
     }
     if (RETRIEVAL_SUBCOMMANDS.has(sub)) return runCodeGraphQuery(sub, rest);
-    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | callees <symbol> | skeleton <file> | map | grep <regex> | graph [focus] | check>`);
+    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | callees <symbol> | skeleton <file> | map | report | grep <regex> | graph [focus] | check>`);
     return 1;
 }
 
 /** The subcommands that read the graph to answer a question, rather than manage it. */
-const RETRIEVAL_SUBCOMMANDS = new Set(["ask", "callers", "callees", "skeleton", "map", "grep", "graph", "check"]);
+const RETRIEVAL_SUBCOMMANDS = new Set(["ask", "callers", "callees", "skeleton", "map", "report", "grep", "graph", "check"]);
 
 /** Flags shared by the retrieval subcommands, pulled out of the positional arguments. */
 interface QueryFlags {
@@ -1784,6 +1786,12 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
             const r = q.codeGraphMap({ ...base(), maxDirs: f.maxDirs });
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatMap(r));
+        }
+        case "report": {
+            const rep = await import("./codegraph-report");
+            const r = rep.codeGraphReport({ project: project(), refresh: f.refresh });
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            return emit(r, rep.formatReport(r));
         }
         case "graph": {
             const sub = await import("./codegraph-subgraph");

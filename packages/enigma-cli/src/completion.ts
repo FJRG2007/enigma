@@ -29,7 +29,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     skills: ["list", "enable", "disable", "discard", "restore"],
     pack: ["list", "install", "remove", "update", "setup", "use", "run"],
     recall: ["status", "sync", "search", "list", "show", "timeline", "sessions", "context", "prune", "clear"],
-    codegraph: ["status", "index", "projects", "arch", "search", "ask", "callers", "callees", "skeleton", "map", "grep", "graph", "check"],
+    codegraph: ["status", "index", "projects", "arch", "search", "ask", "callers", "callees", "skeleton", "map", "report", "grep", "graph", "check"],
     guardrails: ["list", "check", "stats", "enable", "disable", "remove"],
     resources: ["status", "wsl", "docker", "free-port", "kill"],
     kill: ["wsl", "docker", "port", "pid"],

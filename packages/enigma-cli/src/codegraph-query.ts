@@ -365,6 +365,8 @@ export interface TraceHit {
     line: number;
     relation: cg.EdgeRelation;
     depth: number;
+    /** The edge was matched by name rather than read from an import or a same-file declaration. */
+    inferred?: boolean;
 }
 
 export interface TraceResult {
@@ -378,13 +380,13 @@ export interface TraceResult {
 }
 
 /** Adjacency for one walk direction: `in` = who points at the key, `out` = what the key points to. */
-function adjacency(edges: cg.CodeEdge[], direction: Direction): Map<string, { other: string; relation: cg.EdgeRelation; }[]> {
-    const adj = new Map<string, { other: string; relation: cg.EdgeRelation; }[]>();
-    for (const [source, target, rel] of edges) {
+function adjacency(edges: cg.CodeEdge[], direction: Direction): Map<string, { other: string; relation: cg.EdgeRelation; inferred: boolean; }[]> {
+    const adj = new Map<string, { other: string; relation: cg.EdgeRelation; inferred: boolean; }[]>();
+    for (const [source, target, rel, guess] of edges) {
         if (!cg.WALK_RELATIONS.has(rel)) continue;
         const key = direction === "in" ? target : source;
         const other = direction === "in" ? source : target;
-        const entry = { other, relation: rel };
+        const entry = { other, relation: rel, inferred: guess === 1 };
         const arr = adj.get(key);
         if (arr) arr.push(entry);
         else adj.set(key, [entry]);
@@ -429,13 +431,13 @@ export function codeGraphTrace(symbol: string, opts: TraceOptions = {}): TraceRe
     for (let d = 1; d <= depth && frontier.length; d++) {
         const next: string[] = [];
         for (const current of frontier) {
-            for (const { other, relation } of adj.get(current) ?? []) {
+            for (const { other, relation, inferred } of adj.get(current) ?? []) {
                 if (visited.has(other)) continue;
                 visited.add(other);
                 const node = loaded.byId.get(other);
                 if (!node) continue;
                 if (inPrefix !== undefined && !underPrefix(node.path, inPrefix)) continue;
-                hits.push({ id: other, name: node.name, kind: node.kind, path: node.path, line: node.line, relation, depth: d });
+                hits.push({ id: other, name: node.name, kind: node.kind, path: node.path, line: node.line, relation, depth: d, ...(inferred ? { inferred } : {}) });
                 next.push(other);
             }
         }

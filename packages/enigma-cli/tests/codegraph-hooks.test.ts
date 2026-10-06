@@ -57,7 +57,9 @@ function context(out: string): string {
 test("session start orients the agent and names the tools", () => {
     const out = context(hook("session-start", {}));
     expect(out).toContain("enigma_codegraph_ask");
-    expect(out).toContain("repo map");
+    // The one-page report, not the directory map: areas a new session would otherwise explore for.
+    expect(out).toContain("repo report");
+    expect(out).toContain("areas (files that depend on each other");
 });
 
 test("the prompt hook injects locators, and never the source", () => {

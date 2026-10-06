@@ -61,7 +61,8 @@ export function formatTrace(r: q.TraceResult): string {
     const lines = [head, ""];
     lines.push(`defined at: ${r.matched.map((m) => `${m.path}:${m.line}`).join(", ")}`, "");
     for (const h of r.hits) {
-        lines.push(`- ${h.name} - ${h.kind} - ${h.path}:${h.line} - ${h.relation}${r.depth > 1 ? ` - depth ${h.depth}` : ""}`);
+        // "inferred": matched by name, not read from an import - weigh it before acting on it.
+        lines.push(`- ${h.name} - ${h.kind} - ${h.path}:${h.line} - ${h.relation}${h.inferred ? " (inferred)" : ""}${r.depth > 1 ? ` - depth ${h.depth}` : ""}`);
     }
     lines.push("", `${r.hits.length} node${r.hits.length === 1 ? "" : "s"}.`);
     return `${lines.join("\n")}\n`;

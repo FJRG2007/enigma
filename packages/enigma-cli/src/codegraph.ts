@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 import { inDegree, tokenize } from "./codegraph-rank";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { DOC_LANGS, DOC_REFERENCE_LANGS, markdownCodeMentions } from "./codegraph-extract-docs";
 import { WALK_RELATIONS, type BodyIndex, type CodeEdge, type EdgeRelation, type GraphNode } from "./codegraph-types";
 import { relPath, scanFiles, statSourceFiles, type CodeFile, type CodeSymbol, type SymbolKind } from "./codegraph-extract";
 
@@ -55,7 +56,7 @@ function writeJson(file: string, value: unknown): void {
 // --- types ---------------------------------------------------------------------------
 
 /** Bumped when the stored shape changes; an older graph is re-indexed instead of misread. */
-export const GRAPH_VERSION = 4;
+export const GRAPH_VERSION = 5;
 
 export interface CodeGraph {
     version: number;
@@ -105,6 +106,15 @@ const LANG_INDEX: Record<string, string[]> = { python: ["__init__"], go: ["mod"]
 
 /** Names shorter than this collide across unrelated files far more often than they resolve. */
 const MIN_REF_NAME = 3;
+
+/**
+ * Shortest inline-code name a doc mention may bind on. Shorter names (`id`, `run`, `get`) are
+ * shared by too many unrelated definitions for a single match to mean the doc is about that one.
+ */
+const MIN_DOC_MENTION = 4;
+
+/** A resolved reference, and whether a naming heuristic (rather than an explicit statement) made it. */
+interface Bound { id: string; inferred: boolean; }
 
 /** Hard ceiling on wiring edges: a pathological tree degrades to a smaller graph, never a hang. */
 const MAX_EDGES = 400_000;
@@ -354,12 +364,12 @@ function buildEdges(
 
     const edges: CodeEdge[] = [];
     const seen = new Set<string>();
-    const push = (from: string, to: string, rel: EdgeRelation): void => {
+    const push = (from: string, to: string, rel: EdgeRelation, inferred = false): void => {
         if (edges.length >= MAX_EDGES || from === to) return;
         const key = `${from}|${to}|${rel}`;
         if (seen.has(key)) return;
         seen.add(key);
-        edges.push([from, to, rel]);
+        edges.push(inferred ? [from, to, rel, 1] : [from, to, rel]);
     };
 
     for (const f of files) {
@@ -390,7 +400,7 @@ function buildEdges(
      * helper as the codebase's biggest hub. It survives only as the fallback for languages whose
      * imports do not name their bindings, where the alternative is no cross-file edges at all.
      */
-    function binderFor(f: CodeFile): (name: string, memberOf?: string) => string | null {
+    function binderFor(f: CodeFile): (name: string, memberOf?: string) => Bound | null {
         const local = localDefs.get(f.path) ?? new Map<string, string | null>();
         const imported = importsOf.get(f.path);
         // Ruby code cannot call a TypeScript function. Nothing in the name-based resolution said
@@ -403,12 +413,16 @@ function buildEdges(
             const candidates = defsByName.get(name)?.filter((c) => imported?.has(c.path) && reachable(c.path));
             return candidates?.length === 1 ? candidates[0].id : null;
         };
+        const extracted = (id: string | null | undefined): Bound | null => (id ? { id, inferred: false } : null);
+        const inferred = (id: string | null | undefined): Bound | null => (id ? { id, inferred: true } : null);
         if (!f.bindings) {
+            // Nothing in these languages' imports names what they bind, so every cross-file binding
+            // here is a guess by name: inferred, whichever of the two fallbacks made it.
             return (name) => {
-                if (local.has(name)) return local.get(name) ?? null;
-                if (imported?.size) return unique(name);
+                if (local.has(name)) return extracted(local.get(name));
+                if (imported?.size) return inferred(unique(name));
                 const all = defsByName.get(name)?.filter((c) => reachable(c.path));
-                return all?.length === 1 ? all[0].id : null;
+                return all?.length === 1 ? inferred(all[0].id) : null;
             };
         }
         const bound = new Set(f.bindings.names);
@@ -422,10 +436,10 @@ function buildEdges(
             // property of some value, not a reference to a top-level definition.
             if (memberOf !== undefined) {
                 const path = namespaces.get(memberOf);
-                return path ? idByPathName.get(`${path}#${name}`) ?? null : null;
+                return path ? extracted(idByPathName.get(`${path}#${name}`)) : null;
             }
-            if (local.has(name)) return local.get(name) ?? null;
-            return bound.has(name) ? unique(name) : null;
+            if (local.has(name)) return extracted(local.get(name));
+            return bound.has(name) ? extracted(unique(name)) : null;
         };
     }
 
@@ -437,7 +451,7 @@ function buildEdges(
         const spans = spansByFile.get(f.path) ?? [];
         const declLines = new Set(f.symbols.map((s) => s.line));
         const lines = content.split("\n");
-        indexBodies(bodies, f.path, spans, lines);
+        indexBodies(bodies, f.path, spans, lines, DOC_LANGS.has(f.lang) ? MAX_DOC_BODY_TOKENS : MAX_BODY_TOKENS);
         const bind = binderFor(f);
         // Only the languages with named import bindings can tell `ns.thing` from `value.thing`;
         // for the rest the prefix scan is pure cost, so it is skipped entirely.
@@ -449,9 +463,22 @@ function buildEdges(
             if (!self) continue;
             for (const [rel, name] of inheritanceTargets(s.signature)) {
                 const target = bind(name);
-                if (target) push(self.id, target, rel);
+                if (target) push(self.id, target.id, rel, target.inferred);
             }
         }
+
+        // A doc's `inlineCode` naming exactly one code definition is a link from that section to it:
+        // the way a reader finds the note that explains a function. Inferred, since it is a name match.
+        if (f.lang === "markdown") {
+            for (const { name, line } of markdownCodeMentions(content)) {
+                if (name.length < MIN_DOC_MENTION) continue;
+                const code = defsByName.get(name)?.filter((c) => !DOC_LANGS.has(langByPath.get(c.path) ?? ""));
+                if (code?.length === 1) push(enclosingSymbol(spans, line) ?? f.path, code[0].id, "references", true);
+            }
+        }
+        // Prose and config are not wiring: a word in a paragraph or a YAML value that happens to
+        // match a definition is a coincidence. Only code and the schema languages run the pass.
+        if (DOC_LANGS.has(f.lang) && !DOC_REFERENCE_LANGS.has(f.lang)) continue;
 
         for (let i = 0; i < lines.length; i++) {
             const lineNo = i + 1;
@@ -465,9 +492,11 @@ function buildEdges(
                 if (name.length < MIN_REF_NAME || !defsByName.has(name)) continue;
                 const memberOf = strict ? /([A-Za-z_$][\w$]*)\s*\.\s*$/.exec(line.slice(0, m.index))?.[1] : undefined;
                 const target = bind(name, memberOf);
-                if (!target || target === from) continue;
+                if (!target || target.id === from) continue;
                 const after = line.slice(m.index + name.length);
-                push(from, target, /^\s*\(/.test(after) ? "calls" : "references");
+                // A schema never calls: `REFERENCES users(id)` names a table, the parenthesis is its column.
+                const calls = !DOC_LANGS.has(f.lang) && /^\s*\(/.test(after);
+                push(from, target.id, calls ? "calls" : "references", target.inferred);
             }
         }
     }
@@ -480,31 +509,39 @@ function buildEdges(
 const MAX_BODY_TOKENS = 80;
 
 /**
+ * The same for a doc section or config key. Prose spreads over many more distinct words than code,
+ * so 80 per node made the doc half of a docs-heavy repo's sidecar bigger than the code half, and
+ * scoring them was most of the extra query time (~1.0 s -> ~1.7 s per ask, measured). The words a
+ * section is about recur, so the most frequent few still find it.
+ */
+const MAX_DOC_BODY_TOKENS = 24;
+
+/**
  * Record the searchable vocabulary of each node in a file: a symbol's own definition text, and
  * for the file node the residual lines no symbol covers (imports, constants, top-level code).
  *
  * This is what makes a term that appears only in the CODE - never in a name, path or signature -
  * still find its node, without a query ever having to re-read the tree.
  */
-function indexBodies(out: BodyIndex, path: string, spans: { id: string; line: number; endLine: number; }[], lines: string[]): void {
+function indexBodies(out: BodyIndex, path: string, spans: { id: string; line: number; endLine: number; }[], lines: string[], limit: number): void {
     const covered = new Uint8Array(lines.length + 1);
     for (const s of spans) {
         const text = lines.slice(s.line - 1, s.endLine).join("\n");
         for (let l = s.line; l <= Math.min(s.endLine, lines.length); l++) covered[l] = 1;
-        const bag = topTokens(text);
+        const bag = topTokens(text, limit);
         if (bag.length) out.push([s.id, bag]);
     }
     const residual: string[] = [];
     for (let l = 1; l <= lines.length; l++) if (!covered[l]) residual.push(lines[l - 1]);
-    const fileBag = topTokens(residual.join("\n"));
+    const fileBag = topTokens(residual.join("\n"), limit);
     if (fileBag.length) out.push([path, fileBag]);
 }
 
-/** The `MAX_BODY_TOKENS` most frequent tokens of `text`, ties broken by token for determinism. */
-function topTokens(text: string): [string, number][] {
+/** The `limit` most frequent tokens of `text`, ties broken by token for determinism. */
+function topTokens(text: string, limit: number): [string, number][] {
     const m = new Map<string, number>();
     for (const t of tokenize(text)) m.set(t, (m.get(t) ?? 0) + 1);
-    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, MAX_BODY_TOKENS);
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit);
 }
 
 /**

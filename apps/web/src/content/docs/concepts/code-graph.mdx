@@ -14,6 +14,10 @@ This is **structural** memory of your code - complementary to [Recall](/enigma/d
 
 The engine is built into enigma - a zero-dependency TypeScript indexer. There is **no external binary, no `npx`, no third-party package**: extraction is deterministic (regex-per-language over the common languages - TS/JS, Python, Go, Rust, Java, Ruby, PHP, C#, Kotlin, C/C++). It is honest "structural-lite", not a compiler-grade AST, but enough to map a codebase with nothing to install and nothing to fetch.
 
+The graph also holds what sits around the code: Markdown and MDX notes (one node per heading down to level 3), SQL schemas (tables, views, functions), Prisma models, and YAML/TOML config (top-level keys, compose services, CI jobs). A doc that links a file, or names a function in `inline code`, is connected to it, so asking about a subsystem finds its note and changing a function shows the docs that describe it. Docs under `references/`, `examples/`, `fixtures/` or `vendor/` are left out: they are somebody else's.
+
+Every edge says how it was learned. One read from an import or a declaration in the same file is **extracted**; one matched by name (a language whose imports do not say what they bind, or a doc's inline-code mention) is marked **inferred**, and `callers` prints it that way so you can weigh it.
+
 Turning the setting on exposes enigma's code-graph tools to your agents through enigma's own MCP server. The graph is stored per project as JSON under `~/.enigma/codegraph`, so the CLI, the MCP tools and the dashboard all read the same store.
 
 ## What your agent can ask
@@ -24,6 +28,7 @@ Turning the setting on exposes enigma's code-graph tools to your agents through 
 | What breaks if I change this? | `enigma_codegraph_trace` | `codegraph callers <symbol> --depth 2` |
 | What is this file's API? | `enigma_codegraph_skeleton` | `codegraph skeleton <file>` |
 | What does this repo look like? | `enigma_codegraph_map` | `codegraph map` |
+| One page to start from | session start (below) | `codegraph report` |
 | Every occurrence, ranked | `enigma_codegraph_grep` | `codegraph grep "<regex>"` |
 | Draw what depends on what | dashboard **Code graph** tab | `codegraph graph [focus]` |
 
@@ -39,7 +44,7 @@ The tools above are the *pull* half: the agent calls them when it decides to. In
 
 | When | What arrives |
 | --- | --- |
-| Session start | The repo map, once, plus a short note naming the tools. Cached, so it is paid once per session. |
+| Session start | The repo report, once, plus a short note naming the tools: the codebase's functional areas (files grouped by how they depend on each other, not by folder), each with its key symbols and its docs, and the project's own notes. About 1k tokens, cached, so it is paid once per session - and it replaces the first calls a fresh session (or one after `/clear`) would spend exploring. |
 | Every prompt | Up to three locators for the nodes that task touches - `path:line` only, never inlined code. |
 | After an edit | What depends on the file just written, while you can still widen the change. |
 | End of a turn that changed code | A background re-index, so the next answer is current. |

@@ -185,11 +185,17 @@ async function sessionStart(dir: string): Promise<void> {
         "  - enigma_codegraph_grep: every occurrence, grouped by enclosing symbol - when you need them ALL, not the top matches.",
     ].join("\n");
 
-    const map = q.codeGraphMap({ project, refresh: false, maxDirs: 8 });
+    // The one-page report (functional areas, their key symbols and docs, the project's notes)
+    // rather than the directory map: it is what a session would otherwise spend its first calls
+    // discovering, and it costs about the same ~1k tokens. The map stays as the fallback.
+    const rep = await import("./codegraph-report");
+    const report = rep.codeGraphReport({ project, refresh: false });
+    const map = report ? null : q.codeGraphMap({ project, refresh: false, maxDirs: 8 });
+    const body = report ? rep.formatReport(report) : map ? fmt.formatMap(map) : "";
     const fresh = q.codeGraphCheck(project);
     const stale = fresh && fresh.stale > 0 ? `\n${fresh.stale} file(s) changed since the last index; the next query refreshes them.` : "";
-    writeStatuslineSnapshot(projectRoot(cg, project, dir), map?.totals.symbols ?? 0, fresh?.stale ?? 0);
-    emit("SessionStart", map ? `${directive}\n\n${fmt.formatMap(map).trimEnd()}${stale}` : directive);
+    writeStatuslineSnapshot(projectRoot(cg, project, dir), report?.totals.symbols ?? map?.totals.symbols ?? 0, fresh?.stale ?? 0);
+    emit("SessionStart", body ? `${directive}\n\n${body.trimEnd()}${stale}` : directive);
 }
 
 /**

@@ -17,8 +17,10 @@
 import { execFileSync } from "node:child_process";
 import { extname, join, relative, resolve } from "node:path";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { DOC_LANG_BY_EXT, DOC_LANGS, extractDocFile } from "./codegraph-extract-docs";
 
-export type SymbolKind = "function" | "class" | "interface" | "type" | "struct" | "enum" | "trait" | "module" | "method";
+/** Code kinds, then the doc/schema/config ones: a markdown `section`, a SQL or Prisma `table`, a YAML/TOML `key`. */
+export type SymbolKind = "function" | "class" | "interface" | "type" | "struct" | "enum" | "trait" | "module" | "method" | "section" | "table" | "key";
 
 export interface CodeSymbol {
     name: string;
@@ -63,14 +65,55 @@ const IGNORE_DIRS = new Set([
     ".turbo", ".parcel-cache", ".svelte-kit", "Pods", ".gradle", ".dart_tool",
 ]);
 
-/** Source extension -> language key. */
-export const LANG_BY_EXT: Record<string, string> = {
+/** Code extension -> language key. */
+const CODE_LANG_BY_EXT: Record<string, string> = {
     ".ts": "ts", ".tsx": "ts", ".mts": "ts", ".cts": "ts",
     ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js",
     ".py": "python", ".go": "go", ".rs": "rust", ".java": "java",
     ".rb": "ruby", ".php": "php", ".cs": "csharp", ".kt": "kotlin", ".kts": "kotlin",
     ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp",
 };
+
+/** Every extension the graph reads: code, then docs, schemas and config (codegraph-extract-docs.ts). */
+export const LANG_BY_EXT: Record<string, string> = { ...CODE_LANG_BY_EXT, ...DOC_LANG_BY_EXT };
+
+/** True for a programming language, false for docs, schemas and config - which a parity check must not count. */
+export function isCodeLang(lang: string): boolean {
+    return !DOC_LANGS.has(lang);
+}
+
+/** True when the path is a doc, schema or config file rather than source code. */
+function isDocPath(path: string): boolean {
+    return !!DOC_LANG_BY_EXT[extname(path).toLowerCase()];
+}
+
+/**
+ * Directories whose docs are somebody else's: vendored references, samples and fixtures. Their
+ * code is still indexed as before; their prose is not, because it is not this project's
+ * documentation. Measured on this monorepo: 1,579 of 2,466 markdown files sat under such a
+ * directory, and indexing them doubled the graph and took every query from ~0.9 s to ~2.2 s.
+ */
+const FOREIGN_DOC_DIRS = /(?:^|\/)(?:references?|examples?|samples?|fixtures?|third[_-]party|vendor(?:ed)?)\//i;
+
+/**
+ * True for a repo-relative path inside somebody else's material (see FOREIGN_DOC_DIRS). The repo
+ * report leaves these out of its areas and key symbols: a vendored SDK's hubs are not this project's.
+ */
+export function isForeignPath(rel: string): boolean {
+    return FOREIGN_DOC_DIRS.test(rel);
+}
+
+/** Most doc/config files indexed, shallowest first: top-level READMEs and docs/ before deep trees. */
+const MAX_DOC_FILES = 1500;
+
+/** The doc files worth indexing, shallowest first and capped (see FOREIGN_DOC_DIRS, MAX_DOC_FILES). */
+function pickDocs(root: string, docs: string[], room: number): string[] {
+    const depth = (p: string): number => relPath(root, p).split("/").length;
+    return docs
+        .filter((p) => !FOREIGN_DOC_DIRS.test(relPath(root, p)))
+        .sort((a, b) => depth(a) - depth(b) || a.localeCompare(b))
+        .slice(0, Math.max(0, Math.min(MAX_DOC_FILES, room)));
+}
 
 const MAX_FILES = 8000;
 const MAX_FILE_BYTES = 512 * 1024;
@@ -339,6 +382,7 @@ function signatureOf(line: string): string {
 
 /** Extract the symbols and import specifiers declared in one file's content. */
 export function extractFile(lang: string, content: string): { symbols: CodeSymbol[]; imports: string[]; } {
+    if (DOC_LANGS.has(lang)) return extractDocFile(lang, content);
     const lineAt = lineResolver(content);
     const lines = content.split("\n");
     const braced = BRACE_LANGS.has(lang);
@@ -396,17 +440,20 @@ function gitSourceFiles(root: string): string[] | null {
     // reports complete coverage of a tree it never saw. `--recurse-submodules` lists them, but git
     // only accepts it in --cached mode, so it is a second pass and only when there are any.
     const nested = existsSync(join(root, ".gitmodules")) ? gitList(root, ["--recurse-submodules"]) : null;
-    const files: string[] = [];
+    // Code first, docs and config only into what the cap leaves: a repo with thousands of notes must
+    // not push its own source out of the graph.
+    const code: string[] = [];
+    const docs: string[] = [];
     const seen = new Set<string>();
     for (const rel of [...out.split("\0"), ...(nested ?? "").split("\0")]) {
-        if (files.length >= MAX_FILES) break;
+        if (code.length >= MAX_FILES) break;
         if (!rel || seen.has(rel)) continue;
         seen.add(rel);
         if (!LANG_BY_EXT[extname(rel).toLowerCase()]) continue;
         if (rel.split("/").some((seg) => seg.startsWith(".") || IGNORE_DIRS.has(seg))) continue;
-        files.push(join(root, rel));
+        (isDocPath(rel) ? docs : code).push(join(root, rel));
     }
-    return files;
+    return [...code, ...pickDocs(root, docs, MAX_FILES - code.length)];
 }
 
 /**
@@ -438,7 +485,10 @@ function walk(root: string): { files: string[]; truncated: boolean; } {
             if (LANG_BY_EXT[extname(e.name).toLowerCase()]) files.push(join(queue[head], e.name));
         }
     }
-    return { files, truncated: files.length >= MAX_FILES || visited >= MAX_ENTRIES };
+    // Same order as the git listing: code first, so docs never displace source under the cap.
+    const code = files.filter((p) => !isDocPath(p));
+    const ordered = [...code, ...pickDocs(root, files.filter((p) => isDocPath(p)), MAX_FILES - code.length)];
+    return { files: ordered, truncated: files.length >= MAX_FILES || visited >= MAX_ENTRIES };
 }
 
 /** Repo-relative, forward-slashed path - the one path form every stored id and query uses. */

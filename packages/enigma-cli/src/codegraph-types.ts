@@ -16,8 +16,20 @@ import type { SymbolKind } from "./codegraph-extract";
  */
 export type EdgeRelation = "contains" | "imports" | "calls" | "references" | "extends" | "implements";
 
-/** `[source, target, relation]` - positional to keep the persisted graph small. */
-export type CodeEdge = [string, string, EdgeRelation];
+/**
+ * `[source, target, relation, inferred?]` - positional to keep the persisted graph small. The
+ * fourth slot is `1` when the edge was INFERRED by a naming heuristic (a globally unique name in a
+ * language whose imports do not say what they bind, or a doc's inline-code mention) rather than
+ * read from an explicit statement - an import, a declaration in the same file, or an import that
+ * binds the name. Absent means extracted. Graphify tags its edges the same way, so a reader can
+ * weigh "this calls that" by how it was learned.
+ */
+export type CodeEdge = [string, string, EdgeRelation, 1?];
+
+/** True when the edge came from a naming heuristic rather than an explicit statement. */
+export function isInferred(edge: CodeEdge): boolean {
+    return edge[3] === 1;
+}
 
 /** Edges that carry dependency meaning, shared by every ranking and traversal surface. */
 export const WALK_RELATIONS: ReadonlySet<EdgeRelation> = new Set<EdgeRelation>(["imports", "calls", "references", "extends", "implements"]);
