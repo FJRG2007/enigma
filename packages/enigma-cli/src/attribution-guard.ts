@@ -166,10 +166,10 @@ export function runAttributionGuardHook(raw: string): number {
  * separator, with message-FILE arguments removed (their content is read separately).
  */
 export function messageText(command: string): string {
-    const heredoc = /<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*?)\n\s*\1\s*(?:\n|$)/.exec(command);
     const head = COMMIT_OR_PR_RE.exec(command);
     // No commit or PR in the command: nothing it runs is published, a heredoc included.
     if (!head) return "";
+    const heredoc = /<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*?)\n\s*\1\s*(?:\n|$)/.exec(command.slice(head.index));
     let tail = command.slice(head.index + head[0].length);
     // Cut at the heredoc marker (its body is added below), then at the next chained command.
     tail = tail.split(/<<-?\s*['"]?\w+/)[0] ?? "";
