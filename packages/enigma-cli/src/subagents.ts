@@ -29,7 +29,7 @@
 import { join } from "node:path";
 import { enigmaHome } from "./util";
 import { readConfigAt } from "./config";
-import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 /** A launch that never started (the call was refused later, or the session died) frees its slot. */
 const PENDING_TTL_MS = 2 * 60_000;
@@ -139,8 +139,9 @@ export function admitLaunch(payload: SubagentPayload, limit: number, now = Date.
     const live = liveMarkers(dir, now);
     const running = live.filter((m) => m.name.startsWith("run-")).length;
     const queue = live.filter((m) => m.name.startsWith("pend-")).map((m) => m.name);
-    const taken = running + queue.indexOf(own);
-    if (taken < limit) return "";
+    const position = queue.indexOf(own);
+    const taken = running + (position < 0 ? queue.length : position);
+    if (position >= 0 && taken < limit) return "";
     rmSync(join(dir, own), { force: true });
     return `enigma: ${taken} subagent(s) are already running or starting in this session and the limit is ${limit} (\`enigma config subagent-limit\`). Wait for one to finish, or do this part yourself in this conversation.`;
 }
@@ -157,12 +158,17 @@ export function recordStart(payload: SubagentPayload, now = Date.now()): void {
     } catch { /* the count is best effort; the launch already happened */ }
 }
 
-/** SubagentStop: free the slot. Removes the session directory once nothing is left in it. */
+/**
+ * SubagentStop: free the slot. Removes the session directory once it is empty, non-recursively, so
+ * a marker a concurrent launch just wrote makes the removal fail instead of being deleted with it.
+ */
 export function recordStop(payload: SubagentPayload, now = Date.now()): void {
     if (!payload.agentId) return;
     const dir = sessionDir(payload.sessionId);
-    rmSync(join(dir, `run-${payload.agentId}`), { force: true });
-    if (!liveMarkers(dir, now).length) rmSync(dir, { recursive: true, force: true });
+    try {
+        rmSync(join(dir, `run-${payload.agentId}`), { force: true });
+        if (!liveMarkers(dir, now).length) rmdirSync(dir);
+    } catch { /* the count is best effort; a busy or non-empty directory stays */ }
 }
 
 /**

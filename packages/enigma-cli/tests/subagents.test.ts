@@ -86,6 +86,16 @@ test("the last stop removes the session directory", () => {
     expect(existsSync(dir(s))).toBe(false);
 });
 
+test("a stop never deletes a marker a concurrent launch wrote", () => {
+    const s = session();
+    admitLaunch(pre(s, "t1"), 3);
+    recordStart(life(s, "a1"));
+    // A file the listing does not count stands in for a marker written after the stop listed the dir.
+    writeFileSync(join(dir(s), "late"), "");
+    expect(() => recordStop(life(s, "a1"))).not.toThrow();
+    expect(existsSync(join(dir(s), "late"))).toBe(true);
+});
+
 test("the hook entry refuses with exit 2, briefs a started subagent, and ignores other tools", () => {
     writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ subagentLimit: 1 }));
     const s = session();
@@ -131,6 +141,14 @@ test("wiring installs the three hooks and the compact window, keeping the user's
     // Idempotent, and "auto" leaves a value the user set alone.
     expect(applyClaudeSubagentWiring(settings)).toBe(false);
     expect(applyCompactWindow(settings, 0)).toBe(false);
+    // A window the user set is kept on install and sync, and replaced only by an explicit setting.
+    writeFileSync(settings, JSON.stringify({ autoCompactWindow: 200_000 }));
+    expect(applyClaudeSubagentWiring(settings)).toBe(true);
+    expect(JSON.parse(readFileSync(settings, "utf8")).autoCompactWindow).toBe(200_000);
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ compactWindow: 300_000 }));
+    applyClaudeSubagentWiring(settings);
+    expect(JSON.parse(readFileSync(settings, "utf8")).autoCompactWindow).toBe(300_000);
+    rmSync(join(HOME, ".enigma.json"), { force: true });
     // An unreadable settings file is never replaced.
     writeFileSync(settings, "{ broken");
     expect(applyCompactWindow(settings, 300_000)).toBe(false);

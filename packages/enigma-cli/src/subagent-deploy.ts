@@ -58,16 +58,26 @@ export function parseCompactWindow(value: string): number {
 
 /**
  * Sets `autoCompactWindow` in one Claude settings.json. 0 leaves the file alone: "auto" means the
- * user's own value (or Claude Code's default) stands. Refuses an unparseable file rather than
- * replacing it. Returns true when the file changed.
+ * user's own value (or Claude Code's default) stands. A window already in the file is kept unless
+ * `override` is set (the user chose `compact-window` explicitly), so enigma's default never replaces
+ * one the user picked. Refuses an unparseable file rather than replacing it. Returns true when the
+ * file changed.
  */
-export function applyCompactWindow(settingsPath: string, tokens: number): boolean {
+export function applyCompactWindow(settingsPath: string, tokens: number, override = false): boolean {
     if (tokens <= 0) return false;
     const current = readJson<Record<string, unknown>>(settingsPath);
     if (current === null && existsSync(settingsPath)) return false;
     if (current?.autoCompactWindow === tokens) return false;
+    if (!override && current?.autoCompactWindow !== undefined) return false;
     writeFileSync(settingsPath, `${JSON.stringify({ ...current, autoCompactWindow: tokens }, null, 2)}\n`);
     return true;
+}
+
+/** The configured compact window, and whether a config file sets it rather than the default. */
+function configuredCompactWindow(): { tokens: number; explicit: boolean; } {
+    const { config, sources } = readConfig();
+    const explicit = sources.some((path) => readJson<Record<string, unknown>>(path)?.compactWindow !== undefined);
+    return { tokens: config.compactWindow, explicit };
 }
 
 /** Installs the three subagent hooks and the compact window into one Claude settings.json. */
@@ -77,7 +87,8 @@ export function applyClaudeSubagentWiring(settingsPath: string): boolean {
         const group = { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `enigma ${MARKER} ${phase}`, timeout: HOOK_TIMEOUT_S }] };
         if (applyClaudeHook(settingsPath, event, `${MARKER} ${phase}`, group, true) === "changed") changed = true;
     }
-    if (applyCompactWindow(settingsPath, readConfig().config.compactWindow)) changed = true;
+    const { tokens, explicit } = configuredCompactWindow();
+    if (applyCompactWindow(settingsPath, tokens, explicit)) changed = true;
     return changed;
 }
 
