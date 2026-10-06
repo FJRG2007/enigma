@@ -25,8 +25,10 @@ if ! grep -q "E409" "$log"; then
   exit 1
 fi
 
-# The registry can lag the publish by a few seconds; give it up to a minute.
-for _ in 1 2 3 4 5 6; do
+# The registry can lag a publish by minutes, not seconds: 1.59.0's dashboard was staged by
+# publish-dashboard.yml, answered E409 here, and only became visible about two minutes later, after
+# a one-minute wait had already failed the job. Give it up to five minutes.
+for _ in $(seq 1 30); do
   if npm view "$name@$version" version >/dev/null 2>&1; then
     echo "$name@$version is published (npm answered E409 to a repeated PUT); treating as success."
     exit 0
