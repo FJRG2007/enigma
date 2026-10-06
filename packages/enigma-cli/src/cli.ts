@@ -1745,7 +1745,7 @@ function parseQueryFlags(args: string[]): QueryFlags {
 }
 
 /**
- * `enigma codegraph <ask|callers|callees|skeleton|map|grep|graph|check>`: the retrieval half of the code
+ * `enigma codegraph <ask|callers|callees|skeleton|map|report|grep|graph|check>`: the retrieval half of the code
  * graph. Every one of them refreshes the graph first when the tree moved, so the answer describes
  * the code as it is now, and indexes the current directory when nothing covers it yet.
  */
