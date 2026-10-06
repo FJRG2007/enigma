@@ -30,6 +30,7 @@ import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
+import { applySubagentWiring, mirrorSubagentWiring } from "./subagent-deploy";
 import { applyCodeGraphWiring, mirrorCodeGraphWiring } from "./codegraph-deploy";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
@@ -1295,6 +1296,9 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // match the toggle (default on). Same side-effect shape as the guardrails hook.
     const applyCiWatchConfig = (): void => { if (wires("post-edit")) applyCiWatchWiring(); };
 
+    // Subagent budget and compact window: the launch hooks and Claude Code's autoCompactWindow.
+    const applySubagentConfig = (): void => { if (wires("post-edit")) applySubagentWiring(); };
+
     // Completion gate: re-assert the turn-end hook wiring to match the toggle (default
     // on). Same side-effect shape as the guardrails hook; skipped on a dry run.
     const applyVerifyConfig = (): void => { if (wires("stop")) applyVerifyWiring(); };
@@ -1440,6 +1444,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyCodeGraphConfig();
         applyTrimConfig();
         applyCiWatchConfig();
+        applySubagentConfig();
         applyVerifyConfig();
         applyMcpConfig();
         await maybeOfferGitHooks(interactive, opts);
@@ -1513,6 +1518,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyCodeGraphConfig();
     applyTrimConfig();
     applyCiWatchConfig();
+    applySubagentConfig();
     applyVerifyConfig();
     applyMcpConfig();
     await maybeOfferGitHooks(interactive, opts);
@@ -1801,6 +1807,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorCodeGraphWiring(toolName, dir);
     mirrorTrimWiring(toolName, dir);
     mirrorCiWatchWiring(toolName, dir);
+    mirrorSubagentWiring(toolName, dir);
     mirrorVerifyWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
     const total = changed + (mcpChanged ? 1 : 0);

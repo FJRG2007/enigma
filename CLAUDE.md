@@ -63,6 +63,7 @@ Subsystems (read the one you are touching):
 - `tool-launch-path.md` - repairing a tool that is installed but not on PATH.
 - `shim.md` - `enigma shim`: shell functions that launch each agent under its own command name, because terminals detect the agent from the typed command and not the process. Read before touching the launcher's relationship with the terminal.
 - `system-resources.md` - process/port/WSL/Docker cleanup.
+- `subagents.md` - the subagent budget (`subagent-limit`: a PreToolUse refusal on Agent, lock-free per-session count, no nesting) and `compact-window` (Claude Code autoCompactWindow). Read before touching either.
 - `shell-completion.md` - `enigma completion`: word lists derived from the command set and the settings registry, and the test that stops the one hand-written list from drifting.
 - `statusline.md` - the agent status bar: the Node/Bun split that forces the gate snapshot file, rejection rules, animation and width rules. Read before touching `bin/statusline.mjs` or the snapshot.
 - `tui.md` - OpenTUI renderer, gotchas, headless testing.
