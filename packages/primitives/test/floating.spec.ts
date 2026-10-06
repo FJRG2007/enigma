@@ -110,11 +110,14 @@ test.describe("Floating panels", () => {
             return Math.round(a!.y - (b!.y + b!.height));
         };
         // 4px under the trigger once the opening slide has settled, and still 4px after the
-        // page has moved 40px under it - which a fixed panel that was not re-placed is not.
+        // page has moved under it - which a fixed panel that was not re-placed is not. The
+        // distance is the one the page actually scrolled: near the end of the document there can
+        // be less than the 40px asked for (CI once had 24), and a hardcoded 40 made that a flake.
         await expect.poll(gap).toBe(4);
         const top = (await page.locator(`${clipped} ${trigger}`).boundingBox())!.y;
-        await page.evaluate(() => window.scrollBy(0, 40));
-        await expect.poll(async () => Math.round(top - (await page.locator(`${clipped} ${trigger}`).boundingBox())!.y)).toBe(40);
+        const moved = await page.evaluate(() => { const before = window.scrollY; window.scrollBy(0, 40); return window.scrollY - before; });
+        expect(moved).toBeGreaterThan(0);
+        await expect.poll(async () => Math.round(top - (await page.locator(`${clipped} ${trigger}`).boundingBox())!.y)).toBe(Math.round(moved));
         await expect.poll(gap).toBe(4);
     });
 
