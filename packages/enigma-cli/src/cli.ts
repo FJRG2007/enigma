@@ -42,7 +42,7 @@ import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./gua
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { BUILTIN_RULES, checkPath, formatFindings, readLedger, readReplyLedger, summarizeLedger } from "./guardrails";
-import { API_ROTATIONS, DASHBOARD_BINDS, readConfig, setEnigmaValue, type ApiRotation, type DashboardBind } from "./config";
+import { API_ROTATIONS, DASHBOARD_BINDS, apiRotationOf, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -2980,7 +2980,7 @@ async function runApiCli(opts: CliOptions): Promise<number> {
     // A context named on the command line is an explicit choice for this run, so the saved rotation
     // does not override it; --rotation alongside it still turns rotation on.
     const flagContext = Boolean(opts.apiAccount || opts.apiProfile || opts.apiPack);
-    const rotation = (opts.apiRotation ?? (flagContext ? "off" : cfg.apiRotation)) as ApiRotation;
+    const rotation = apiRotationOf(opts.apiRotation ?? (flagContext ? "off" : cfg.apiRotation));
     const pool = cfg.apiAccountPool ?? [];
     let server: Awaited<ReturnType<typeof startApiServer>>;
     try { server = await startApiServer({ port, apiKey, tool, account, profile, pack, rotation, pool, clientContext: cfg.apiClientContext !== false }); }

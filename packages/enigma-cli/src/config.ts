@@ -46,6 +46,11 @@ export const MINIMAL_CODE_LEVELS: readonly MinimalCode[] = ["off", "lite", "full
 export type ApiRotation = "off" | "round-robin" | "least-used" | "fill-first" | "random";
 export const API_ROTATIONS: readonly ApiRotation[] = ["off", "round-robin", "least-used", "fill-first", "random"];
 
+/** A saved rotation strategy, with anything unknown (a hand-edited config) read as "off". */
+export function apiRotationOf(value: unknown): ApiRotation {
+    return (API_ROTATIONS as readonly unknown[]).includes(value) ? value as ApiRotation : "off";
+}
+
 /**
  * Local savings dashboard run mode. "off" disables it; "on-demand" serves only while
  * `enigma dashboard` runs (zero idle cost, the default when enabled); "always" keeps a

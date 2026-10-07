@@ -14,7 +14,7 @@ import { availableAdapters } from "./api-agents";
 import { request as httpRequest } from "node:http";
 import { completeOnce, type CompleteResult } from "./api-server";
 import { listAccounts, listProfiles, TOOL_NAMES } from "./accounts";
-import { API_ROTATIONS, readConfig, setEnigmaValue, setEnigmaToggle, type ApiRotation } from "./config";
+import { API_ROTATIONS, apiRotationOf, readConfig, setEnigmaValue, setEnigmaToggle, type ApiRotation } from "./config";
 
 /** Everything `enigma api` starts with when no flag overrides it. */
 export interface ApiDefaults {
@@ -49,7 +49,7 @@ export function readApiDefaults(): ApiDefaults {
         account: cfg.apiAccount || "",
         profile: cfg.apiProfile || "",
         pack: cfg.apiPack || "",
-        rotation: (API_ROTATIONS as readonly string[]).includes(cfg.apiRotation) ? cfg.apiRotation : "off",
+        rotation: apiRotationOf(cfg.apiRotation),
         pool: Array.isArray(cfg.apiAccountPool) ? cfg.apiAccountPool : [],
         clientContext: cfg.apiClientContext !== false,
         port: cfg.apiPort || 8000,

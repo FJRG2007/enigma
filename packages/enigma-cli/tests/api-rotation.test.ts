@@ -5,6 +5,8 @@
  * transcript or agent is touched.
  */
 import { test, expect } from "bun:test";
+import { apiRotationOf } from "../src/config";
+import { parseClaudeLine } from "../src/api-agents";
 import { AccountRotator, classifyAccountError, parseResetAt, pickCandidate, poolOrder, type Candidate } from "../src/api-rotation";
 
 const ACCOUNTS = ["default", "work", "personal"];
@@ -133,4 +135,19 @@ test("begin/end tracks in-flight work and the last served account", () => {
     end(10);
     end(10);
     expect(r.snapshot().inFlight).toEqual({});
+});
+
+test("only the CLI's own error notice is classified, never the model's answer", () => {
+    const notice = parseClaudeLine(JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Claude AI usage limit reached|1717000000" }));
+    expect(notice && notice.kind === "result" ? notice.faultMessage : undefined).toBe("Claude AI usage limit reached|1717000000");
+    const answer = parseClaudeLine(JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, result: "Back off on HTTP 429 rate limit" }));
+    expect(answer && answer.kind === "result" ? answer.faultMessage : undefined).toBeNull();
+    const explicit = parseClaudeLine(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, error_message: "Invalid API key - Please run /login", result: "partial" }));
+    expect(explicit && explicit.kind === "result" ? explicit.faultMessage : undefined).toBe("Invalid API key - Please run /login");
+});
+
+test("apiRotationOf reads an unknown saved strategy as off", () => {
+    expect(apiRotationOf("least-used")).toBe("least-used");
+    expect(apiRotationOf("roundrobin")).toBe("off");
+    expect(apiRotationOf(undefined)).toBe("off");
 });

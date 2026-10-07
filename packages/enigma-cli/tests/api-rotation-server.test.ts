@@ -38,6 +38,12 @@ process.stdin.on("end", () => {
         out({ type: "result", subtype: "success", is_error: true, result: notice, usage: { input_tokens: 0, output_tokens: 0 } });
         return;
     }
+    if (existsSync(join(dir, "max-turns"))) {
+        const answer = "Retry the request when the API answers 429 rate limit.";
+        out({ type: "assistant", message: { content: [{ type: "text", text: answer }] } });
+        out({ type: "result", subtype: "error_max_turns", is_error: true, result: answer, usage: { input_tokens: 5, output_tokens: 3 } });
+        return;
+    }
     const text = "answer from " + basename(dir);
     out({ type: "assistant", message: { content: [{ type: "text", text }] } });
     out({ type: "result", subtype: "success", is_error: false, result: text, usage: { input_tokens: 5, output_tokens: 3 } });
@@ -165,4 +171,18 @@ test("rotation off keeps the fixed default account", async () => {
         expect(res.headers.get("x-enigma-account")).toBeNull();
         expect(launches()).toEqual(["work"]);
     } finally { server.close(); }
+});
+
+test("an error run whose answer mentions a rate limit stays on its account", async () => {
+    const server = await startApiServer({ port: 0, rotation: "round-robin", pool: ["work", "personal"] });
+    const marker = join(dirs.work!, "max-turns");
+    try {
+        writeFileSync(marker, "");
+        launches();
+        const res = await chat(server.url, {});
+        expect(res.status).toBe(502);
+        expect(launches()).toEqual(["work"]);
+        const health = await (await fetch(`${server.url}/health`)).json() as { rotation: { cooldowns: unknown[]; }; };
+        expect(health.rotation.cooldowns).toEqual([]);
+    } finally { server.close(); rmSync(marker, { force: true }); }
 });

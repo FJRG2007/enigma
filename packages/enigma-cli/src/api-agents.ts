@@ -26,7 +26,7 @@ export type AgentEvent =
     // emits only the part the incremental `text` deltas did not already deliver, so a streamed
     // turn is not counted twice and a turn that produced no deltas at all is still delivered.
     | { kind: "text_final"; text: string; }
-    | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; };
+    | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; faultMessage?: string | null; };
 
 /** An image attached to a request, in Anthropic content-block shape (base64 or url source). */
 export interface ImageBlock {
@@ -164,6 +164,7 @@ export function parseClaudeLine(line: string): AgentEvent | null {
             outputTokens: usage.output_tokens ?? 0,
             isError,
             errorMessage: typeof msg.error_message === "string" ? msg.error_message : (typeof msg.result === "string" ? msg.result : undefined),
+            faultMessage: typeof msg.error_message === "string" ? msg.error_message : (msg.is_error === true && msg.subtype === "success" && typeof msg.result === "string" ? msg.result : null),
         };
     }
     return null;

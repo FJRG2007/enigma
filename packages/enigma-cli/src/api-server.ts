@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { readUsageCached } from "./usage";
 import { spawn } from "node:child_process";
 import { tokenMatches } from "./dashboard-token";
-import { readConfig, type ApiRotation } from "./config";
+import { apiRotationOf, readConfig, type ApiRotation } from "./config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AccountRotator, classifyAccountError, poolOrder, type WindowUsage } from "./api-rotation";
 import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles, listAccounts } from "./accounts";
@@ -144,7 +144,7 @@ export function streamChunk(id: string, model: string, delta: Record<string, unk
     return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-interface RunResult { text: string; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; }
+interface RunResult { text: string; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; faultMessage?: string | null; }
 
 /**
  * Resolve the adapter's agent binary + account-scoped env, spawn it in headless mode, and drive
@@ -249,6 +249,7 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
                     summary.outputTokens = ev.outputTokens;
                     summary.isError = ev.isError;
                     summary.errorMessage = ev.errorMessage;
+                    summary.faultMessage = ev.faultMessage;
                 }
             }
         });
@@ -261,6 +262,7 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
             if (code !== 0 && !summary.text && !summary.isError) {
                 summary.isError = true;
                 summary.errorMessage = stderrBuf.trim() || `${toolName} exited with code ${code}`;
+                summary.faultMessage = undefined;
             }
             resolve(summary);
         });
@@ -320,7 +322,7 @@ export async function completeOnce(params: CompleteParams): Promise<CompleteResu
     const explicit = { account: params.account || null, profile: params.profile || null, pack: params.pack || null };
     const picked = explicit.account || explicit.profile || explicit.pack ? { ctx: explicit, rotated: null } : pickContext(adapter.tool, null, defaults);
     const opts: CompletionOptions = { model, system: params.system ?? system, sessionId: null, enableTools: params.enableTools === true, images, ...picked.ctx };
-    const result = await driveRotating(adapter, messages, prompt, opts, defaults, picked.rotated);
+    const { faultMessage: _fault, ...result } = await driveRotating(adapter, messages, prompt, opts, defaults, picked.rotated);
     return { tool: adapter.tool, model, ...result, account: result.account ?? null };
 }
 
@@ -512,9 +514,10 @@ async function driveRotating(adapter: AgentAdapter, messages: ChatMessage[], pro
         catch (err) { end(0); throw err; }
         end(result.inputTokens + result.outputTokens);
         if (opts.sessionId && !result.isError) rotator.bindSession(opts.sessionId, account);
-        const fault = result.isError ? classifyAccountError(result.errorMessage) : null;
+        const faultMessage = result.faultMessage === undefined ? result.errorMessage : result.faultMessage ?? undefined;
+        const fault = result.isError ? classifyAccountError(faultMessage) : null;
         if (fault) {
-            rotator.markFault(tool, account, fault, result.errorMessage);
+            rotator.markFault(tool, account, fault, faultMessage);
             tried.add(account);
             const next = flowing || opts.sessionId ? null : rotator.pick(tool, accountNames(tool), tried);
             if (next) { account = next; continue; }
@@ -554,7 +557,8 @@ let inprocRotator: AccountRotator | null = null;
 function configDefaults(tool: string): ServerDefaults {
     const cfg = readConfig().config;
     const pool = cfg.apiAccountPool ?? [];
-    if (!inprocRotator || inprocRotator.strategy !== cfg.apiRotation || inprocRotator.pool.join(",") !== pool.join(",")) inprocRotator = createRotator(cfg.apiRotation, pool);
+    const rotation = apiRotationOf(cfg.apiRotation);
+    if (!inprocRotator || inprocRotator.strategy !== rotation || inprocRotator.pool.join(",") !== pool.join(",")) inprocRotator = createRotator(rotation, pool);
     return { tool, account: cfg.apiAccount || null, profile: cfg.apiProfile || null, pack: cfg.apiPack || null, rotator: inprocRotator, clientContext: true };
 }
 
