@@ -6,6 +6,7 @@
  */
 import { test, expect } from "bun:test";
 import { apiRotationOf } from "../src/config";
+import { ALL_SETTINGS } from "../src/settings-registry";
 import { parseClaudeLine } from "../src/api-agents";
 import { AccountRotator, classifyAccountError, parseResetAt, pickCandidate, poolOrder, type Candidate } from "../src/api-rotation";
 
@@ -150,4 +151,11 @@ test("apiRotationOf reads an unknown saved strategy as off", () => {
     expect(apiRotationOf("least-used")).toBe("least-used");
     expect(apiRotationOf("roundrobin")).toBe("off");
     expect(apiRotationOf(undefined)).toBe("off");
+});
+
+test("a blank API account reads as the active account, never as the account named default", () => {
+    const label = (key: string) => ALL_SETTINGS.find((s) => s.key === key)?.unsetLabel;
+    expect(label("api-account")).toBe("(active account)");
+    expect(label("api-profile")).toBe("(none)");
+    expect(label("api-pack")).toBe("(none)");
 });

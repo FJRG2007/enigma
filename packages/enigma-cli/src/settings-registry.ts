@@ -100,6 +100,8 @@ export interface Setting {
     /** Placeholder/help shown by the add-item input (list) or value input. */
     itemHint?: string;
     valueHint?: string;
+    /** What a blank value means, shown instead of "(default)" when that word would mislead. */
+    unsetLabel?: string;
     readValue?(scope: Scope): string;
     writeValue?(value: string, scope: Scope): ApplyResult;
     listValues?(scope: Scope): string[];
@@ -338,9 +340,9 @@ function apiContextValue(value: string): string {
 }
 
 /** Declare one of the API server's default-context strings (account/profile/pack) as a value setting. */
-function apiContextSetting(key: string, field: "apiAccount" | "apiProfile" | "apiPack", label: string, hint: string, valueHint: string): Setting {
+function apiContextSetting(key: string, field: "apiAccount" | "apiProfile" | "apiPack", label: string, hint: string, valueHint: string, unsetLabel: string): Setting {
     return {
-        key, label, hint, globalOnly: true, kind: "value", valueHint,
+        key, label, hint, globalOnly: true, kind: "value", valueHint, unsetLabel,
         read: () => !!conf.readConfig().config[field],
         write: () => ({ changed: false }),
         readValue: () => conf.readConfig().config[field],
@@ -765,9 +767,9 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => conf.readConfig().config.apiClientContext,
                 write: (value, scope) => ({ path: conf.setEnigmaToggle("apiClientContext", value, scope), changed: true }),
             },
-            apiContextSetting("api-account", "apiAccount", "Default account", "account a request runs under when it names none and rotation is off; blank = the active account", "account name (blank or none = active account)"),
-            apiContextSetting("api-profile", "apiProfile", "Default profile", "profile whose account mapping a request uses when it names none and rotation is off", "profile name (blank or none = no profile)"),
-            apiContextSetting("api-pack", "apiPack", "Default pack", "pack (e.g. helio) whose isolated context a request runs in when it names none and rotation is off; wins over the default account and profile", "pack id (blank or none = no pack)"),
+            apiContextSetting("api-account", "apiAccount", "Default account", "account a request runs under when it names none and rotation is off; blank = the active account", "account name (blank or none = active account)", "(active account)"),
+            apiContextSetting("api-profile", "apiProfile", "Default profile", "profile whose account mapping a request uses when it names none and rotation is off", "profile name (blank or none = no profile)", "(none)"),
+            apiContextSetting("api-pack", "apiPack", "Default pack", "pack (e.g. helio) whose isolated context a request runs in when it names none and rotation is off; wins over the default account and profile", "pack id (blank or none = no pack)", "(none)"),
         ],
     },
     {

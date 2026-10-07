@@ -23,7 +23,7 @@ function printEffective(): void {
             const shown = s.kind === "list"
                 ? `[${(s.listValues ? s.listValues("global") : []).join(", ")}]`
                 : s.kind === "value"
-                ? (s.secret ? (s.readValue && s.readValue("global") ? "(set)" : "(not set)") : ((s.readValue ? s.readValue("global") : "") || "(default)"))
+                ? (s.secret ? (s.readValue && s.readValue("global") ? "(set)" : "(not set)") : ((s.readValue ? s.readValue("global") : "") || s.unsetLabel || "(default)"))
                 : s.choices && s.readChoice ? s.readChoice("global") : valueLabel(s.read("global"));
             console.log(`  ${s.key}: ${shown}`);
         }
@@ -194,7 +194,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         const target: Scope = setting.globalOnly ? "global" : (scope || "global");
         if (rawValue === undefined) {
             const cur = setting.readValue ? setting.readValue(target) : "";
-            console.log(`${rawKey} (${target}): ${setting.secret ? (cur ? "(set)" : "(not set)") : (cur || "(default)")}`);
+            console.log(`${rawKey} (${target}): ${setting.secret ? (cur ? "(set)" : "(not set)") : (cur || setting.unsetLabel || "(default)")}`);
             return 0;
         }
         // A setting that rejects the value says why; reporting "Set" for a value never stored would lie.
