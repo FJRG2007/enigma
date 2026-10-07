@@ -3154,8 +3154,8 @@ export async function run(argv: string[]): Promise<void> {
     if (argv[0] === "__verify-hook") {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
-        const { runVerifyHook } = await import("./verify");
-        process.exit(runVerifyHook(payload));
+        const { runVerifyHookJson } = await import("./verify");
+        process.exit(runVerifyHookJson(payload));
     }
     // Hidden: the gate post-receive hook invokes this to notify the daemon of a
     // push. Non-blocking by the hook's contract; must not print to stdout noise.

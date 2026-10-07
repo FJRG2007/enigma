@@ -42,7 +42,7 @@ process.env.ENIGMA_NO_BACKGROUND_TIDY = "1";
 const BASE_CONFIG = { gateTrivialLines: 0 };
 writeFileSync(join(HOME, ".enigma.json"), JSON.stringify(BASE_CONFIG));
 
-const { claimsDone, asksToContinue, gateSkipped, gateExcused, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
+const { claimsDone, asksToContinue, gateSkipped, gateExcused, scanGaps, scanConventions, collectGaps, runVerifyHook, runVerifyHookJson, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger, readReplyLedger, countLedger } = await import("../src/guardrails");
@@ -227,6 +227,34 @@ test("denies the stop when the turn asks permission to continue", () => {
     // span that keeps the case above honest cannot fit a url, so the url has an alternative of its
     // own: a stop-short question does not carry a pull-request link, and that is the difference.
     expect(runVerifyHook(payload(dir, "PR: https://github.com/some-organization-name/enigma-platform-tools/pull/12345 - ready for you to review and merge. Shall I continue with anything else?"))).toBe(0);
+});
+
+test("the Stop hook blocks through a JSON reason the user does not see, never through stderr", () => {
+    // Exit 2 surfaces its stderr to the user as a "Stop hook error" carrying the whole audit; a
+    // JSON `reason` on stdout reaches the model only.
+    const dir = repoWith();
+    const out: string[] = [];
+    const err: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout);
+    const stderr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string) => { out.push(String(chunk)); return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string) => { err.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    let blocked: number;
+    let passed: number;
+    try {
+        blocked = runVerifyHookJson(payload(dir, "Tasks 1-4 are done. Shall I continue with tasks 5-8?", { session_id: "json-channel" }));
+        passed = runVerifyHookJson(payload(dir, "I ported the parser and moved on to the exporter.", { session_id: "json-channel-2" }));
+    } finally {
+        process.stdout.write = stdout;
+        process.stderr.write = stderr;
+    }
+    expect(blocked).toBe(0);
+    expect(passed).toBe(0);
+    expect(err.join("")).toBe("");
+    expect(out).toHaveLength(1);
+    const decision = JSON.parse(out[0]!);
+    expect(decision.decision).toBe("block");
+    expect(decision.reason).toContain("Shall I continue with tasks 5-8?");
 });
 
 test("stands down after repeated asks so a turn is never trapped", () => {
@@ -1053,6 +1081,11 @@ test("a control that renders and does nothing is unfinished work", () => {
     write(dir, "src/Dead.tsx", `${dead.join("\n")}\n`);
     write(dir, "src/Live.tsx", `${live.join("\n")}\n`);
     write(dir, "src/handlers.ts", "export const noop = { onClick={() => {}} };\n");
+    // A test renders a component with a no-op for the handler it does not exercise; no user clicks it.
+    const fixture = "<CallRoom call={call} onLeave={() => undefined} />\n";
+    write(dir, "apps/web/test/chat/call-room.test.tsx", fixture);
+    write(dir, "src/AppSwitcher.spec.tsx", fixture);
+    write(dir, "src/__tests__/Grid.tsx", fixture);
     const gaps = scanGaps(dir);
     expect(gaps.map((g) => `${g.file}:${g.line}`)).toEqual(dead.map((_, i) => `src/Dead.tsx:${i + 1}`));
     expect(gaps.every((g) => g.detail.includes("control that does nothing"))).toBe(true);

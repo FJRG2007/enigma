@@ -124,7 +124,13 @@ const ANCHOR_KEY_RE = /^(?:gatewatch|gatebypass|head):/;
  * `notNear` suppresses a hit when the preceding lines show it is a legitimate idiom
  * (a Python abstract method raises the unimplemented error by design, for example).
  */
-const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNear?: RegExp; ext?: RegExp; }> = [
+/**
+ * A test, story or fixture file: a no-op callback there (`onLeave={() => undefined}`) is how a test
+ * renders a component whose handler it does not exercise, not a dead control a user will click.
+ */
+const TEST_FILE_RE = /(?:^|\/)(?:tests?|__tests__|__mocks__|spec|e2e|fixtures?|stories)\/|\.(?:test|spec|stories)\.[cm]?[jt]sx?$/i;
+
+const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNear?: RegExp; ext?: RegExp; notInTests?: boolean; }> = [
     { id: "todo-marker", re: /(?:^|[^\w])(TODO|FIXME|XXX|HACK)\b/, label: "unfinished-work marker" }, // enigma:verify-ignore
     {
         id: "unimplemented-path",
@@ -148,6 +154,7 @@ const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNea
         re: /\bon[A-Z]\w*=\{\s*(?:\([^)]*\)|\w+)\s*=>\s*(?:\{\s*\}|null|undefined|void 0)\s*\}|<(?:button|Button|IconButton|Switch|Toggle|Checkbox|Radio|input|Input|Select|MenuItem|Tab)\b[^>]*\sdisabled(?:=\{true\})?(?=[\s/>])|<a\b[^>]*\shref=["']#["']/,
         label: "control that does nothing (empty handler, unconditional disabled, or href=\"#\")",
         ext: /\.(?:tsx|jsx|vue|svelte|astro|html)$/i,
+        notInTests: true,
     },
 ];
 
@@ -1626,6 +1633,7 @@ function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped
         if (IGNORE_RE.test(entry.text)) continue;
         for (const pattern of INCOMPLETE_PATTERNS) {
             if (pattern.ext && !pattern.ext.test(entry.file)) continue;
+            if (pattern.notInTests && TEST_FILE_RE.test(entry.file.replace(/\\/g, "/"))) continue;
             if (!pattern.re.test(entry.text)) continue;
             if (pattern.notNear && suppressedByContext(cwd, entry.file, entry.line, pattern.notNear, cache)) break;
             gaps.push({ kind: "marker", file: entry.file, line: entry.line, detail: `${pattern.label}: ${entry.text.trim().slice(0, 160)}` });
@@ -2310,6 +2318,31 @@ function auditMessage(round: number): string {
     ].join("\n");
 }
 
+/** Where runVerifyHook's messages go: stderr by default, captured by runVerifyHookJson. */
+let hookSink = (text: string): void => { process.stderr.write(text); };
+
+/**
+ * The Claude Code Stop hook entry. Blocks through `{"decision":"block","reason":...}` on stdout
+ * instead of exit 2: Claude Code shows exit-2 stderr to the user as a "Stop hook error" notice
+ * carrying the whole audit text, while a JSON `reason` reaches Claude and not the user. The audit
+ * is instructions for the model; the user only needs the reply it produces.
+ */
+export function runVerifyHookJson(payload?: string): number {
+    const out: string[] = [];
+    const previous = hookSink;
+    hookSink = (text) => { out.push(text); };
+    let code: number;
+    try { code = runVerifyHook(payload); }
+    finally { hookSink = previous; }
+    const text = out.join("").trim();
+    if (code === 2) {
+        process.stdout.write(`${JSON.stringify({ decision: "block", reason: text || "enigma verify denied this stop." })}\n`);
+        return 0;
+    }
+    if (text) process.stderr.write(`${text}\n`);
+    return code;
+}
+
 /**
  * Turn-end hook entry. Reads a Claude Code `Stop` payload (from `payload` or stdin) and
  * returns the process exit code: 2 when a completion claim is contradicted by evidence
@@ -2327,7 +2360,7 @@ export function runVerifyHook(payload?: string): number {
     // rather than returning quietly, like every other degraded path here.
     try { raw = JSON.parse((payload ?? readFileSync(0, "utf8")).replace(/^\uFEFF/, "")) || {}; }
     catch {
-        process.stderr.write("enigma verify: the turn-end payload could not be read, so the completion check did not run.\n");
+        hookSink("enigma verify: the turn-end payload could not be read, so the completion check did not run.\n");
         return 0;
     }
     // NOTE: `stop_hook_active` is deliberately NOT honoured. It stays true for every stop that
@@ -2353,7 +2386,7 @@ export function runVerifyHook(payload?: string): number {
     let message = typeof raw.last_assistant_message === "string" ? raw.last_assistant_message : "";
     if (!message && typeof raw.transcript_path === "string") message = lastAssistantMessage(raw.transcript_path);
     if (!message) {
-        process.stderr.write("enigma verify: the turn-end payload carried no final assistant message and none could be read from the transcript, so the completion check did not run.\n");
+        hookSink("enigma verify: the turn-end payload carried no final assistant message and none could be read from the transcript, so the completion check did not run.\n");
         return 0;
     }
     const session = String(raw.session_id || raw.prompt_id || cwd);
@@ -2407,7 +2440,7 @@ export function runVerifyHook(payload?: string): number {
         if (question) {
             const asked: VerifyGap = { kind: "stop-short", detail: question };
             if (!mayBlock(issueKey(session, [asked]), session)) return 0;
-            process.stderr.write(`${stopShortMessage(question)}\n`);
+            hookSink(`${stopShortMessage(question)}\n`);
             return 2;
         }
         // The same failure aimed at the gate, and the most reported one: the turn ends reporting
@@ -2434,7 +2467,7 @@ export function runVerifyHook(payload?: string): number {
             substantive = true;
             const gap: VerifyGap = { kind: "gate", detail: skipped };
             if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
-                process.stderr.write(`${gateMessage(gap)}\n`);
+                hookSink(`${gateMessage(gap)}\n`);
                 return 2;
             }
         }
@@ -2450,7 +2483,7 @@ export function runVerifyHook(payload?: string): number {
         if (invented.length) {
             substantive = true;
             if (mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
-                process.stderr.write(`${sourceMessage(invented)}\n`);
+                hookSink(`${sourceMessage(invented)}\n`);
                 return 2;
             }
         }
@@ -2462,7 +2495,7 @@ export function runVerifyHook(payload?: string): number {
         if (attributed.length) {
             substantive = true;
             if (mayBlock(`attribution:${issueKey(session, attributed)}`, session, "attribution")) {
-                process.stderr.write(`${attributionMessage(attributed)}\n`);
+                hookSink(`${attributionMessage(attributed)}\n`);
                 return 2;
             }
         }
@@ -2490,7 +2523,7 @@ export function runVerifyHook(payload?: string): number {
             recordFindings(conventions.findings.filter((f) => f.severity === "block"), blocking ? "blocked" : "warned", "diff");
             recordFindings(conventions.findings.filter((f) => f.severity === "warn"), "warned", "diff");
             if (blocking) {
-                process.stderr.write(`${conventionMessage(conventions.gaps, conventions.notes, conventions.capped)}\n`);
+                hookSink(`${conventionMessage(conventions.gaps, conventions.notes, conventions.capped)}\n`);
                 return 2;
             }
         }
@@ -2510,7 +2543,7 @@ export function runVerifyHook(payload?: string): number {
             // blocking to spend it on, since mayBlock has a side effect.
             styleDenied = mayBlock(`style:${issueKey(session, styleBlocking)}`, session, "style");
             if (!styleDenied) return 0;
-            process.stderr.write(`${styleMessage(styleBlocking, styleLevel)}\n`);
+            hookSink(`${styleMessage(styleBlocking, styleLevel)}\n`);
             return 2;
         };
 
@@ -2520,12 +2553,12 @@ export function runVerifyHook(payload?: string): number {
         if (gaps.length) {
             substantive = true;
             if (mayBlock(issueKey(session, gaps), session)) {
-                process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
+                hookSink(`${blockMessage(gaps, { truncated, capped })}\n`);
                 return 2;
             }
         } else {
-            if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
-            else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
+            if (noRepo) hookSink("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
+            else if (truncated) hookSink("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
         }
 
         // The markers are clean, which proves the absence of the defects a regex can see and
@@ -2544,7 +2577,7 @@ export function runVerifyHook(payload?: string): number {
             const round = auditRound(session, work, raw.stop_hook_active === true);
             if (round) {
                 substantive = true;
-                process.stderr.write(`${auditMessage(round)}\n`);
+                hookSink(`${auditMessage(round)}\n`);
                 return 2;
             }
         }
@@ -2567,7 +2600,7 @@ export function runVerifyHook(payload?: string): number {
         if (unvalidated && !gateBypassed(bypassAnchor, message)) {
             substantive = true;
             if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
-                process.stderr.write(`${gateMessage(unvalidated)}\n`);
+                hookSink(`${gateMessage(unvalidated)}\n`);
                 return 2;
             }
         }
