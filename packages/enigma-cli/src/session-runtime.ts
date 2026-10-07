@@ -23,7 +23,7 @@
 
 import { readConfig } from "./config";
 import { spawn, type ChildProcess } from "node:child_process";
-import { parseClaudeLine, resolveClaudeModel, DEFAULT_MODEL, estimateTokens, type ImageBlock } from "./api-agents";
+import { parseClaudeLine, resolveClaudeModel, DEFAULT_MODEL, toollessArgs, estimateTokens, type ImageBlock } from "./api-agents";
 
 /** One turn's normalized outcome, matching the api-server's RunResult shape. */
 export interface SessionTurnResult {
@@ -155,7 +155,7 @@ function sessionArgs(spec: SessionSpec, sessionId: string, resume: boolean): str
     // a blocked session would never emit its `result` line. Off = the default posture, no bypass.
     const bypass = readConfig().config.permissionBypass;
     args.push("--permission-mode", spec.enableTools && bypass ? "bypassPermissions" : "default");
-    if (!spec.enableTools) args.push("--strict-mcp-config");
+    if (!spec.enableTools) args.push(...toollessArgs());
     // A brand-new session sets its own id so the client's chosen id IS the Claude session id; an
     // evicted one is resumed by that same id, continuing the persisted transcript.
     if (resume) args.push("--resume", sessionId);

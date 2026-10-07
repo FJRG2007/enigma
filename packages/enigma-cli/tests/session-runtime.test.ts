@@ -14,6 +14,9 @@ import { test, expect, beforeAll, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } from "node:fs";
 import { runSessionTurn, isSessionBusy, liveSessionCount, closeAllSessions, SessionError, type SessionSpec, type SessionRuntimeConfig } from "../src/session-runtime";
 
+// A turn writes a settings file under the enigma home; keep it out of the real one.
+process.env.ENIGMA_CONFIG_HOME = mkdtempSync(join(tmpdir(), "enigma-session-home-"));
+
 /**
  * The stand-in agent: appends its argv to one file and every stdin turn to another, then answers
  * each turn with an `assistant` + `result` pair and stays alive for the next one (a warm process).
@@ -120,6 +123,8 @@ test("a turn passes --permission-mode, so a session never stalls on a prompt not
     // Tools off is a permission posture, and MCP is skipped - exactly the stateless adapter's flags.
     expect(flag(args, "--permission-mode")).toBe("default");
     expect(args).toContain("--strict-mcp-config");
+    // The user's hooks stay out of an API turn: a Stop hook would make the model answer twice.
+    expect(JSON.parse(readFileSync(flag(args, "--settings")!, "utf8"))).toEqual({ disableAllHooks: true });
     // A brand-new id claims itself; it is not resumed.
     expect(flag(args, "--session-id")).toBe(id);
     expect(args).not.toContain("--resume");

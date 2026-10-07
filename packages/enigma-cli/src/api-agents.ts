@@ -14,9 +14,11 @@
  * than guessed, but it has not been run end-to-end here. All three non-Claude adapters may
  * need a flag tweak once verified live - keep that caveat until confirmed.
  */
-import { resolveBin } from "./util";
 import { readConfig } from "./config";
+import { dirname, join } from "node:path";
+import { enigmaHome, resolveBin } from "./util";
 import { getTool, isToolName } from "./accounts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 /** One normalized event, agent-agnostic, parsed from a stream-json adapter. */
 export type AgentEvent =
@@ -170,6 +172,30 @@ export function parseClaudeLine(line: string): AgentEvent | null {
     return null;
 }
 
+/**
+ * Claude Code flags for a completion with tools off. No MCP servers (see build), and no hooks: the
+ * user's SessionStart/UserPromptSubmit/Stop hooks belong to their interactive sessions, and in an
+ * API call they only add latency or, worse, a Stop hook that blocks the turn makes the model answer
+ * again, so one request costs two full generations.
+ *
+ * The settings go in a file, not inline JSON: an npm-installed Claude is a .cmd launched through
+ * cmd.exe, which mangles an argument full of double quotes.
+ */
+export function toollessArgs(): string[] {
+    const path = join(enigmaHome(), ".enigma", "api", "no-hooks.settings.json");
+    const body = `${JSON.stringify({ disableAllHooks: true })}\n`;
+    try {
+        if (!existsSync(path) || readFileSync(path, "utf8") !== body) {
+            mkdirSync(dirname(path), { recursive: true });
+            writeFileSync(path, body);
+        }
+    } catch {
+        // Unwritable home: still skip MCP. Hooks then run as before, which is slower but correct.
+        return ["--strict-mcp-config"];
+    }
+    return ["--strict-mcp-config", "--settings", path];
+}
+
 const claudeAdapter: AgentAdapter = {
     tool: "claude",
     models: CLAUDE_MODELS,
@@ -194,7 +220,7 @@ const claudeAdapter: AgentAdapter = {
         // injecting their tool schemas (tens of thousands of tokens, which slow the model's first
         // token). --strict-mcp-config with no --mcp-config loads zero servers. When tools are on,
         // the caller wants those tools, so the MCP servers stay.
-        if (!opts.enableTools) args.push("--strict-mcp-config");
+        if (!opts.enableTools) args.push(...toollessArgs());
         // With images, drive Claude Code through its realtime streaming input: one user message
         // carrying the text plus image content blocks (the reliable way to send vision content).
         if (opts.images && opts.images.length) {

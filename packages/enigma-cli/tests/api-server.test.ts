@@ -4,10 +4,16 @@
  * model-id forwarding, and model-based routing to the right adapter. These never spawn a CLI, so
  * the test stays offline and deterministic (the spawn/HTTP path is exercised manually, not in CI).
  */
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { test, expect } from "bun:test";
 import * as agents from "../src/api-agents";
 import { liveSessionCount, closeAllSessions } from "../src/session-runtime";
 import { contentToText, messagesToPrompt, streamChunk, extractImages, lastUserText, type ChatMessage } from "../src/api-server";
+
+// The adapters write a settings file under the enigma home; keep it out of the real one.
+process.env.ENIGMA_CONFIG_HOME = mkdtempSync(join(tmpdir(), "enigma-api-home-"));
 
 test("contentToText flattens string and text-part content", () => {
     expect(contentToText("hi")).toBe("hi");
@@ -167,7 +173,10 @@ test("adapters expose the expected read mode and headless args", () => {
     expect(cmd.args[cmd.args.indexOf("--resume") + 1]).toBe("s1");
     expect(cmd.stdin).toBe("hi");
     expect(cmd.args).toContain("--strict-mcp-config");
-    expect(claude.build("hi", { model: "claude-sonnet-5", enableTools: true }).args).not.toContain("--strict-mcp-config");
+    expect(JSON.parse(readFileSync(cmd.args[cmd.args.indexOf("--settings") + 1]!, "utf8"))).toEqual({ disableAllHooks: true });
+    const withTools = claude.build("hi", { model: "claude-sonnet-5", enableTools: true }).args;
+    expect(withTools).not.toContain("--strict-mcp-config");
+    expect(withTools).not.toContain("--settings");
 
     const codex = agents.adapterFor("codex")!;
     expect(codex.mode).toBe("stream-json");
