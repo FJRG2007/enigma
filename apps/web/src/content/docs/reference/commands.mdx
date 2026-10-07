@@ -190,8 +190,8 @@ No argument checks the current change for evidence of unfinished work, sweeps it
 
 Serve your local Claude Code over an OpenAI-compatible HTTP API - all of its tools, skills, MCP and sessions, reachable from any OpenAI client library. Loopback-only. See <a href={docHref("concepts/api")}>Local API</a> for detail.
 
-<Cmd name="enigma api" ex={["enigma api", "enigma api --port 8080", "enigma api --api-key mysecret"]}>
-Endpoints under `/v1` (chat/completions, messages, models, sessions). `--port <n>` overrides the port (else the `apiPort` config, default 8000); `--api-key <k>` (or `ENIGMA_API_KEY`) gates every `/v1` route; `--tool <t>` selects the backing agent. Ctrl+C to stop.
+<Cmd name="enigma api" ex={["enigma api", "enigma api --port 8080", "enigma api --api-key mysecret", "enigma api --rotation round-robin"]}>
+Endpoints under `/v1` (chat/completions, messages, models, sessions). `--port <n>` overrides the port (else the `apiPort` config, default 8000); `--api-key <k>` (or `ENIGMA_API_KEY`) gates every `/v1` route; `--tool <t>` selects the backing agent; `--account`/`--profile`/`--pack` set the context; `--rotation <strategy>` spreads requests across accounts (`off`, `round-robin`, `least-used`, `fill-first`, `random`). Ctrl+C to stop.
 </Cmd>
 
 ## dashboard

@@ -96,8 +96,8 @@ export async function applySetting(key: string, value: unknown, scope: Scope = "
         const item = typeof op?.item === "string" ? op.item.trim() : "";
         if (!op || (op.op !== "add" && op.op !== "remove")) return { ok: false, error: `list setting ${key} needs { op: "add"|"remove", item }` };
         if (!item) return { ok: false, error: "empty item" };
-        if (op.op === "add" && setting.addItem) setting.addItem(item, target);
-        else if (op.op === "remove" && setting.removeItem) setting.removeItem(item, target);
+        const res = op.op === "add" ? setting.addItem?.(item, target) : setting.removeItem?.(item, target);
+        if (res?.error) return { ok: false, key, error: res.error };
         const updatedList = serializeSettings(target).flatMap((c) => c.settings).find((s) => s.key === key);
         return { ok: true, key, setting: updatedList };
     }

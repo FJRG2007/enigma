@@ -12,6 +12,7 @@ import {
     shapeResult,
     buildCurl,
     isLoopbackTarget,
+    validateApiDefaults,
     type PlaygroundRequest
 } from "../src/dashboard-playground";
 
@@ -96,4 +97,29 @@ test("isLoopbackTarget accepts loopback hosts and rejects the rest (SSRF guard)"
     expect(isLoopbackTarget("http://example.com")).toBe(false);
     expect(isLoopbackTarget("http://169.254.169.254")).toBe(false);
     expect(isLoopbackTarget("not a url")).toBe(false);
+});
+
+const KNOWN = { accounts: new Set(["default", "work"]), profiles: new Set(["team"]), packs: new Set(["helio"]) };
+
+test("validateApiDefaults normalizes names and keeps absent fields out of the change", () => {
+    const out = validateApiDefaults({ account: " work ", pack: "NONE", rotation: "least-used" }, KNOWN);
+    expect(out).toEqual({ ok: true, value: { account: "work", pack: "", rotation: "least-used" } });
+});
+
+test("validateApiDefaults dedupes the pool and checks every name", () => {
+    expect(validateApiDefaults({ pool: ["work", " work", "default", ""] }, KNOWN)).toEqual({ ok: true, value: { pool: ["work", "default"] } });
+    expect(validateApiDefaults({ pool: ["work", "ghost"] }, KNOWN)).toEqual({ ok: false, field: "pool", error: "no account named 'ghost'" });
+    expect(validateApiDefaults({ pool: "work" }, KNOWN)).toMatchObject({ ok: false, field: "pool" });
+});
+
+test("validateApiDefaults refuses unknown names, strategies, ports and non-boolean flags", () => {
+    expect(validateApiDefaults({ account: "ghost" }, KNOWN)).toMatchObject({ ok: false, field: "account" });
+    expect(validateApiDefaults({ profile: "ghost" }, KNOWN)).toMatchObject({ ok: false, field: "profile" });
+    expect(validateApiDefaults({ pack: "nope" }, KNOWN)).toMatchObject({ ok: false, field: "pack" });
+    expect(validateApiDefaults({ rotation: "sticky" }, KNOWN)).toMatchObject({ ok: false, field: "rotation" });
+    expect(validateApiDefaults({ port: 0 }, KNOWN)).toMatchObject({ ok: false, field: "port" });
+    expect(validateApiDefaults({ port: 70000 }, KNOWN)).toMatchObject({ ok: false, field: "port" });
+    expect(validateApiDefaults({ port: 8.5 }, KNOWN)).toMatchObject({ ok: false, field: "port" });
+    expect(validateApiDefaults({ clientContext: "yes" }, KNOWN)).toMatchObject({ ok: false, field: "clientContext" });
+    expect(validateApiDefaults({ port: "9000", clientContext: false }, KNOWN)).toEqual({ ok: true, value: { port: 9000, clientContext: false } });
 });

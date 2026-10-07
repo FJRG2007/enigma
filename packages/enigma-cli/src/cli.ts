@@ -38,11 +38,11 @@ import { compress, retrieve, readStats, clearCcr } from "./compress";
 import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
-import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { BUILTIN_RULES, checkPath, formatFindings, readLedger, readReplyLedger, summarizeLedger } from "./guardrails";
+import { API_ROTATIONS, DASHBOARD_BINDS, readConfig, setEnigmaValue, type ApiRotation, type DashboardBind } from "./config";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -128,6 +128,8 @@ interface CliOptions extends skillsMod.InstallOptions {
     apiAccount: string | null;
     apiProfile: string | null;
     apiPack: string | null;
+    /** `api`: account rotation strategy for this run (overrides config apiRotation). */
+    apiRotation: string | null;
     /** `dashboard`: bind every interface for this run (token required), without persisting it. */
     expose: boolean;
     /** `dashboard token`: mint a fresh token, killing every link handed out earlier. */
@@ -160,7 +162,7 @@ function parseArgs(argv: string[]): CliOptions {
         overwrite: false, cwd: null, silent: false,
         flags: null, flagShapes: null, flagFormats: null, flagCountries: null, flagsOut: null,
         preset: null, token: null, base: null, providerModel: null,
-        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
+        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, apiRotation: null, expose: false, newToken: false,
         json: false,
     };
     for (let i = 0; i < argv.length; i++) {
@@ -244,6 +246,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--account": opts.apiAccount = next(); break;
             case "--profile": opts.apiProfile = next(); break;
             case "--pack": opts.apiPack = next(); break;
+            case "--rotation": opts.apiRotation = next(); break;
             case "--expose": opts.expose = true; break;
             // Its own flag, not an alias of --force: --force is honoured by several commands,
             // so folding them together would silently arm those with an undocumented spelling.
@@ -389,7 +392,9 @@ Commands:
                        pick per request via the model field (claude-sonnet-5 | codex | opencode | kimi).
                        Run requests under an account, profile or pack (e.g. Helio): --account,
                        --profile, --pack set the default; a request body can override with
-                       account/profile/pack. Endpoints under /v1 (chat/completions, messages,
+                       account/profile/pack. --rotation <off|round-robin|least-used|fill-first|
+                       random> spreads requests across accounts and fails over on a usage
+                       limit (config api-rotation, api-account-pool). Endpoints under /v1 (chat/completions, messages,
                        models, sessions). --port <n> (else config apiPort, default 8000),
                        --api-key <k> (or ENIGMA_API_KEY), --tool <t> = default backend. Loopback
   dashboard, dash      Open the local savings dashboard in your browser (http://enigma,
@@ -701,7 +706,7 @@ down to the failures and the summary instead of head-and-tail truncated.
       --clear             Wipe all CCR data (stats, history, cache)
       --type <t>          Force the content type instead of auto-detecting`,
 
-    api: `usage: enigma api [--port <n>] [--api-key <k>] [--tool <t>] [--account|--profile|--pack <name>]
+    api: `usage: enigma api [--port <n>] [--api-key <k>] [--tool <t>] [--account|--profile|--pack <name>] [--rotation <strategy>]
 Serve a local OpenAI-compatible API backed by your installed coding agents. Loopback only.
 Endpoints under /v1 (chat/completions, messages, models, sessions); pick the backend per
 request with the model field (claude-sonnet-5 | codex | opencode).
@@ -709,7 +714,13 @@ request with the model field (claude-sonnet-5 | codex | opencode).
       --port <n>       Default: config apiPort, else 8000
       --api-key <k>    Required bearer key (or ENIGMA_API_KEY)
       --tool <t>       Default backend
-      --account|--profile|--pack <name>   Context every request runs under`,
+      --account|--profile|--pack <name>   Context every request runs under (turns rotation off for the run)
+      --rotation <s>   off | round-robin | least-used | fill-first | random. Default: config api-rotation.
+                       Requests that name no account rotate across api-account-pool (empty = all
+                       accounts) and move to the next account when one hits a usage limit.
+
+Defaults live in 'enigma config' (api-port, api-account, api-profile, api-pack, api-rotation,
+api-account-pool, api-client-context) and in the dashboard's Local API page.`,
 
     dashboard: `usage: enigma dashboard [stop | token [--new]] [--expose]
 The local savings dashboard (http://enigma, or http://localhost:24282).
@@ -2962,15 +2973,26 @@ async function runApiCli(opts: CliOptions): Promise<number> {
     const account = opts.apiAccount ?? (cfg.apiAccount || null);
     const profile = opts.apiProfile ?? (cfg.apiProfile || null);
     const pack = opts.apiPack ?? (cfg.apiPack || null);
+    if (opts.apiRotation !== null && !(API_ROTATIONS as readonly string[]).includes(opts.apiRotation)) {
+        console.error(`Unknown --rotation '${opts.apiRotation}'. Use one of: ${API_ROTATIONS.join(", ")}.`);
+        return 1;
+    }
+    // A context named on the command line is an explicit choice for this run, so the saved rotation
+    // does not override it; --rotation alongside it still turns rotation on.
+    const flagContext = Boolean(opts.apiAccount || opts.apiProfile || opts.apiPack);
+    const rotation = (opts.apiRotation ?? (flagContext ? "off" : cfg.apiRotation)) as ApiRotation;
+    const pool = cfg.apiAccountPool ?? [];
     let server: Awaited<ReturnType<typeof startApiServer>>;
-    try { server = await startApiServer({ port, apiKey, tool, account, profile, pack }); }
+    try { server = await startApiServer({ port, apiKey, tool, account, profile, pack, rotation, pool, clientContext: cfg.apiClientContext !== false }); }
     catch (err) { console.error(`Could not start the API server: ${(err as Error).message}`); return 1; }
     const agents = availableAdapters().map((a) => a.tool);
     console.log(`enigma api (default ${tool}) -> ${server.url}`);
     console.log(`OpenAI base URL: ${server.url}/v1${apiKey ? "  (Authorization: Bearer <key> required)" : "  (no auth - loopback only)"}`);
     console.log(`Backends available: ${agents.length ? agents.join(", ") : "(none installed)"} - pick one per request via the model field (e.g. "claude-sonnet-5", "codex", "opencode").`);
     const ctx = [pack && `pack ${pack}`, account && `account ${account}`, profile && `profile ${profile}`].filter(Boolean).join(", ");
-    console.log(ctx ? `Default context: ${ctx} (override per request with account/profile/pack in the body).` : "Context: active account (override per request with account/profile/pack in the body).");
+    const perRequest = cfg.apiClientContext !== false ? " (override per request with account/profile/pack in the body)" : " (callers cannot pick an account: api-client-context is off)";
+    if (rotation !== "off") console.log(`Accounts: ${rotation} rotation across ${pool.length ? pool.join(", ") : "every account"}, failing over on usage limits${perRequest}.`);
+    else console.log(ctx ? `Default context: ${ctx}${perRequest}.` : `Context: active account${perRequest}.`);
     console.log("Press Ctrl+C to stop.");
     return await new Promise<number>((resolveExit) => {
         const stop = (): void => { server.close(); resolveExit(0); };

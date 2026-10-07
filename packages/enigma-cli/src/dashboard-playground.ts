@@ -12,9 +12,22 @@
 import { PACKS, isPackInstalled } from "./packs";
 import { availableAdapters } from "./api-agents";
 import { request as httpRequest } from "node:http";
-import { readConfig, setEnigmaValue } from "./config";
-import { listAccounts, listProfiles } from "./accounts";
 import { completeOnce, type CompleteResult } from "./api-server";
+import { listAccounts, listProfiles, TOOL_NAMES } from "./accounts";
+import { API_ROTATIONS, readConfig, setEnigmaValue, setEnigmaToggle, type ApiRotation } from "./config";
+
+/** Everything `enigma api` starts with when no flag overrides it. */
+export interface ApiDefaults {
+    account: string;
+    profile: string;
+    pack: string;
+    rotation: ApiRotation;
+    /** Accounts the rotation may use, in order; empty = every account. */
+    pool: string[];
+    /** Whether a request may name its own account/profile/pack. */
+    clientContext: boolean;
+    port: number;
+}
 
 /** Info for populating the playground UI: agents, models, accounts, profiles, packs, port. */
 export interface PlaygroundInfo {
@@ -24,32 +37,116 @@ export interface PlaygroundInfo {
     profiles: string[];
     packs: Array<{ id: string; label: string; installed: boolean; }>;
     apiPort: number;
-    /** The persisted default context the `enigma api` server runs under (settable here). */
-    defaults: { account: string; profile: string; pack: string; };
+    /** The persisted defaults the `enigma api` server starts with (settable here). */
+    defaults: ApiDefaults;
+    rotations: readonly string[];
+}
+
+/** The saved API defaults. */
+export function readApiDefaults(): ApiDefaults {
+    const cfg = readConfig().config;
+    return {
+        account: cfg.apiAccount || "",
+        profile: cfg.apiProfile || "",
+        pack: cfg.apiPack || "",
+        rotation: (API_ROTATIONS as readonly string[]).includes(cfg.apiRotation) ? cfg.apiRotation : "off",
+        pool: Array.isArray(cfg.apiAccountPool) ? cfg.apiAccountPool : [],
+        clientContext: cfg.apiClientContext !== false,
+        port: cfg.apiPort || 8000,
+    };
 }
 
 export function playgroundInfo(): PlaygroundInfo {
     const adapters = availableAdapters();
-    const cfg = readConfig().config;
     const accounts = adapters.flatMap((a) => listAccounts(a.tool).map((acc) => ({ tool: a.tool, name: acc.name })));
+    const defaults = readApiDefaults();
     return {
         agents: adapters.map((a) => a.tool),
         models: adapters.map((a) => ({ tool: a.tool, models: a.models })),
         accounts,
         profiles: listProfiles().map((p) => p.name),
         packs: PACKS.map((p) => ({ id: p.id, label: p.label, installed: isPackInstalled(p.id) })),
-        apiPort: cfg.apiPort || 8000,
-        defaults: { account: cfg.apiAccount || "", profile: cfg.apiProfile || "", pack: cfg.apiPack || "" },
+        apiPort: defaults.port,
+        defaults,
+        rotations: API_ROTATIONS,
     };
 }
 
-/** Persist the default API context (account/profile/pack) globally; empty values clear a field. */
-export function setApiDefaults(d: { account?: string; profile?: string; pack?: string; }): { ok: boolean; defaults: { account: string; profile: string; pack: string; }; } {
-    setEnigmaValue("apiAccount", typeof d.account === "string" ? d.account : "", "global");
-    setEnigmaValue("apiProfile", typeof d.profile === "string" ? d.profile : "", "global");
-    setEnigmaValue("apiPack", typeof d.pack === "string" ? d.pack : "", "global");
-    const cfg = readConfig().config;
-    return { ok: true, defaults: { account: cfg.apiAccount || "", profile: cfg.apiProfile || "", pack: cfg.apiPack || "" } };
+/** The names a defaults payload may reference. */
+export interface KnownContext { accounts: ReadonlySet<string>; profiles: ReadonlySet<string>; packs: ReadonlySet<string>; }
+
+/**
+ * Validate a defaults payload against what exists. Every field is optional (an absent one keeps
+ * its saved value); strings are trimmed and "none" clears. Returns the normalized changes, or the
+ * first problem with the field it belongs to so the form can point at it.
+ */
+export function validateApiDefaults(input: Record<string, unknown>, known: KnownContext): { ok: true; value: Partial<ApiDefaults>; } | { ok: false; field: string; error: string; } {
+    const out: Partial<ApiDefaults> = {};
+    const name = (field: "account" | "profile" | "pack", set: ReadonlySet<string>, what: string): string | null => {
+        const raw = input[field];
+        if (raw === undefined) return null;
+        if (typeof raw !== "string") throw { field, error: `${field} must be a string` };
+        const v = raw.trim().toLowerCase() === "none" ? "" : raw.trim();
+        if (v && !set.has(v)) throw { field, error: `no ${what} named '${v}'` };
+        out[field] = v;
+        return v;
+    };
+    try {
+        name("account", known.accounts, "account");
+        name("profile", known.profiles, "profile");
+        name("pack", known.packs, "pack");
+        if (input.rotation !== undefined) {
+            if (typeof input.rotation !== "string" || !(API_ROTATIONS as readonly string[]).includes(input.rotation)) throw { field: "rotation", error: `rotation must be one of ${API_ROTATIONS.join(", ")}` };
+            out.rotation = input.rotation as ApiRotation;
+        }
+        if (input.pool !== undefined) {
+            if (!Array.isArray(input.pool) || input.pool.some((n) => typeof n !== "string")) throw { field: "pool", error: "pool must be a list of account names" };
+            const pool = [...new Set((input.pool as string[]).map((n) => n.trim()).filter(Boolean))];
+            const unknown = pool.find((n) => !known.accounts.has(n));
+            if (unknown) throw { field: "pool", error: `no account named '${unknown}'` };
+            out.pool = pool;
+        }
+        if (input.clientContext !== undefined) {
+            if (typeof input.clientContext !== "boolean") throw { field: "clientContext", error: "clientContext must be true or false" };
+            out.clientContext = input.clientContext;
+        }
+        if (input.port !== undefined) {
+            const n = Number(input.port);
+            if (!Number.isInteger(n) || n < 1 || n > 65535) throw { field: "port", error: "port must be a whole number between 1 and 65535" };
+            out.port = n;
+        }
+    } catch (err) {
+        const e = err as { field: string; error: string; };
+        return { ok: false, field: e.field, error: e.error };
+    }
+    return { ok: true, value: out };
+}
+
+/** The account, profile and pack names that exist on this machine. */
+function knownContext(): KnownContext {
+    return {
+        accounts: new Set(TOOL_NAMES.flatMap((t) => listAccounts(t).map((a) => a.name))),
+        profiles: new Set(listProfiles().map((p) => p.name)),
+        packs: new Set(PACKS.map((p) => p.id)),
+    };
+}
+
+/**
+ * Persist the `enigma api` defaults globally, all-or-nothing: the whole payload is validated
+ * before anything is written, so a bad field never leaves half a change on disk.
+ */
+export function setApiDefaults(input: Record<string, unknown>): { ok: boolean; defaults: ApiDefaults; error?: string; field?: string; } {
+    const checked = validateApiDefaults(input, knownContext());
+    if (!checked.ok) return { ok: false, error: checked.error, field: checked.field, defaults: readApiDefaults() };
+    const v = checked.value;
+    if (v.account !== undefined) setEnigmaValue("apiAccount", v.account, "global");
+    if (v.profile !== undefined) setEnigmaValue("apiProfile", v.profile, "global");
+    if (v.pack !== undefined) setEnigmaValue("apiPack", v.pack, "global");
+    if (v.rotation !== undefined) setEnigmaValue("apiRotation", v.rotation, "global");
+    if (v.pool !== undefined) setEnigmaValue("apiAccountPool", v.pool, "global");
+    if (v.clientContext !== undefined) setEnigmaToggle("apiClientContext", v.clientContext, "global");
+    if (v.port !== undefined) setEnigmaValue("apiPort", v.port, "global");
+    return { ok: true, defaults: readApiDefaults() };
 }
 
 /** A request from the playground form. */
@@ -198,6 +295,8 @@ export interface PlaygroundResponse {
     text?: string;
     response?: unknown;
     usage?: { input: number; output: number; };
+    /** The account that served the request when the rotation picked it. */
+    account?: string;
     curl: string;
 }
 
@@ -235,6 +334,7 @@ export async function runPlayground(req: PlaygroundRequest): Promise<PlaygroundR
             error: result.isError ? (result.errorMessage || `${result.tool} returned an error.`) : undefined,
             mode, format, tool: result.tool, text: result.text, response, curl,
             usage: { input: result.inputTokens, output: result.outputTokens },
+            account: result.account ?? undefined,
         };
     } catch (err) {
         return { ok: false, error: (err as Error).message, mode, format, curl };

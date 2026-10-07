@@ -661,8 +661,8 @@ function servePlayground(res: import("node:http").ServerResponse): void {
 }
 
 /**
- * Playground POST: either persist the default API context ({ op: "set-defaults", account?,
- * profile?, pack? }) or run a request (drives a real agent in-process, or forwards to a loopback
+ * Playground POST: either persist the `enigma api` defaults ({ op: "set-defaults", account?,
+ * profile?, pack?, rotation?, pool?, clientContext?, port? }) or run a request (drives a real agent in-process, or forwards to a loopback
  * server). Both are origin-guarded at the route.
  */
 function runPlaygroundRoute(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
@@ -675,7 +675,7 @@ function runPlaygroundRoute(req: import("node:http").IncomingMessage, res: impor
             try {
                 const m = await import("./dashboard-playground");
                 const out = parsed.op === "set-defaults"
-                    ? m.setApiDefaults({ account: parsed.account, profile: parsed.profile, pack: parsed.pack })
+                    ? m.setApiDefaults(parsed as unknown as Record<string, unknown>)
                     : await m.runPlayground(parsed);
                 res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out));
             } catch (err) {

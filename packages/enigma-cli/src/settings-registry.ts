@@ -24,6 +24,7 @@ import { isAutoLintOn, setAutoLint } from "./lint";
 import { applyGateToggle } from "./command-deploy";
 import { setGuardrails } from "./guardrails-deploy";
 import type { GuardListMeta } from "./guard-config";
+import { TOOL_NAMES, accountExists } from "./accounts";
 import { applyCodeGraphWiring } from "./codegraph-deploy";
 import { applySubagentWiring, parseCompactWindow } from "./subagent-deploy";
 import { applyHandoffWiring, parseRelayAt, setRelay } from "./handoff-deploy";
@@ -328,6 +329,30 @@ function guardListSetting(meta: GuardListMeta): Setting {
         addItem: (item) => { setGuardList(meta.field, [...readGlobalGuard()[meta.field], item]); return { changed: true }; },
         removeItem: (item) => { setGuardList(meta.field, readGlobalGuard()[meta.field].filter((x) => x !== item)); return { changed: true }; },
     };
+}
+
+/** Normalize a free-text API context value: trimmed, and "none" or blank clears it. */
+function apiContextValue(value: string): string {
+    const v = value.trim();
+    return v.toLowerCase() === "none" ? "" : v;
+}
+
+/** Declare one of the API server's default-context strings (account/profile/pack) as a value setting. */
+function apiContextSetting(key: string, field: "apiAccount" | "apiProfile" | "apiPack", label: string, hint: string, valueHint: string): Setting {
+    return {
+        key, label, hint, globalOnly: true, kind: "value", valueHint,
+        read: () => !!conf.readConfig().config[field],
+        write: () => ({ changed: false }),
+        readValue: () => conf.readConfig().config[field],
+        writeValue: (value, scope) => ({ path: conf.setEnigmaValue(field, apiContextValue(value), scope), changed: true }),
+    };
+}
+
+/** Add an account to the rotation pool, refusing a name no tool has (it would never be picked). */
+function addPoolAccount(item: string, scope: Scope): ApplyResult {
+    const name = item.trim();
+    if (!TOOL_NAMES.some((t) => accountExists(t, name))) return { changed: false, error: `no account named '${name}' (see 'enigma accounts')` };
+    return { path: conf.updateEnigmaList("apiAccountPool", name, true, scope), changed: true };
 }
 
 const RAW_CATEGORIES: Category[] = [
@@ -696,6 +721,53 @@ const RAW_CATEGORIES: Category[] = [
                 readValue: () => conf.readConfig().config.recallApiKey ? "set" : "",
                 writeValue: (value, scope) => ({ path: conf.setRecallApiKey(value.trim(), scope), changed: true }),
             },
+        ],
+    },
+    {
+        title: "Local API",
+        blurb: "defaults for 'enigma api', the OpenAI-compatible server over your coding agents: which account answers a request and who chooses it",
+        settings: [
+            {
+                key: "api-port",
+                label: "API port",
+                hint: "port 'enigma api' listens on (127.0.0.1 only); --port overrides it for one run; enigma default: 8000",
+                globalOnly: true,
+                kind: "value",
+                valueHint: "1-65535 (default 8000)",
+                read: () => true,
+                write: () => ({ changed: false }),
+                readValue: () => String(conf.readConfig().config.apiPort || 8000),
+                writeValue: (value, scope) => {
+                    const n = Number(value.trim() || 8000);
+                    if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error("use a port between 1 and 65535");
+                    return { path: conf.setEnigmaValue("apiPort", n, scope), changed: true };
+                },
+            },
+            { ...enigmaChoice("api-rotation", "apiRotation", "Account rotation", "how requests that name no account are spread across your accounts: off = always the default account; round-robin = take turns; least-used = the account with the least use in its current 5h window; fill-first = use the first until it hits its limit; random. With any of them on, a request that hits a usage limit is retried on the next account; enigma default: off", conf.API_ROTATIONS, "round-robin"), globalOnly: true },
+            {
+                key: "api-account-pool",
+                label: "Accounts in the rotation",
+                hint: "the accounts the rotation may use, in order (fill-first tries them in this order); empty = every account of the agent",
+                globalOnly: true,
+                kind: "list",
+                itemHint: "account name, e.g. work",
+                read: () => conf.readConfig().config.apiAccountPool.length > 0,
+                write: () => ({ changed: false }),
+                listValues: (scope) => conf.readEnigmaList("apiAccountPool", scope),
+                addItem: (item, scope) => addPoolAccount(item, scope),
+                removeItem: (item, scope) => ({ path: conf.updateEnigmaList("apiAccountPool", item.trim(), false, scope), changed: true }),
+            },
+            {
+                key: "api-client-context",
+                label: "Callers choose the account",
+                hint: "let a request pick its own account, profile or pack (the account/profile/pack fields); off = enigma always decides and refuses a request that names one; enigma default: on",
+                globalOnly: true,
+                read: () => conf.readConfig().config.apiClientContext,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("apiClientContext", value, scope), changed: true }),
+            },
+            apiContextSetting("api-account", "apiAccount", "Default account", "account a request runs under when it names none and rotation is off; blank = the active account", "account name (blank or none = active account)"),
+            apiContextSetting("api-profile", "apiProfile", "Default profile", "profile whose account mapping a request uses when it names none and rotation is off", "profile name (blank or none = no profile)"),
+            apiContextSetting("api-pack", "apiPack", "Default pack", "pack (e.g. helio) whose isolated context a request runs in when it names none and rotation is off; wins over the default account and profile", "pack id (blank or none = no pack)"),
         ],
     },
     {

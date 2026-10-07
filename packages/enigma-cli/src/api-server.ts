@@ -13,12 +13,14 @@
  * for unit tests so no test ever spawns a CLI.
  */
 import { resolveBin } from "./util";
-import { readConfig } from "./config";
-import { tokenMatches } from "./dashboard-token";
 import { randomUUID } from "node:crypto";
+import { readUsageCached } from "./usage";
 import { spawn } from "node:child_process";
+import { tokenMatches } from "./dashboard-token";
+import { readConfig, type ApiRotation } from "./config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles } from "./accounts";
+import { AccountRotator, classifyAccountError, poolOrder, type WindowUsage } from "./api-rotation";
+import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles, listAccounts } from "./accounts";
 import { runSessionTurn, closeAllSessions, isSessionBusy, SessionError, DEFAULT_SESSION_CONFIG, type SessionSpec } from "./session-runtime";
 import {
     resolveAdapter,
@@ -295,6 +297,8 @@ export interface CompleteResult {
     sessionId: string | null;
     isError: boolean;
     errorMessage?: string;
+    /** The account that served the request when rotation picked it (null = a fixed context). */
+    account?: string | null;
 }
 
 /**
@@ -309,8 +313,15 @@ export async function completeOnce(params: CompleteParams): Promise<CompleteResu
         ? messagesToPrompt(params.messages)
         : { prompt: params.prompt || "", system: params.system ?? null };
     const images = params.images ?? (params.messages ? extractImages(params.messages) : undefined);
-    const result = await runAgent(adapter, prompt, { model, system: params.system ?? system, sessionId: null, enableTools: params.enableTools === true, images, account: params.account, profile: params.profile, pack: params.pack });
-    return { tool: adapter.tool, model, ...result };
+    const messages = params.messages ?? [{ role: "user", content: prompt }];
+    // Same resolution as the server: an explicit context wins, else the configured rotation, else
+    // the saved defaults - so the playground shows which account `enigma api` would use.
+    const defaults = configDefaults(params.tool || "claude");
+    const explicit = { account: params.account || null, profile: params.profile || null, pack: params.pack || null };
+    const picked = explicit.account || explicit.profile || explicit.pack ? { ctx: explicit, rotated: null } : pickContext(adapter.tool, null, defaults);
+    const opts: CompletionOptions = { model, system: params.system ?? system, sessionId: null, enableTools: params.enableTools === true, images, ...picked.ctx };
+    const result = await driveRotating(adapter, messages, prompt, opts, defaults, picked.rotated);
+    return { tool: adapter.tool, model, ...result, account: result.account ?? null };
 }
 
 /** Windows arg quoting for the shell path (mirrors accounts.ts, kept local to stay standalone). */
@@ -347,9 +358,9 @@ function readBody(req: IncomingMessage, limit = 4 * 1024 * 1024): Promise<string
     });
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
     const text = JSON.stringify(body);
-    res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(text) });
+    res.writeHead(status, { ...headers, "content-type": "application/json", "content-length": Buffer.byteLength(text) });
     res.end(text);
 }
 
@@ -405,20 +416,146 @@ function authorized(req: IncomingMessage, apiKey: string | null): boolean {
 }
 
 /** Server-wide defaults for the backing context, overridable per request. */
-interface ServerDefaults { tool: string; account?: string | null; profile?: string | null; pack?: string | null; }
-
-/** Merge the per-request account/profile/pack over the server defaults (request wins). */
-function contextOf(body: Record<string, unknown>, defaults: ServerDefaults): Pick<CompletionOptions, "account" | "profile" | "pack"> {
-    return {
-        account: (typeof body.account === "string" ? body.account : null) ?? defaults.account ?? null,
-        profile: (typeof body.profile === "string" ? body.profile : null) ?? defaults.profile ?? null,
-        pack: (typeof body.pack === "string" ? body.pack : null) ?? defaults.pack ?? null,
-    };
+interface ServerDefaults {
+    tool: string;
+    account?: string | null;
+    profile?: string | null;
+    pack?: string | null;
+    /** Picks an account per request when the caller names none; strategy "off" = the fixed defaults. */
+    rotator: AccountRotator;
+    /** Whether a caller may pick account/profile/pack per request. */
+    clientContext: boolean;
 }
+
+type ContextFields = Pick<CompletionOptions, "account" | "profile" | "pack">;
 
 /** An error carrying the HTTP status a handler should surface (client mistakes, not agent faults). */
 class RequestError extends Error {
     constructor(public status: number, message: string, public apiType = "invalid_request_error") { super(message); }
+}
+
+/** A non-empty string field of the request body, trimmed, or null. */
+function bodyString(body: Record<string, unknown>, key: string): string | null {
+    const v = body[key];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/**
+ * Resolve the context one request runs under. Order: the caller's own account/profile/pack (when
+ * the server lets callers choose), then the rotation (an account picked from the pool, sticky per
+ * warm session), then the server defaults, then the active account. A request that names a
+ * context on a server that does not allow it is refused rather than silently rerouted.
+ */
+function contextOf(body: Record<string, unknown>, defaults: ServerDefaults, tool: string): { ctx: ContextFields; rotated: string | null; } {
+    const asked = { account: bodyString(body, "account"), profile: bodyString(body, "profile"), pack: bodyString(body, "pack") };
+    if (asked.account || asked.profile || asked.pack) {
+        if (!defaults.clientContext) throw new RequestError(403, "This server picks the account itself: remove account/profile/pack from the request, or allow it with 'enigma config api-client-context on'.", "permission_error");
+        return { ctx: asked, rotated: null };
+    }
+    return pickContext(tool, typeof body.session_id === "string" ? body.session_id : null, defaults);
+}
+
+/** A tool's account names (a registry read plus one small file per account - fine per request). */
+function accountNames(tool: string): string[] {
+    return listAccounts(tool).map((a) => a.name);
+}
+
+/** The rotation's pick, or the fixed defaults when rotation is off or the pool has no account of this tool. */
+function pickContext(tool: string, sessionId: string | null, defaults: ServerDefaults): { ctx: ContextFields; rotated: string | null; } {
+    const fixed = { ctx: { account: defaults.account ?? null, profile: defaults.profile ?? null, pack: defaults.pack ?? null }, rotated: null };
+    const rotator = defaults.rotator;
+    if (!rotator.enabled) return fixed;
+    const names = accountNames(tool);
+    // A warm session lives in one account's config dir, so its later turns stay on that login.
+    const bound = sessionId ? rotator.sessionAccount(sessionId) : undefined;
+    if (bound && names.includes(bound)) return { ctx: { account: bound, profile: null, pack: null }, rotated: bound };
+    if (!poolOrder(names, rotator.pool).length) return fixed;
+    const account = rotator.pick(tool, names);
+    if (!account) {
+        const next = rotator.snapshot().cooldowns.filter((c) => c.tool === tool).reduce((min, c) => Math.min(min, c.until), Infinity);
+        const when = Number.isFinite(next) ? ` The first one is free again at ${new Date(next).toISOString()}.` : "";
+        throw new RequestError(429, `Every ${tool} account in the rotation is cooling down after a usage limit or a failed login.${when}`, "rate_limit_error");
+    }
+    return { ctx: { account, profile: null, pack: null }, rotated: account };
+}
+
+/**
+ * Drive a request and, when the rotation picked its account, fail over on an account-level fault
+ * (a usage limit or a broken login): that account cools down and the request runs again on the
+ * next pick. A retry only happens while nothing has reached the client yet, and never for a warm
+ * session, whose thread lives in the first account's directory.
+ */
+async function driveRotating(adapter: AgentAdapter, messages: ChatMessage[], prompt: string, opts: CompletionOptions, defaults: ServerDefaults, rotated: string | null, onText?: (t: string) => Promise<void> | void): Promise<RunResult & { account?: string; }> {
+    if (!rotated) return drive(adapter, messages, prompt, opts, onText);
+    const rotator = defaults.rotator;
+    const tool = adapter.tool;
+    const tried = new Set<string>();
+    let account = rotated;
+    for (;;) {
+        const end = rotator.begin(tool, account);
+        // A limit notice arrives as answer text before the run's error result, so the opening text
+        // is held back: if the run turns out to be an account fault, nothing has reached the client
+        // and the request can move to the next account. Past HOLD_CHARS it is a real answer.
+        let held = "";
+        let flowing = false;
+        const relay = onText ? (t: string): Promise<void> | void => {
+            if (flowing) return onText(t);
+            held += t;
+            if (held.length < HOLD_CHARS) return;
+            flowing = true;
+            const out = held;
+            held = "";
+            return onText(out);
+        } : undefined;
+        let result: RunResult;
+        try { result = await drive(adapter, messages, prompt, { ...opts, account, profile: null, pack: null }, relay); }
+        catch (err) { end(0); throw err; }
+        end(result.inputTokens + result.outputTokens);
+        if (opts.sessionId && !result.isError) rotator.bindSession(opts.sessionId, account);
+        const fault = result.isError ? classifyAccountError(result.errorMessage) : null;
+        if (fault) {
+            rotator.markFault(tool, account, fault, result.errorMessage);
+            tried.add(account);
+            const next = flowing || opts.sessionId ? null : rotator.pick(tool, accountNames(tool), tried);
+            if (next) { account = next; continue; }
+        }
+        if (held && onText) await onText(held);
+        return { ...result, account };
+    }
+}
+
+/** How much opening answer text a rotated stream holds back before it is known not to be a limit notice. */
+const HOLD_CHARS = 160;
+
+/** The response header naming the account that served a rotated request. */
+function accountHeader(account: string | undefined): Record<string, string> {
+    return account ? { "x-enigma-account": account } : {};
+}
+
+/** Transcript-based window usage for least-used, read only when the user allowed reading transcripts. */
+const transcriptUsage: WindowUsage = (tool, account) => {
+    if (tool !== "claude" || !readConfig().config.usageStats) return { tokens: 0, asOf: 0 };
+    const report = readUsageCached();
+    return { tokens: report.accounts[account]?.windows.session.used ?? 0, asOf: report.generatedAt };
+};
+
+/** A rotator for a strategy and pool, ranking least-used by the transcript windows. */
+export function createRotator(strategy: ApiRotation, pool: string[]): AccountRotator {
+    return new AccountRotator(strategy, pool, transcriptUsage);
+}
+
+let inprocRotator: AccountRotator | null = null;
+
+/**
+ * Defaults for in-process completions (the dashboard playground), from the saved config. The
+ * rotator outlives the call so round-robin advances and cooldowns stick; a changed strategy or
+ * pool replaces it.
+ */
+function configDefaults(tool: string): ServerDefaults {
+    const cfg = readConfig().config;
+    const pool = cfg.apiAccountPool ?? [];
+    if (!inprocRotator || inprocRotator.strategy !== cfg.apiRotation || inprocRotator.pool.join(",") !== pool.join(",")) inprocRotator = createRotator(cfg.apiRotation, pool);
+    return { tool, account: cfg.apiAccount || null, profile: cfg.apiProfile || null, pack: cfg.apiPack || null, rotator: inprocRotator, clientContext: true };
 }
 
 /** Claude Code's session ids are UUIDs, and `--session-id`/`--resume` reject anything else. */
@@ -493,7 +630,10 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     const { prompt, system } = messagesToPrompt(messages);
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(messages), ...contextOf(body, defaults) };
+    let picked: ReturnType<typeof contextOf>;
+    try { picked = contextOf(body, defaults, adapter.tool); }
+    catch (err) { if (err instanceof RequestError) return apiError(res, err.status, err.message, err.apiType); throw err; }
+    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(messages), ...picked.ctx };
     // A session problem has to fail before any streaming head is written, so check it up front:
     // afterwards the 200 is already on the wire and the client would read the error as content.
     const sessionProblem = sessionRequestError(adapter, opts);
@@ -504,7 +644,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
         res.write(streamChunk(id, model, { role: "assistant" }));
         try {
-            const result = await drive(adapter, messages, prompt, opts, (t) => writeSse(res, streamChunk(id, model, { content: t })));
+            const result = await driveRotating(adapter, messages, prompt, opts, defaults, picked.rotated, (t) => writeSse(res, streamChunk(id, model, { content: t })));
             touchSession(result.sessionId, messages.length + 1);
             if (result.isError) res.write(streamChunk(id, model, { content: `\n[error] ${result.errorMessage ?? "unknown error"}` }));
             const includeUsage = (body.stream_options as { include_usage?: boolean; } | undefined)?.include_usage === true;
@@ -524,7 +664,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     }
 
     try {
-        const result = await drive(adapter, messages, prompt, opts);
+        const result = await driveRotating(adapter, messages, prompt, opts, defaults, picked.rotated);
         touchSession(result.sessionId, messages.length + 1);
         if (result.isError) return apiError(res, 502, result.errorMessage ?? `${adapter.tool} returned an error.`, "api_error");
         sendJson(res, 200, {
@@ -533,7 +673,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
             usage: { prompt_tokens: result.inputTokens, completion_tokens: result.outputTokens, total_tokens: result.inputTokens + result.outputTokens },
             system_fingerprint: result.sessionId ? `session_${result.sessionId}` : null,
             session_id: result.sessionId,
-        });
+        }, accountHeader(result.account));
     } catch (err) {
         if (err instanceof RequestError) return apiError(res, err.status, err.message, err.apiType);
         apiError(res, 502, (err as Error).message, "api_error");
@@ -550,7 +690,10 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     const { prompt } = messagesToPrompt(rawMessages);
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
+    let picked: ReturnType<typeof contextOf>;
+    try { picked = contextOf(body, defaults, adapter.tool); }
+    catch (err) { if (err instanceof RequestError) return apiError(res, err.status, err.message, err.apiType); throw err; }
+    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(rawMessages), ...picked.ctx };
     const sessionProblem = sessionRequestError(adapter, opts);
     if (sessionProblem) return apiError(res, sessionProblem.status, sessionProblem.message, sessionProblem.apiType);
     const id = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
@@ -562,7 +705,7 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
         send("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", content: [], model, stop_reason: null, usage: { input_tokens: 0, output_tokens: 0 } } });
         send("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
         try {
-            const result = await drive(adapter, rawMessages, prompt, opts, (t) => writeSse(res, frame("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })));
+            const result = await driveRotating(adapter, rawMessages, prompt, opts, defaults, picked.rotated, (t) => writeSse(res, frame("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })));
             send("content_block_stop", { type: "content_block_stop", index: 0 });
             send("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: result.outputTokens } });
             send("message_stop", { type: "message_stop" });
@@ -574,7 +717,7 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     }
 
     try {
-        const result = await drive(adapter, rawMessages, prompt, opts);
+        const result = await driveRotating(adapter, rawMessages, prompt, opts, defaults, picked.rotated);
         if (result.isError) return apiError(res, 502, result.errorMessage ?? `${adapter.tool} returned an error.`, "api_error");
         sendJson(res, 200, {
             id, type: "message", role: "assistant", model,
@@ -582,7 +725,7 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
             stop_reason: "end_turn", stop_sequence: null,
             usage: { input_tokens: result.inputTokens, output_tokens: result.outputTokens },
             session_id: result.sessionId,
-        });
+        }, accountHeader(result.account));
     } catch (err) {
         if (err instanceof RequestError) return apiError(res, err.status, err.message, err.apiType);
         apiError(res, 502, (err as Error).message, "api_error");
@@ -598,6 +741,12 @@ export interface ApiServerOptions {
     account?: string | null;
     profile?: string | null;
     pack?: string | null;
+    /** Account rotation for requests that name no context (default "off"). */
+    rotation?: ApiRotation;
+    /** Accounts the rotation may use, in order; empty = every account of the tool. */
+    pool?: string[];
+    /** Whether callers may pick account/profile/pack per request (default true). */
+    clientContext?: boolean;
 }
 
 /** Result of a started server: the bound URL/port and a close handle. */
@@ -611,14 +760,21 @@ export interface RunningApi { url: string; port: number; close: () => void; }
 export function startApiServer(options: ApiServerOptions): Promise<RunningApi> {
     const apiKey = options.apiKey?.trim() || null;
     const defaultTool = options.tool || "claude";
-    const defaults: ServerDefaults = { tool: defaultTool, account: options.account ?? null, profile: options.profile ?? null, pack: options.pack ?? null };
+    const defaults: ServerDefaults = {
+        tool: defaultTool, account: options.account ?? null, profile: options.profile ?? null, pack: options.pack ?? null,
+        rotator: createRotator(options.rotation ?? "off", options.pool ?? []), clientContext: options.clientContext !== false,
+    };
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         void (async () => {
             const path = (req.url || "").split("?")[0] || "/";
             const method = req.method || "GET";
             try {
                 const defaultContext = { account: defaults.account, profile: defaults.profile, pack: defaults.pack };
-                if (method === "GET" && path === "/health") return sendJson(res, 200, { status: "ok", service: "enigma-api", defaultBackend: defaultTool, agents: availableAdapters().map((a) => a.tool), defaultContext });
+                if (method === "GET" && path === "/health") {
+                    // Account names and cooldowns only go to a caller the server would serve.
+                    const rotation = authorized(req, apiKey) ? { ...defaults.rotator.snapshot(), clientContext: defaults.clientContext } : { strategy: defaults.rotator.strategy };
+                    return sendJson(res, 200, { status: "ok", service: "enigma-api", defaultBackend: defaultTool, agents: availableAdapters().map((a) => a.tool), defaultContext, rotation });
+                }
                 if (method === "GET" && (path === "/" || path === "/v1")) {
                     return sendJson(res, 200, { service: "enigma local agent API", endpoints: ["/v1/chat/completions", "/v1/messages", "/v1/models", "/v1/sessions", "/health"], defaultBackend: defaultTool, agents: availableAdapters().map((a) => a.tool), defaultContext, authenticated: Boolean(apiKey) });
                 }

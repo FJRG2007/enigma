@@ -90,10 +90,36 @@ Per request, add `"account"`, `"profile"`, or `"pack"` to the JSON body (they ar
 
 A request's context wins over the server default, so one server can serve several accounts or packs at once. `GET /health` reports the server's default context.
 
-You can also set a **persisted default** that `enigma api` uses when no flag is given - from the dashboard **Playground** tab ("Save context as `enigma api` default") or the CLI:
+You can also set a **persisted default** that `enigma api` uses when no flag is given - from the dashboard **Local API** page (Server defaults) or the CLI:
 
 <Cmd name="enigma config api-account work" ex={["enigma config api-account work", "enigma config api-pack helio", "enigma config api-account none"]}>
 Persist the default account / profile / pack for the API server (`none` clears it). A per-run flag or a per-request field still overrides it.
+</Cmd>
+
+## Account rotation
+
+Instead of one fixed account, enigma can spread requests across several. Rotation applies to requests that name no account, profile or pack:
+
+| Strategy | Picks |
+| --- | --- |
+| `off` (default) | the default account / profile / pack above, else the active account |
+| `round-robin` | the next account in turn |
+| `least-used` | the account with the least token use in its current 5-hour window (from your transcripts when real usage stats are on, plus what the server sent since) |
+| `fill-first` | the first account until it hits a usage limit, then the next |
+| `random` | any account at random |
+
+With any strategy on, a request that hits a usage limit or a failed login is **retried on the next account**, and the limited one sits out until the reset time Claude reported (otherwise 2 minutes, doubling up to 30). Once every account is cooling down the server answers `429`. A streamed reply fails over too: the opening text is held back until it is clear it is a real answer, not a limit notice. A warm session stays on the account it started on.
+
+<Cmd name="enigma config api-rotation round-robin" ex={["enigma config api-rotation round-robin", "enigma config api-account-pool add work", "enigma api --rotation fill-first"]}>
+`api-rotation` sets the strategy, `api-account-pool` lists the accounts it may use in order (empty = every account of the backend), and `--rotation` overrides the strategy for one run. A context flag (`--account`, `--profile`, `--pack`) turns rotation off for that run.
+</Cmd>
+
+A rotated response carries an `x-enigma-account` header naming the account that answered, and `GET /health` (with the API key, when one is set) shows the strategy, the pool, which accounts are cooling down and until when.
+
+**Who chooses.** By default a caller may still pick its own account per request. To let enigma decide alone, turn that off - a request that names an account, profile or pack is then refused with `403`:
+
+<Cmd name="enigma config api-client-context off" ex={["enigma config api-client-context off", "enigma config api-client-context on"]}>
+Whether requests may choose their own account, profile or pack.
 </Cmd>
 
 ## Tools

@@ -467,6 +467,15 @@
         .pg-textarea { min-height: 92px; resize: vertical; line-height: 1.5; }
         .pg-check { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text); padding-top: 4px; }
         .pg-check label { color: var(--muted); }
+        .ad-pool { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+        .ad-pool label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); cursor: pointer; min-width: 0; max-width: 100%; }
+        .ad-pool label > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ad-pool input { accent-color: var(--good); }
+        .ad-pool .aicon { color: var(--muted); }
+        .ad-pool.off { opacity: .5; }
+        .ad-fixed.off { opacity: .5; }
+        .ad-err { color: var(--bad); font-size: 11px; }
+        .ad-err:empty { display: none; }
         .pg-out { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; overflow-x: auto; max-height: 360px; overflow-y: auto; margin: 0; }
         /* Claude-style usage window gauges (current session / weekly all / weekly Sonnet). */
         .wgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
@@ -836,7 +845,7 @@
                 </a>
                 <a href="#/playground" data-view="playground" class="tab">
                     <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
-                    <span>Playground</span>
+                    <span>Local API</span>
                 </a>
             </div>
             <div class="nav-group" role="group" aria-labelledby="ng-code">
@@ -1427,9 +1436,44 @@
 
     <section id="view-playground" style="display:none">
         <div class="page-head">
-            <h1>API Playground</h1>
-            <p>Test the local agent API without leaving the dashboard. Pick a format (OpenAI or Anthropic), a backend, and send a message. Run it in-process (no server needed) or against a running <code>enigma api</code> with an auth key.</p>
+            <h1>Local API</h1>
+            <p>Set which account answers <code>enigma api</code> requests, then try it below.</p>
         </div>
+        <div class="panel" id="adPanel">
+            <div class="set-cat-h">Server defaults</div>
+            <div class="set-cat-b">What <code>enigma api</code> starts with. A command-line flag overrides them for one run; changes apply the next time the server starts.</div>
+            <div class="pg-grid">
+                <label class="pg-field"><span>Account rotation</span>
+                    <select id="adRotation"></select>
+                </label>
+                <label class="pg-field ad-fixed"><span>Default account</span>
+                    <select id="adAccount"><option value="">(active account)</option></select>
+                </label>
+                <label class="pg-field ad-fixed"><span>Default profile</span>
+                    <select id="adProfile"><option value="">(none)</option></select>
+                </label>
+                <label class="pg-field ad-fixed"><span>Default pack</span>
+                    <select id="adPack"><option value="">(none)</option></select>
+                </label>
+                <label class="pg-field"><span>Port</span>
+                    <input id="adPort" class="linput" type="number" min="1" max="65535" step="1" inputmode="numeric" aria-describedby="adPortErr">
+                    <small id="adPortErr" class="ad-err" role="alert"></small>
+                </label>
+                <div class="pg-field"><span>Callers choose the account</span>
+                    <button id="adClient" type="button" class="toggle on" data-kind="bool" role="switch" aria-checked="true" aria-label="Let requests pick their own account, profile or pack">On</button>
+                </div>
+            </div>
+            <div id="adRotationHint" class="set-hint"></div>
+            <div class="pg-field" id="adPoolWrap"><span>Accounts in the rotation <small>(none checked = every account; fill-first uses them in the order you check them)</small></span>
+                <div id="adPool" class="ad-pool"></div>
+            </div>
+            <div class="ladd" style="gap:8px;align-items:center">
+                <button id="adSave" type="button" class="toggle on" disabled>Save defaults</button>
+                <button id="adDiscard" type="button" class="laddb" style="display:none">Discard changes</button>
+                <span id="adNote" class="set-hint"></span>
+            </div>
+        </div>
+        <div class="set-cat-h" style="margin:18px 0 8px">Playground</div>
         <div class="panel">
             <div class="pg-grid">
                 <label class="pg-field"><span>Run</span>
@@ -1454,13 +1498,13 @@
                     <input id="pgKey" class="linput" type="password" placeholder="Bearer token / ENIGMA_API_KEY">
                 </label>
                 <label class="pg-field"><span>Account <small>(optional)</small></span>
-                    <select id="pgAccount"><option value="">(active)</option></select>
+                    <select id="pgAccount"><option value="">(server default)</option></select>
                 </label>
                 <label class="pg-field"><span>Profile <small>(optional)</small></span>
-                    <select id="pgProfile"><option value="">(none)</option></select>
+                    <select id="pgProfile"><option value="">(server default)</option></select>
                 </label>
                 <label class="pg-field"><span>Pack <small>(optional)</small></span>
-                    <select id="pgPack"><option value="">(none)</option></select>
+                    <select id="pgPack"><option value="">(server default)</option></select>
                 </label>
                 <div class="pg-field pg-tools"><span>Agent tools <small>(Read/Write/Bash...)</small></span>
                     <button id="pgTools" type="button" class="toggle on" data-kind="bool" role="switch" aria-checked="true" aria-label="Enable agent tools">On</button>
@@ -1468,10 +1512,6 @@
                 <label class="pg-field"><span>Image <small>(optional)</small></span>
                     <input id="pgImage" type="file" accept="image/*" class="linput">
                 </label>
-            </div>
-            <div class="ladd" style="gap:8px;align-items:center">
-                <button id="pgSaveDefault" type="button" class="laddb">Save context as <code>enigma api</code> default</button>
-                <span id="pgDefaultNote" class="set-hint"></span>
             </div>
             <label class="pg-field"><span>System prompt <small>(optional)</small></span>
                 <input id="pgSystem" class="linput" placeholder="e.g. You are a terse assistant.">
@@ -3660,8 +3700,9 @@ export {
 
         function renderSettings(cats) {
             const el = $("settingsBody");
-            // Skill-related settings live in the Skills tab; drop them here so they aren't shown twice.
-            cats = (cats || []).map((c) => ({ ...c, settings: (c.settings || []).filter((s) => SKILL_SETTING_KEYS.indexOf(s.key) === -1) })).filter((c) => c.settings.length);
+            // Skill-related settings live in the Skills tab and the API server's in the Local API tab;
+            // drop them here so they aren't shown twice.
+            cats = (cats || []).map((c) => ({ ...c, settings: (c.settings || []).filter((s) => SKILL_SETTING_KEYS.indexOf(s.key) === -1 && !/^api-/.test(s.key)) })).filter((c) => c.settings.length);
             if (!cats.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">No settings available.</div>'; return; }
             // One panel per category; settings laid out in a responsive 2-column grid so a
             // long config list stays scannable on a wide screen.
@@ -4059,7 +4100,7 @@ export {
         // config stores `opencode` and `rovodev`, the reader sees OpenCode and Rovo Dev.
         const AGENT_LABELS = {
             auto: "Auto", claude: "Claude Code", codex: "Codex",
-            opencode: "OpenCode", rovodev: "Rovo Dev", pi: "Pi"
+            opencode: "OpenCode", kimi: "Kimi Code", rovodev: "Rovo Dev", pi: "Pi"
         };
         // App label -> internal name. Normalized so every label variant maps to an icon:
         // "Claude Code", "Codex"/"OpenAI Codex", "opencode"/"OpenCode", "Rovo Dev", "Pi".
@@ -5090,7 +5131,7 @@ export {
 
         /**
          * The palette's engine, from @enigmax/primitives: subsequence ranking (so "qgate"
-         * finds "Quality gate" and "plyg" finds "Playground"), the debounce and the
+         * finds "Quality gate" and "lapi" finds "Local API"), the debounce and the
          * cancellation. The scorer this replaced is the one the package now ships, so the
          * dashboard and every other consumer rank the same way.
          */
@@ -6342,30 +6383,149 @@ export {
             if (!opts.length) opts.push('<option value="claude" data-icon="claude">Claude Code (default)</option>');
             sel.innerHTML = opts.join("");
             syncDD(sel);
-            // Context selectors: account (labeled by tool), profile, pack.
-            const acc = $("pgAccount");
-            acc.innerHTML = '<option value="">(active)</option>' + (info.accounts || []).map((a) =>
-                '<option value="' + esc(a.name) + '" data-icon="' + esc(agentName(a.tool)) + '">' + esc(a.name) + " (" + esc(agentLabel(a.tool)) + ")</option>").join("");
-            syncDD(acc);
-            const prof = $("pgProfile");
-            prof.innerHTML = '<option value="">(none)</option>' + (info.profiles || []).map((n) => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");
-            syncDD(prof);
-            const pk = $("pgPack");
-            pk.innerHTML = '<option value="">(none)</option>' + (info.packs || []).map((p) => '<option value="' + esc(p.id) + '">' + esc(p.label) + (p.installed ? "" : " - not installed") + "</option>").join("");
-            syncDD(pk);
-            // Pre-select the persisted server default so the playground matches `enigma api`.
-            const def = info.defaults || { account: "", profile: "", pack: "" };
-            acc.value = def.account || ""; syncDD(acc);
-            prof.value = def.profile || ""; syncDD(prof);
-            pk.value = def.pack || ""; syncDD(pk);
-            renderPgDefault(def);
-            $("pgBase").placeholder = "http://127.0.0.1:" + (info.apiPort || 8000);
+            // Context selectors: account (labeled by tool), profile, pack. Blank = whatever the
+            // server defaults below pick (the rotation included), so a test matches `enigma api`.
+            fillContextSelect($("pgAccount"), "(server default)", accountOptions(info.accounts));
+            fillContextSelect($("pgProfile"), "(server default)", (info.profiles || []).map((n) => ({ value: n, label: n })));
+            fillContextSelect($("pgPack"), "(server default)", packOptions(info.packs));
+            fillContextSelect($("adAccount"), "(active account)", accountOptions(info.accounts));
+            fillContextSelect($("adProfile"), "(none)", (info.profiles || []).map((n) => ({ value: n, label: n })));
+            fillContextSelect($("adPack"), "(none)", packOptions(info.packs));
+            const rot = $("adRotation");
+            rot.innerHTML = (info.rotations || ["off"]).map((r) => '<option value="' + esc(r) + '">' + esc(prettyChoice(r)) + "</option>").join("");
+            adInfo = info;
+            adApply(info.defaults);
+            $("pgBase").placeholder = "http://127.0.0.1:" + ((info.defaults && info.defaults.port) || info.apiPort || 8000);
             pgSyncMode();
         }
-        function renderPgDefault(def) {
-            def = def || {};
-            const parts = [def.pack && "pack " + def.pack, def.account && "account " + def.account, def.profile && "profile " + def.profile].filter(Boolean);
-            $("pgDefaultNote").textContent = parts.length ? "Current default: " + parts.join(", ") : "Current default: active account";
+        function fillContextSelect(sel, blank, items) {
+            sel.innerHTML = '<option value="">' + esc(blank) + "</option>" + items.map((o) =>
+                '<option value="' + esc(o.value) + '"' + (o.icon ? ' data-icon="' + esc(o.icon) + '"' : "") + ">" + esc(o.label) + "</option>").join("");
+            syncDD(sel);
+        }
+        function accountOptions(accounts) {
+            return (accounts || []).map((a) => ({ value: a.name, label: a.name + " (" + agentLabel(a.tool) + ")", icon: agentName(a.tool) }));
+        }
+        function packOptions(packs) {
+            return (packs || []).map((p) => ({ value: p.id, label: p.label + (p.installed ? "" : " - not installed") }));
+        }
+
+        // --- Server defaults for `enigma api` (account, rotation, pool, caller choice, port) ---
+        let adInfo = null;
+        let adSaved = null;
+        let adPicked = [];
+        const AD_ROTATION_HINT = {
+            "off": "Requests that name no account use the default account, profile or pack below.",
+            "round-robin": "Requests that name no account take turns across the accounts below. One that hits a usage limit is retried on the next.",
+            "least-used": "Requests that name no account go to the one with the least use in its current 5-hour window. One that hits a usage limit is retried on the next.",
+            "fill-first": "Requests use the first account below until it hits a usage limit, then the next one.",
+            "random": "Requests that name no account go to a random account below. One that hits a usage limit is retried on the next.",
+        };
+        // Unique account names (the pool is by name; the same name can exist for several agents), saved pool order first.
+        function adPoolNames(pool) {
+            const all = [];
+            ((adInfo && adInfo.accounts) || []).forEach((a) => { if (all.indexOf(a.name) === -1) all.push(a.name); });
+            return (pool || []).filter((n) => all.indexOf(n) !== -1).concat(all.filter((n) => (pool || []).indexOf(n) === -1));
+        }
+        function adRenderPool(pool) {
+            const el = $("adPool");
+            const names = adPoolNames(pool);
+            if (!names.length) { el.innerHTML = '<span class="lnone">No accounts yet - add one in Accounts.</span>'; return; }
+            el.innerHTML = names.map((n) => {
+                const tools = ((adInfo && adInfo.accounts) || []).filter((a) => a.name === n).map((a) => a.tool);
+                const icon = tools.length === 1 ? '<span class="aicon" aria-hidden="true">' + (agentSvg(agentName(tools[0])) || "") + "</span>" : "";
+                return '<label title="' + esc(n + " (" + tools.map(agentLabel).join(", ") + ")") + '"><input type="checkbox" data-pool="' + esc(n) + '"'
+                    + ((pool || []).indexOf(n) !== -1 ? " checked" : "") + ">" + icon + "<span>" + esc(n) + "</span></label>";
+            }).join("");
+        }
+        function adApply(def) {
+            def = def || { account: "", profile: "", pack: "", rotation: "off", pool: [], clientContext: true, port: 8000 };
+            adSaved = { account: def.account || "", profile: def.profile || "", pack: def.pack || "", rotation: def.rotation || "off", pool: (def.pool || []).slice(), clientContext: def.clientContext !== false, port: def.port || 8000 };
+            $("adAccount").value = adSaved.account; syncDD($("adAccount"));
+            $("adProfile").value = adSaved.profile; syncDD($("adProfile"));
+            $("adPack").value = adSaved.pack; syncDD($("adPack"));
+            $("adRotation").value = adSaved.rotation; syncDD($("adRotation"));
+            $("adPort").value = String(adSaved.port);
+            paintSwitch($("adClient"), adSaved.clientContext, "On", "Off");
+            adPicked = adSaved.pool.slice();
+            adRenderPool(adSaved.pool);
+            adSync();
+        }
+        function adRead() {
+            const checked = [...$("adPool").querySelectorAll("input[data-pool]:checked")].map((i) => i.dataset.pool);
+            // Pool order is the order accounts were checked in (fill-first walks it), saved ones first.
+            const pool = adPicked.filter((n) => checked.indexOf(n) !== -1).concat(checked.filter((n) => adPicked.indexOf(n) === -1));
+            return {
+                account: $("adAccount").value, profile: $("adProfile").value, pack: $("adPack").value,
+                rotation: $("adRotation").value, pool,
+                clientContext: $("adClient").getAttribute("aria-checked") === "true",
+                port: $("adPort").value.trim(),
+            };
+        }
+        function adPortError(v) {
+            if (v === "") return "Enter a port.";
+            const n = Number(v);
+            return Number.isInteger(n) && n >= 1 && n <= 65535 ? "" : "Use a whole number from 1 to 65535.";
+        }
+        // Dirty = the form differs from what was loaded, so a value changed and put back leaves Save off.
+        function adDirty(cur) {
+            if (!adSaved) return false;
+            return cur.account !== adSaved.account || cur.profile !== adSaved.profile || cur.pack !== adSaved.pack
+                || cur.rotation !== adSaved.rotation || cur.clientContext !== adSaved.clientContext
+                || Number(cur.port) !== adSaved.port || cur.pool.join("\n") !== adSaved.pool.join("\n");
+        }
+        function adSync() {
+            const cur = adRead();
+            const rotating = cur.rotation !== "off";
+            $("adRotationHint").textContent = AD_ROTATION_HINT[cur.rotation] || "";
+            $("adPool").classList.toggle("off", !rotating);
+            $("adPoolWrap").style.display = rotating ? "" : "none";
+            document.querySelectorAll("#adPanel .ad-fixed").forEach((el) => el.classList.toggle("off", rotating));
+            const portErr = adPortError(cur.port);
+            $("adPortErr").textContent = portErr;
+            $("adPort").setAttribute("aria-invalid", portErr ? "true" : "false");
+            const dirty = adDirty(cur);
+            $("adSave").disabled = !dirty || !!portErr;
+            $("adSave").title = portErr ? portErr : (dirty ? "" : "Nothing changed");
+            $("adDiscard").style.display = dirty ? "" : "none";
+        }
+        async function adSave() {
+            const cur = adRead();
+            if (adPortError(cur.port) || !adDirty(cur)) return;
+            const btn = $("adSave");
+            btn.disabled = true;
+            setNote("adNote", "Saving defaults...");
+            try {
+                const out = await apiJson("/api/playground", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "set-defaults", ...cur, port: Number(cur.port) }) });
+                if (!out.ok) {
+                    setNote("adNote", "Could not save: " + (out.error || "error"), "err");
+                    const focus = { account: "adAccount", profile: "adProfile", pack: "adPack", rotation: "adRotation", port: "adPort", clientContext: "adClient" }[out.field];
+                    if (focus && $(focus)) $(focus).focus();
+                    adSync();
+                    return;
+                }
+                adApply(out.defaults);
+                setNote("adNote", "Saved. Restart 'enigma api' to use them.", "ok");
+            } catch (e) {
+                setNote("adNote", "Could not save: " + e.message, "err");
+                adSync();
+            }
+        }
+        function wireApiDefaults() {
+            ["adAccount", "adProfile", "adPack", "adRotation"].forEach((id) => $(id).addEventListener("change", adSync));
+            $("adPort").addEventListener("input", adSync);
+            $("adPool").addEventListener("change", (e) => {
+                const box = e.target.closest("input[data-pool]");
+                if (box) {
+                    adPicked = adPicked.filter((n) => n !== box.dataset.pool);
+                    if (box.checked) adPicked.push(box.dataset.pool);
+                }
+                adSync();
+            });
+            const cl = $("adClient");
+            cl.addEventListener("click", () => { paintSwitch(cl, cl.getAttribute("aria-checked") !== "true", "On", "Off"); adSync(); });
+            $("adSave").addEventListener("click", adSave);
+            $("adDiscard").addEventListener("click", () => adApply(adSaved));
         }
         function pgSyncMode() {
             const http = $("pgMode").value === "http";
@@ -6417,6 +6577,7 @@ export {
             const meta = [];
             if (out.format) meta.push(out.format === "anthropic" ? "Anthropic" : "OpenAI");
             if (out.tool) meta.push(out.tool);
+            if (out.account) meta.push("account " + out.account);
             if (typeof out.status === "number") meta.push("HTTP " + out.status);
             if (out.usage) meta.push(out.usage.input + " in / " + out.usage.output + " out");
             $("pgMeta").textContent = meta.join(" · ");
@@ -6424,17 +6585,9 @@ export {
             $("pgRaw").textContent = out.response ? (typeof out.response === "string" ? out.response : JSON.stringify(out.response, null, 2)) : "";
             $("pgCurl").textContent = out.curl || "";
         }
-        async function pgSaveDefault() {
-            const payload = { op: "set-defaults", account: $("pgAccount").value || "", profile: $("pgProfile").value || "", pack: $("pgPack").value || "" };
-            try {
-                const out = await (await fetch("/api/playground", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })).json();
-                if (out.ok) { renderPgDefault(out.defaults); toast.success("Saved as the enigma api default"); }
-                else toast.error(out.error || "Could not save the default");
-            } catch { toast.error("Could not reach the dashboard server."); }
-        }
         function wirePlayground() {
+            wireApiDefaults();
             $("pgSend").addEventListener("click", pgSend);
-            $("pgSaveDefault").addEventListener("click", pgSaveDefault);
             const tog = $("pgTools");
             tog.addEventListener("click", () => paintSwitch(tog, tog.getAttribute("aria-checked") !== "true", "On", "Off"));
             $("pgMode").addEventListener("change", pgSyncMode);

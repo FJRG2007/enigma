@@ -36,6 +36,17 @@ export type MinimalCode = "off" | "lite" | "full" | "ultra";
 export const MINIMAL_CODE_LEVELS: readonly MinimalCode[] = ["off", "lite", "full", "ultra"];
 
 /**
+ * How the local API server (`enigma api`) spreads requests across a tool's accounts when the
+ * caller names none. "off" keeps the single default context (apiAccount/apiProfile/apiPack, else
+ * the active account); "round-robin" cycles the pool; "least-used" picks the account with the
+ * least token use in its current 5h window; "fill-first" stays on the first account until it
+ * hits a limit, then moves on; "random" picks uniformly. Every strategy but "off" skips an
+ * account that just hit a usage limit and retries the request on the next one.
+ */
+export type ApiRotation = "off" | "round-robin" | "least-used" | "fill-first" | "random";
+export const API_ROTATIONS: readonly ApiRotation[] = ["off", "round-robin", "least-used", "fill-first", "random"];
+
+/**
  * Local savings dashboard run mode. "off" disables it; "on-demand" serves only while
  * `enigma dashboard` runs (zero idle cost, the default when enabled); "always" keeps a
  * lightweight background daemon so http://enigma is reachable any time.
@@ -352,6 +363,12 @@ export interface EnigmaConfig {
     apiAccount: string;
     apiProfile: string;
     apiPack: string;
+    /** Account rotation strategy for API requests that name no account (see ApiRotation). */
+    apiRotation: ApiRotation;
+    /** Accounts the rotation may use, in order (fill-first tries them in this order). Empty = every account of the tool. */
+    apiAccountPool: string[];
+    /** Whether an API caller may pick its own account/profile/pack per request. Off = enigma decides, and a request naming one is refused. */
+    apiClientContext: boolean;
     /**
      * Persisted absolute launch path per tool, keyed by tool name (e.g. claude).
      * Set by `enigma fix-path` when a tool is installed but not on PATH; consumed by
@@ -446,7 +463,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     gateTrivialLines: 20,
     subagentLimit: 4, compactWindow: 400_000, relay: true, relayAt: 300_000,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", gateTidyBranches: true, ciWatch: true,
+    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", apiRotation: "off", apiAccountPool: [], apiClientContext: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", gateTidyBranches: true, ciWatch: true,
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -467,6 +484,7 @@ export const CONFIG_CHOICES: Partial<Record<EnigmaConfigKey, readonly string[]>>
     logoColorPolicy: LOGO_COLOR_POLICIES,
     recallProvider: RECALL_PROVIDERS,
     gateSeverity: GATE_SEVERITIES,
+    apiRotation: API_ROTATIONS,
 };
 
 function configPath(scope: "global" | "local"): string {
