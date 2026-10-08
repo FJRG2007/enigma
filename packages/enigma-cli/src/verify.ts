@@ -2322,10 +2322,12 @@ function auditMessage(round: number): string {
 let hookSink = (text: string): void => { process.stderr.write(text); };
 
 /**
- * The Claude Code Stop hook entry. Blocks through `{"decision":"block","reason":...}` on stdout
- * instead of exit 2: Claude Code shows exit-2 stderr to the user as a "Stop hook error" notice
- * carrying the whole audit text, while a JSON `reason` reaches Claude and not the user. The audit
- * is instructions for the model; the user only needs the reply it produces.
+ * The Claude Code Stop hook entry. Continues the turn through `hookSpecificOutput.additionalContext`
+ * on stdout instead of exit 2 or `decision: "block"`: both of those raise a "Stop hook error"
+ * notice carrying the whole audit text (seen live with the JSON block on Claude Code 2.1.293),
+ * while additionalContext keeps the turn going under the same loop protections without that
+ * notice (hooks reference, Stop decision control). The audit is instructions for the model; the
+ * user only needs the reply it produces.
  */
 export function runVerifyHookJson(payload?: string): number {
     const out: string[] = [];
@@ -2336,7 +2338,8 @@ export function runVerifyHookJson(payload?: string): number {
     finally { hookSink = previous; }
     const text = out.join("").trim();
     if (code === 2) {
-        process.stdout.write(`${JSON.stringify({ decision: "block", reason: text || "enigma verify denied this stop." })}\n`);
+        const additionalContext = text || "enigma verify denied this stop.";
+        process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: "Stop", additionalContext } })}\n`);
         return 0;
     }
     if (text) process.stderr.write(`${text}\n`);

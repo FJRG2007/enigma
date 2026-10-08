@@ -229,9 +229,9 @@ test("denies the stop when the turn asks permission to continue", () => {
     expect(runVerifyHook(payload(dir, "PR: https://github.com/some-organization-name/enigma-platform-tools/pull/12345 - ready for you to review and merge. Shall I continue with anything else?"))).toBe(0);
 });
 
-test("the Stop hook blocks through a JSON reason the user does not see, never through stderr", () => {
-    // Exit 2 surfaces its stderr to the user as a "Stop hook error" carrying the whole audit; a
-    // JSON `reason` on stdout reaches the model only.
+test("the Stop hook continues the turn through additionalContext, never a block or stderr", () => {
+    // Exit 2 and `decision: "block"` both raise a "Stop hook error" notice carrying the whole
+    // audit; `additionalContext` continues the turn the same way without that notice.
     const dir = repoWith();
     const out: string[] = [];
     const err: string[] = [];
@@ -252,9 +252,10 @@ test("the Stop hook blocks through a JSON reason the user does not see, never th
     expect(passed).toBe(0);
     expect(err.join("")).toBe("");
     expect(out).toHaveLength(1);
-    const decision = JSON.parse(out[0]!);
-    expect(decision.decision).toBe("block");
-    expect(decision.reason).toContain("Shall I continue with tasks 5-8?");
+    const output = JSON.parse(out[0]!);
+    expect(output.decision).toBeUndefined();
+    expect(output.hookSpecificOutput.hookEventName).toBe("Stop");
+    expect(output.hookSpecificOutput.additionalContext).toContain("Shall I continue with tasks 5-8?");
 });
 
 test("stands down after repeated asks so a turn is never trapped", () => {
