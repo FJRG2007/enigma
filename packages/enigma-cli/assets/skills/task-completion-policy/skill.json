@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
   "updated": "2026-10-02T12:38:13+02:00",
-  "cliVersion": "1.61.3",
+  "cliVersion": "1.61.4",
   "sha": "ee8447d5ca9e5d77e0a338d1e762c30e1527ded4665c10ddf21f2c4c9ce3f2d5"
 }
