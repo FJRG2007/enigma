@@ -4077,17 +4077,41 @@ function unpinnedWorkflowAction(content) {
   return out;
 }
 var PRIVILEGED_TRIGGER = /\b(?:pull_request_target|workflow_run)\b/;
-var PR_HEAD_REF = /\$\{\{[^}]*\b(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref|github\.event\.workflow_run\.head_(?:sha|branch))\b|refs\/pull\/(?:\$\{\{[^}]*\}\}|[^\s"'/]+)\/(?:head|merge)\b/;
+var PR_HEAD_REF = /\$\{\{[^}]*\b(?:github\.event\.pull_request\.(?:head\.(?:sha|ref)|merge_commit_sha)|github\.head_ref|github\.event\.workflow_run\.head_(?:sha|branch))\b|refs\/pull\/(?:\$\{\{[^}]*\}\}|[^\s"'/]+)\/(?:head|merge)\b/;
 var CHECKOUT_SITE = /^\s*(?:-\s+)?ref:|\bgit\s+(?:fetch|checkout|switch|pull|worktree)\b|\bgh\s+pr\s+checkout\b/;
-var SAME_REPO_GUARD = /\b(?:workflow_run\.head_repository|pull_request\.head\.repo)\.(?:full_name|fork)\b/;
+var SAME_REPO_GUARD = /\b(?:workflow_run\.head_repository|pull_request\.head\.repo)\.full_name\s*==\s*github\.repository\b|\bgithub\.repository\s*==\s*github\.event\.(?:workflow_run\.head_repository|pull_request\.head\.repo)\.full_name\b|\b(?:workflow_run\.head_repository|pull_request\.head\.repo)\.fork\s*==\s*false\b|!\s*github\.event\.(?:workflow_run\.head_repository|pull_request\.head\.repo)\.fork\b(?!\s*==)/;
+function jobOfLine(lines) {
+  const job = [];
+  let inJobs = false;
+  let jobIndent = -1;
+  let current = -1;
+  for (const text of lines) {
+    const indent = text.length - text.trimStart().length;
+    const blank = text.trim() === "" || COMMENT_LINE.test(text);
+    if (!blank && indent === 0) {
+      inJobs = /^jobs:\s*(?:#.*)?$/.test(text);
+      jobIndent = -1;
+      current = -1;
+    } else if (!blank && inJobs) {
+      if (jobIndent < 0) jobIndent = indent;
+      if (indent === jobIndent) current = job.length;
+    }
+    job.push(current);
+  }
+  return job;
+}
 function untrustedCheckout(content) {
   const lines = content.split("\n");
-  const live = lines.filter((l) => !COMMENT_LINE.test(l));
-  if (!live.some((l) => PRIVILEGED_TRIGGER.test(l)) || live.some((l) => SAME_REPO_GUARD.test(l))) return [];
+  if (!lines.some((l) => !COMMENT_LINE.test(l) && PRIVILEGED_TRIGGER.test(l))) return [];
+  const job = jobOfLine(lines);
+  const guarded = /* @__PURE__ */ new Set();
+  lines.forEach((l, i) => {
+    if (!COMMENT_LINE.test(l) && SAME_REPO_GUARD.test(l)) guarded.add(job[i]);
+  });
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i];
-    if (auditSkipLine(text) || !CHECKOUT_SITE.test(text)) continue;
+    if (auditSkipLine(text) || !CHECKOUT_SITE.test(text) || guarded.has(job[i])) continue;
     const head = PR_HEAD_REF.exec(text) ?? /\bgh\s+pr\s+checkout\b/.exec(text);
     if (head) out.push({ line: i + 1, detail: head[0] });
   }
