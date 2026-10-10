@@ -1,7 +1,7 @@
 {
   "generator": "enigma seal",
   "cliVersion": "1.61.4",
-  "count": 20,
+  "count": 21,
   "skills": [
     {
       "name": "anti-overengineering-policy",
@@ -28,6 +28,14 @@
       "sha": "652637f818b4ce4f4d5d83fa68fa57fe7842e32fb179523958c5496af54bb938"
     },
     {
+      "name": "ci-policy",
+      "version": "1.0.0",
+      "description": "CI/CD pipelines on any provider: faster and cheaper without dropping a check - measure first, one pipeline per commit, input-hashed caches never saved from a failed build, no duplicate checks, sharding, change filters that keep required checks green, flakes fixed not retried, and workflow security.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-10-09T16:39:02.389Z",
+      "sha": "87e141d1fb2dff2441a157a784fa7b57a66d6382b44d2ce74f24ad4865111407"
+    },
+    {
       "name": "ciphera-style-policy",
       "version": "1.3.0",
       "description": "Ciphera code style conventions (formatting, naming, imports incl. namespace imports for wide module surfaces, path-alias specifiers and no file extensions, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
@@ -45,11 +53,11 @@
     },
     {
       "name": "core-engineering-policy",
-      "version": "1.13.0",
+      "version": "1.14.0",
       "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-08-15T20:49:24+02:00",
-      "sha": "95b7202e5659f8d9d6f11ce29e7dc5b01575ba86c78ef948bec4753ccf430155"
+      "sha": "c277b1bbe9fa0849f6b8cb06d5255dd0197c9ae21a815b73bd68f5abd90e8e20"
     },
     {
       "name": "database-expert",
@@ -149,11 +157,11 @@
     },
     {
       "name": "testing-policy",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
       "provider": "FJRG2007/enigma",
       "updated": "2026-10-04T06:11:13+02:00",
-      "sha": "5dd665ba23faf604db1a89421c5d9d9a03a489c5784d1da8b90f57b09f95d1ca"
+      "sha": "86d49572f8e230377fcdafb0ac74bbc86998ffb68c3224b60793bf62a82bab16"
     },
     {
       "name": "validation-policy",

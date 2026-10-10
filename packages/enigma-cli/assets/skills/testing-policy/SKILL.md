@@ -47,6 +47,7 @@ description: Test strategy (test pyramid), coverage gates, deterministic tests, 
 
 - Tests must be deterministic: no reliance on real time, randomness, network, or ordering.
 - Control time, randomness, and external services via injection, fakes, or fixtures.
+- A negative case derived from a random value must differ from it by construction. Mutating a random token or id to a fixed value ("replace the last character with A") passes the original through whenever it already had that value - a flake that fails 1 run in N. Pick the replacement from the value itself (A unless it already is A, else B), and sweep the suite for the same pattern when one is found.
 - Each test must be independent and able to run in isolation and in any order.
 - One logical assertion focus per test; name tests by the behavior they verify.
 - Follow Arrange-Act-Assert (or given-when-then) structure.
