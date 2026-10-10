@@ -85,12 +85,18 @@ matrix("ci-untrusted-checkout", true, [
     { name: "a git fetch of the pull request ref", code: `${PRT}jobs:\n  t:\n    steps:\n      - run: git fetch origin refs/pull/\${{ github.event.number }}/head && git checkout FETCH_HEAD\n` },
     { name: "gh pr checkout", code: `${PRT}jobs:\n  t:\n    steps:\n      - run: gh pr checkout \${{ github.event.number }}\n` },
     { name: "the inline trigger list form", code: `on: [pull_request_target]\njobs:\n  t:\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.ref }}\n` },
+    { name: "the fork checked out by repository and ref", code: `${PRT}jobs:\n  t:\n    steps:\n      - uses: actions/checkout@${SHA}\n        with:\n          repository: \${{ github.event.pull_request.head.repo.full_name }}\n          ref: \${{ github.event.pull_request.head.sha }}\n      - run: npm ci && npm test\n` },
+    { name: "the merge commit SHA", code: `${PRT}jobs:\n  t:\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.merge_commit_sha }}\n` },
+    { name: "a guard that admits only forks", code: `${PRT}jobs:\n  t:\n    if: github.event.pull_request.head.repo.fork == true\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.sha }}\n` },
+    { name: "a same-repo guard on a different job", code: `${PRT}jobs:\n  label:\n    if: github.event.pull_request.head.repo.full_name == github.repository\n    steps:\n      - run: echo ok\n  test:\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.sha }}\n` },
 ]);
 
 matrix("ci-untrusted-checkout", false, [
     { name: "plain pull_request checking out the head", code: `on: pull_request\njobs:\n  t:\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.sha }}\n` },
     { name: "pull_request_target checking out the base (default)", code: `${PRT}jobs:\n  t:\n    steps:\n      - uses: actions/checkout@${SHA}\n      - run: gh pr comment \${{ github.event.number }} --body hi\n` },
     { name: "workflow_run limited to same-repository pull requests", code: `${RUN}jobs:\n  t:\n    if: |\n      github.event.workflow_run.head_repository.full_name == github.repository\n    steps:\n      - with:\n          ref: \${{ github.event.workflow_run.head_branch }}\n` },
+    { name: "pull_request_target comparing github.repository first", code: `${PRT}jobs:\n  t:\n    if: \${{ github.repository == github.event.pull_request.head.repo.full_name }}\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.sha }}\n` },
+    { name: "a step guarded by a negated fork check", code: `${PRT}jobs:\n  t:\n    steps:\n      - if: \${{ !github.event.pull_request.head.repo.fork }}\n        with:\n          ref: \${{ github.event.pull_request.head.sha }}\n` },
     { name: "pull_request_target rejecting forks", code: `${PRT}jobs:\n  t:\n    if: github.event.pull_request.head.repo.fork == false\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.sha }}\n` },
     { name: "a marked data-only checkout", code: `${PRT}jobs:\n  t:\n    steps:\n      - with:\n          ref: \${{ github.event.pull_request.head.sha }} # enigma:allow-untrusted-checkout\n` },
     { name: "the trigger only named in a comment", code: `# not pull_request_target on purpose\non: pull_request\njobs:\n  t:\n    steps:\n      - with:\n          ref: \${{ github.head_ref }}\n` },
