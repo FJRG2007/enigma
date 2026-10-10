@@ -52,6 +52,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - Any UI, client state, data fetching, or client caching -> frontend-policy.
   - Any API endpoint, service, controller, or server request flow -> backend-policy.
   - Any email sent or templated from the server (verification, password reset, receipts, alerts, digests) or any email-provider integration -> email-policy.
+  - Any CI/CD pipeline or workflow file created, edited, debugged, or sped up (.github/workflows, .gitlab-ci.yml, Jenkinsfile, and the like), or a slow, flaky, or costly build -> ci-policy.
   - Any new or changed code that needs verification, or any test file created/moved/renamed or a test suite scaffolded/restructured -> testing-policy.
   - Any source code written, refactored, or reviewed (formatting, naming, language idioms) -> ciphera-style-policy.
   - Any implementation code being written or refactored, or any "be lazy"/"simplify"/over-engineering request -> anti-overengineering-policy.
@@ -104,6 +105,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - backend-policy: API/service architecture, controller-service-repository layering, API/request optimization, server-side caching (Redis).
 - email-policy: transactional and notification email - React Email templating instead of hand-written HTML, server-side rendering, a single send module behind the provider SDK, plain-text alternatives, idempotent background sending, link safety, and deliverability (SPF/DKIM/DMARC, bounce suppression, unsubscribe).
 - testing-policy: test strategy, coverage gates, deterministic tests, test/regression-first discipline, and test-suite layout (structure by type and domain, mirrored source paths, file naming, fixture/helper/factory placement).
+- ci-policy: CI/CD pipelines on any provider - faster and cheaper without dropping a check (measure first, one pipeline per commit, input-hashed caches, no duplicate checks, sharding, change filters that keep required checks green), flakes fixed not retried, and pipeline security (pinned actions, least-privilege tokens, untrusted PR code kept from secrets).
 - code-review-policy: self-review before delivery, review dimensions, change-quality gates.
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
 - git-policy: commits, branches, and pull request standards.

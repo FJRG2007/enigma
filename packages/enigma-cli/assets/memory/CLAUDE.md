@@ -14,10 +14,10 @@
 - anti-overengineering-policy: writing or refactoring implementation code, or any "be lazy"/"simplify"/over-engineering request - the YAGNI ladder and minimal-code discipline.
 - anti-overengineering-review: on-demand "what can we delete"/audit/over-engineering review or an enigma: debt-marker ledger - lists cuts, applies nothing.
 - backend-policy, frontend-policy, database-expert, validation-policy: server, client, persistence, and input-validation work.
-- email-policy: sending or templating email from the server - React Email instead of hand-written HTML, plain-text alternative, link safety, and deliverability (SPF/DKIM/DMARC, bounce suppression, unsubscribe).
+- email-policy: sending or templating email from the server - React Email instead of hand-written HTML, plain-text alternative, link safety, and deliverability.
 - security-policy: secrets, auth, permissions, crypto, untrusted/tool output, and AI-agent/MCP/tool-use safety.
 - dependency-policy: adding/upgrading/auditing dependencies, lockfiles, and supply-chain risk.
-- testing-policy, code-review-policy, debugging-policy, git-policy: tests and test-suite layout (structured subfolders, never a flat tests/ dump), pre-delivery review, debugging, and commits/PRs.
+- testing-policy, code-review-policy, debugging-policy, git-policy, ci-policy: tests and test-suite layout (structured subfolders, never a flat tests/ dump), pre-delivery review, debugging, commits/PRs, and CI pipelines.
 - technical-writing-policy: any user-facing copy - UI labels, descriptions, hints, empty/error states, panel intros, README/doc prose - concise and realistic, no over-explaining or restating the obvious.
 - logo-sourcing-policy: adding any real brand/platform/technology logo or icon - source the official asset (never fabricate one), prefer SVG (WebP for web), keep brand colors, and check contrast.
 - task-completion-policy: long or multi-item tasks (1:1 ports, migrations, repo-wide changes) - work-unit inventory, persistent coverage ledger, and verified completion before any "done" claim.

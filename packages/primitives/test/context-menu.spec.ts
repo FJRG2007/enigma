@@ -43,6 +43,10 @@ test.describe("Context menu", () => {
         await open(page);
         await expect(page.locator(panel)).toHaveCount(0);
 
+        // Pin the trigger to the top of the window first. Left to the click's own scroll, it
+        // lands wherever Playwright's alignment puts it, and low enough in the window the
+        // panel rightly flips above the pointer - which is not what this test measures.
+        await page.locator(`${area} [data-enigma-menu-trigger]`).evaluate((el) => el.scrollIntoView({ block: "start" }));
         await rightClick(page, area, { x: 30, y: 20 });
         const menu = page.locator(panel).first();
         await expect(menu).toBeVisible();
