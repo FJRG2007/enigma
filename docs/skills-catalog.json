@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.61.4",
+  "cliVersion": "1.62.0",
   "count": 21,
   "skills": [
     {
@@ -32,7 +32,7 @@
       "version": "1.0.0",
       "description": "CI/CD pipelines on any provider: faster and cheaper without dropping a check - measure first, one pipeline per commit, input-hashed caches never saved from a failed build, no duplicate checks, sharding, change filters that keep required checks green, flakes fixed not retried, and workflow security.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-09T16:39:02.389Z",
+      "updated": "2026-10-10T17:15:42+02:00",
       "sha": "87e141d1fb2dff2441a157a784fa7b57a66d6382b44d2ce74f24ad4865111407"
     },
     {
@@ -56,7 +56,7 @@
       "version": "1.14.0",
       "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-15T20:49:24+02:00",
+      "updated": "2026-10-10T17:15:42+02:00",
       "sha": "c277b1bbe9fa0849f6b8cb06d5255dd0197c9ae21a815b73bd68f5abd90e8e20"
     },
     {
@@ -160,7 +160,7 @@
       "version": "1.2.1",
       "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-04T06:11:13+02:00",
+      "updated": "2026-10-10T17:15:42+02:00",
       "sha": "86d49572f8e230377fcdafb0ac74bbc86998ffb68c3224b60793bf62a82bab16"
     },
     {
