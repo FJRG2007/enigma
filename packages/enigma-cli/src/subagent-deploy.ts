@@ -31,8 +31,8 @@
  */
 
 import { readJson } from "./util";
-import { readConfig, readGlobalConfig } from "./config";
 import { dirname, join } from "node:path";
+import { readConfig, readGlobalConfig } from "./config";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
 
