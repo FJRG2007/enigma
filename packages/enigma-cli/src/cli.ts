@@ -480,7 +480,8 @@ Commands:
 
 Config keys: commit-emoji, update-notifier, auto-sync, share-sessions, shared-store, remote-skills,
              fullscreen, statusline, parallel-subagents, subagent-limit (0-20|off),
-             compact-window (100k-1000k|auto), output-style (off|lite|full|ultra),
+             compact-window (100k-1000k|auto), subagent-turns (10-500|off),
+             output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
              claude-survey, claude-trust, kimi-trust, gh-telemetry, permission-bypass,
              bypass-claude, bypass-codex, bypass-opencode, bypass-kimi
@@ -656,7 +657,7 @@ No arguments opens the interactive menu; 'config <key> <on|off>' sets one.
   -l, --local    Write to this project's .enigma.json
 
 Keys: commit-emoji, update-notifier, auto-sync, share-sessions, shared-store, remote-skills, fullscreen, statusline,
-parallel-subagents, subagent-limit, compact-window, output-style, minimal-code, compress, recall, codegraph, gate,
+parallel-subagents, subagent-limit, compact-window, subagent-turns, output-style, minimal-code, compress, recall, codegraph, gate,
 guardrails, trim, verify, dashboard, dashboard-bind, claude-attribution, claude-survey,
 claude-trust, gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode.`,
 

@@ -26,7 +26,7 @@ import { setGuardrails } from "./guardrails-deploy";
 import type { GuardListMeta } from "./guard-config";
 import { TOOL_NAMES, accountExists } from "./accounts";
 import { applyCodeGraphWiring } from "./codegraph-deploy";
-import { applySubagentWiring, parseCompactWindow } from "./subagent-deploy";
+import { applySubagentWiring, parseCompactWindow, parseSubagentTurns } from "./subagent-deploy";
 import { applyHandoffWiring, parseRelayAt, setRelay } from "./handoff-deploy";
 import { BYPASS_GLOBAL_ONLY, BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
@@ -180,6 +180,13 @@ function setRelayAt(tokens: number): ApplyResult {
 /** Persist the compact window and write it into every Claude settings.json enigma manages. */
 function setCompactWindow(tokens: number): ApplyResult {
     const path = conf.setEnigmaValue("compactWindow", tokens, "global");
+    applySubagentWiring();
+    return { path, changed: true };
+}
+
+/** Persist the subagent turn cap and rewrite (or remove) the general-purpose override it lives in. */
+function setSubagentTurns(turns: number): ApplyResult {
+    const path = conf.setEnigmaValue("subagentTurns", turns, "global");
     applySubagentWiring();
     return { path, changed: true };
 }
@@ -415,9 +422,9 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "subagent-limit",
                 label: "Subagent limit",
-                hint: "how many subagents one Claude Code session may run at once, enforced on every launch; a subagent cannot launch its own; 0 = none, off = no limit; enigma default: 4",
+                hint: "how many subagents one Claude Code session may run at once, enforced on every launch; a subagent cannot launch its own; 0 = none, off = no limit; enigma default: 2",
                 kind: "value",
-                valueHint: "subagents at once, 0-20, or off (default 4)",
+                valueHint: "subagents at once, 0-20, or off (default 2)",
                 read: () => conf.readConfig().config.subagentLimit >= 0,
                 write: (value, scope) => ({ path: conf.setEnigmaValue("subagentLimit", value ? conf.CONFIG_DEFAULTS.subagentLimit : -1, scope), changed: true }),
                 readValue: () => (conf.readConfig().config.subagentLimit < 0 ? "off" : String(conf.readConfig().config.subagentLimit)),
@@ -453,6 +460,18 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value) => setCompactWindow(value ? conf.CONFIG_DEFAULTS.compactWindow : 0),
                 readValue: () => (conf.readConfig().config.compactWindow > 0 ? String(conf.readConfig().config.compactWindow) : "auto"),
                 writeValue: (value) => setCompactWindow(parseCompactWindow(value)),
+            },
+            {
+                key: "subagent-turns",
+                label: "Subagent turn cap",
+                hint: "model turns a Claude Code general-purpose subagent may take before it stops and hands back what it has; each turn re-reads its whole context; off = no cap; enigma default: 60",
+                kind: "value",
+                globalOnly: true,
+                valueHint: "turns per subagent run, 10-500, or off (default 60)",
+                read: () => conf.readConfig().config.subagentTurns > 0,
+                write: (value) => setSubagentTurns(value ? conf.CONFIG_DEFAULTS.subagentTurns : 0),
+                readValue: () => (conf.readConfig().config.subagentTurns > 0 ? String(conf.readConfig().config.subagentTurns) : "off"),
+                writeValue: (value) => setSubagentTurns(parseSubagentTurns(value)),
             },
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "shorter replies, sized to the question (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", conf.OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", conf.MINIMAL_CODE_LEVELS, "full", false, "off", true),

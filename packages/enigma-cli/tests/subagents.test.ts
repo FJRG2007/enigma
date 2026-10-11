@@ -19,7 +19,7 @@ process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const { admitLaunch, recordStart, recordStop, runSubagentHook, parseSubagentLimit, parseSubagentPayload } = await import("@/subagents");
-const { applyClaudeSubagentWiring, applyCompactWindow, parseCompactWindow } = await import("@/subagent-deploy");
+const { applyClaudeSubagentWiring, applyCompactWindow, applySubagentTurns, generalPurposeAgent, parseCompactWindow, parseSubagentTurns } = await import("@/subagent-deploy");
 
 afterAll(() => {
     rmSync(HOME, { recursive: true, force: true });
@@ -124,6 +124,32 @@ test("setting values parse strictly", () => {
     expect(parseCompactWindow("auto")).toBe(0);
     expect(() => parseCompactWindow("50k")).toThrow();
     expect(() => parseCompactWindow("2000k")).toThrow();
+    expect(parseSubagentTurns("60")).toBe(60);
+    expect(parseSubagentTurns("off")).toBe(0);
+    expect(() => parseSubagentTurns("5")).toThrow();
+    expect(() => parseSubagentTurns("501")).toThrow();
+    expect(() => parseSubagentTurns("60k")).toThrow();
+});
+
+test("the turn cap writes enigma's general-purpose override, rewrites it, and never touches the user's own", () => {
+    const agents = join(HOME, "turns", "agents");
+    const file = join(agents, "general-purpose.md");
+    expect(applySubagentTurns(agents, 60)).toBe(true);
+    const text = readFileSync(file, "utf8");
+    expect(text).toContain("name: general-purpose\n");
+    expect(text).toContain("maxTurns: 60\n");
+    expect(text).not.toMatch(/^(tools|model):/m);
+    expect(applySubagentTurns(agents, 60)).toBe(false);
+    expect(applySubagentTurns(agents, 80)).toBe(true);
+    expect(readFileSync(file, "utf8")).toBe(generalPurposeAgent(80));
+    expect(applySubagentTurns(agents, 0)).toBe(true);
+    expect(existsSync(file)).toBe(false);
+    expect(applySubagentTurns(agents, 0)).toBe(false);
+    // A file without enigma's marker is the user's: neither rewritten nor deleted.
+    writeFileSync(file, "---\nname: general-purpose\ndescription: mine\n---\nmine\n");
+    expect(applySubagentTurns(agents, 60)).toBe(false);
+    expect(applySubagentTurns(agents, 0)).toBe(false);
+    expect(readFileSync(file, "utf8")).toContain("description: mine");
 });
 
 test("wiring installs the three hooks and the compact window, keeping the user's settings", () => {
@@ -138,6 +164,7 @@ test("wiring installs the three hooks and the compact window, keeping the user's
     expect(s.hooks.PreToolUse[1].matcher).toBe("Agent|Task");
     expect(s.hooks.SubagentStart[0].hooks[0].command).toBe("enigma __subagent-hook start");
     expect(s.hooks.SubagentStop[0].hooks[0].command).toBe("enigma __subagent-hook stop");
+    expect(readFileSync(join(HOME, "claude", "agents", "general-purpose.md"), "utf8")).toContain("maxTurns: 60\n");
     // Idempotent, and "auto" leaves a value the user set alone.
     expect(applyClaudeSubagentWiring(settings)).toBe(false);
     expect(applyCompactWindow(settings, 0)).toBe(false);
