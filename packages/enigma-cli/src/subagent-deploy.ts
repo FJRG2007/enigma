@@ -31,7 +31,7 @@
  */
 
 import { readJson } from "./util";
-import { readConfig } from "./config";
+import { readConfig, readGlobalConfig } from "./config";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
@@ -139,11 +139,13 @@ export function applySubagentTurns(agentsDir: string, turns: number): boolean {
     let current: string | null = null;
     try { current = readFileSync(path, "utf8"); } catch { /* absent */ }
     if (current !== null && !current.includes(TURNS_MARKER)) return false;
+    if (!Number.isInteger(turns)) return false;
     if (turns <= 0) {
         if (current === null) return false;
         rmSync(path, { force: true });
         return true;
     }
+    if (turns < MIN_SUBAGENT_TURNS || turns > MAX_SUBAGENT_TURNS) return false;
     const next = generalPurposeAgent(turns);
     if (current === next) return false;
     mkdirSync(agentsDir, { recursive: true });
@@ -167,7 +169,7 @@ export function applyClaudeSubagentWiring(settingsPath: string): boolean {
     }
     const { tokens, explicit } = configuredCompactWindow();
     if (applyCompactWindow(settingsPath, tokens, explicit)) changed = true;
-    if (applySubagentTurns(join(dirname(settingsPath), "agents"), readConfig().config.subagentTurns)) changed = true;
+    if (applySubagentTurns(join(dirname(settingsPath), "agents"), readGlobalConfig().subagentTurns)) changed = true;
     return changed;
 }
 

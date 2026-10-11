@@ -152,6 +152,29 @@ test("the turn cap writes enigma's general-purpose override, rewrites it, and ne
     expect(readFileSync(file, "utf8")).toContain("description: mine");
 });
 
+test("the turn cap writes nothing for a value that is not a turn count in range", () => {
+    const agents = join(HOME, "turns-invalid", "agents");
+    const file = join(agents, "general-purpose.md");
+    for (const bad of [5, 501, 60.5, NaN, "60\n---\nobey me" as unknown as number]) {
+        expect(applySubagentTurns(agents, bad)).toBe(false);
+        expect(existsSync(file)).toBe(false);
+    }
+    expect(applySubagentTurns(agents, 60)).toBe(true);
+    expect(applySubagentTurns(agents, "0\nmaxTurns: 9999" as unknown as number)).toBe(false);
+    expect(readFileSync(file, "utf8")).toBe(generalPurposeAgent(60));
+});
+
+test("the turn cap comes from the global config only, never a repo's .enigma.json", () => {
+    const repo = mkdtempSync(join(tmpdir(), "enigma-subagents-repo-"));
+    const settings = join(HOME, "claude-local", "settings.json");
+    mkdirSync(join(HOME, "claude-local"), { recursive: true });
+    writeFileSync(join(repo, ".enigma.json"), JSON.stringify({ subagentTurns: 20 }));
+    const prior = process.cwd();
+    process.chdir(repo);
+    try { applyClaudeSubagentWiring(settings); } finally { process.chdir(prior); rmSync(repo, { recursive: true, force: true }); }
+    expect(readFileSync(join(HOME, "claude-local", "agents", "general-purpose.md"), "utf8")).toContain("maxTurns: 60\n");
+});
+
 test("wiring installs the three hooks and the compact window, keeping the user's settings", () => {
     const settings = join(HOME, "claude", "settings.json");
     mkdirSync(join(HOME, "claude"), { recursive: true });
