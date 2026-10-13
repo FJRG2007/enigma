@@ -27,6 +27,8 @@ import {
 } from "../db";
 import {
     runAxiLogs,
+    runningHelp,
+    waitingOnUserHelp,
     runAxiStatus,
     currentBranchForRunResolve
 } from "./axiQuery";
@@ -165,10 +167,12 @@ export async function runAxiHome(deps: AxiDeps): Promise<number> {
         }
 
         let gated = false;
+        let waitingOnUser = false;
         if (currentActive !== null) {
             const steps = getStepsByRun(env.d, currentActive.id);
             const rv = runViewFromDB(currentActive, steps);
             fields.push(runObjectFieldWithKey("active_run", rv));
+            waitingOnUser = rv.blockedReason !== "";
             const gate = awaitingStep(rv);
             if (gate !== null) {
                 gated = true;
@@ -196,8 +200,10 @@ export async function runAxiHome(deps: AxiDeps): Promise<number> {
             }
         } else if (gated) {
             help.push("Run `enigma gate axi respond --action approve` to clear the current gate");
+        } else if (waitingOnUser) {
+            help.push(waitingOnUserHelp());
         } else {
-            help.push("Run `enigma gate axi status` to inspect the active run");
+            help.push(runningHelp());
         }
         fields.push(toonHelp(help));
 

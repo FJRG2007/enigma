@@ -438,6 +438,21 @@ bar is now one watch step plus one status-bar refresh (statusline.md), instead o
 The REST API reports a merged PR as `state: "closed"` with `merged: true`; reading only `state`
 would end the run as CLOSED.
 
+## Waiting on a run: background, never a status loop
+
+`axi run` and `axi respond` block until the next decision point, which on a real run is tens of
+minutes. Driven in the foreground, the agent's thread is held for all of it and the user cannot
+talk to the session. The /gate doc used to say "check progress with `axi status` from a separate
+call", and agents read that as a cue to write `for i in $(seq 1 55); do ... axi status ...; sleep
+10; done` - the same lock, now self-inflicted, and it only re-reads what the run will report on
+exit anyway. Observed: 8m45s blocked on one such loop.
+
+The rule now reaches the agent on every channel that leads into a wait: the /gate doc (start them
+as a background command, `run_in_background` on Claude Code), the kernel's gate block, the
+`enigma verify` message that orders a run, and the `axi` output itself - `axi status` and the home
+view print `runningHelp()` while a run is in progress, and a waiting-on-the-user hint instead when
+`blocked_on_user` is set, since "wait for it" would be wrong there.
+
 ## Commit subjects (`pipeline/steps/commitMessage.ts`)
 
 A run commits into the same history the user's agent does, so its subjects honor the same
