@@ -2290,32 +2290,17 @@ function auditEnabled(config: { selfAudit?: boolean; }): boolean {
 }
 
 /**
- * The order an audit round gives. Short on purpose: it is read at the end of every finished task.
- *
- * Its second half is about the CLAIM, not the code, and that half was missing when every reported
- * false success happened: the code was clean and reviewed, and the claim still covered more than
- * was observed - built but never published, published but cached, tested on land but used on an
- * island, working for an operator but not a player, export without import, a symptom gone with the
- * cause never shown. None of those is a defect a diff review finds; each is a claim wider than its
- * evidence, which is what the agent is asked to reason about here, in general terms rather than
- * per case.
+ * The order an audit round gives. Claude Code prints a Stop hook's `additionalContext` in the
+ * transcript as "Stop hook feedback" and offers no channel that reaches the model without the user
+ * seeing it (hooks reference, Stop decision control), so this text is read by the USER at the end of
+ * every finished task. It was a 14-line checklist and the user asked not to see it. The checklist
+ * itself already lives in the memory kernel (Task Execution: verify the exact behavior, the hostile
+ * self-review, a claim says no more than you observed), so this only has to trigger it and name the
+ * half that was missing when every reported false success happened: the claim, not the code -
+ * built but never published, published but cached, a symptom gone with the cause never shown.
  */
 function auditMessage(round: number): string {
-    return [
-        `enigma verify: audit round ${round}/${MAX_AUDIT_ROUNDS} before this is reported as done.`,
-        "Review your own change as a hostile reviewer who expects it to be broken, then fix what you find:",
-        "  - re-run the exact scenario the user asked for, end to end, the way they will use it (UI clicked, command run, API called) - a passing test is not that;",
-        "  - every control, route and flag you added works and is enabled; nothing renders as a no-op;",
-        "  - edges: empty, huge, concurrent, unauthenticated, old data and existing installs;",
-        "  - every caller and consumer of what you changed still works; nothing else regressed (build, tests, types).",
-        "Then audit each success word in your reply (fixed, works, deployed, published, tested): it is a claim about the user's real use, and it may say no more than you observed:",
-        "  - delivery: committed is not merged, merged is not built (CI can skip a commit), built is not published or deployed, deployed is not what the user's client loads (caches, old installs). Check the far end;",
-        "  - conditions: the roles, locales, environments, devices, providers and existing data the user actually has, not only the one you tried;",
-        "  - the whole flow: round trips (export then import, save then reload), what it leaves behind, and what it must not lose;",
-        "  - cause: does the evidence show the cause you named, or only that the symptom changed? A fact from a doc, memory or a name is checked against the live system first.",
-        "Rewrite every claim to its evidence: what you ran, where, and what it printed. Anything not observed is stated as unverified, never rounded up.",
-        "If this review changes nothing, report the verdict with the evidence you ran. If it changes code, the new change is audited in turn.",
-    ].join("\n");
+    return `enigma verify: self-audit ${round}/${MAX_AUDIT_ROUNDS}. Before reporting done, run the hostile self-review from your instructions (re-run what the user asked for the way they use it, edges, every caller), then cut each success word down to what you ran and saw; the rest is stated as unverified.`;
 }
 
 /** Where runVerifyHook's messages go: stderr by default, captured by runVerifyHookJson. */

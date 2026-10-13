@@ -1052,8 +1052,10 @@ test("a success claim with no diff is audited once, and the audit asks what the 
         const claim = (extra: Record<string, unknown> = {}): number => runVerifyHook(payload(dir, "0.1.12 publicada.", { session_id: "audit-nodiff", ...extra }));
         expect(claim()).toBe(2);
         const said = stderr.join("");
-        expect(said).toContain("deployed is not what the user's client loads");
-        expect(said).toContain("only that the symptom changed");
+        // The claim half, in the one line the user also sees (the full dimensions are in the kernel).
+        expect(said).toContain("cut each success word down to what you ran and saw");
+        expect(said).toContain("unverified");
+        expect(said.trim().split("\n")).toHaveLength(1);
         // Nothing changed since: the same claim over the same commit passes.
         expect(claim({ stop_hook_active: true })).toBe(0);
     } finally {
