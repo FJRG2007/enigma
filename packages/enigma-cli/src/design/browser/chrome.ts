@@ -69,6 +69,21 @@ function removeProfile(dir: string): void {
     try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* left for the OS temp cleaner */ }
 }
 
+/**
+ * Signals the browser and, on POSIX, every process it spawned. Chrome's renderers, zygote and
+ * network service outlive the main process for a moment and keep writing into the profile, so
+ * deleting it after only the main process exited left the directory behind on Linux CI (twice on
+ * main, with the main process already reaped). The browser runs in its own process group there
+ * (`detached`), and the group is what gets signalled - the technique `@puppeteer/browsers` uses.
+ * Windows keeps the single-process kill: there the profile was never left behind.
+ */
+export function signalBrowser(child: ChildProcess, signal: NodeJS.Signals): void {
+    if (process.platform !== "win32" && child.pid !== undefined) {
+        try { process.kill(-child.pid, signal); return; } catch { /* group already gone */ }
+    }
+    try { child.kill(signal); } catch { /* already gone */ }
+}
+
 /** Live browsers, so a run that dies mid-extraction still kills them and clears their profiles. */
 const live = new Map<ChildProcess, string>();
 let exitHookInstalled = false;
@@ -78,7 +93,7 @@ function installExitHook(): void {
     exitHookInstalled = true;
     process.once("exit", () => {
         for (const [child, profile] of live) {
-            if (child.exitCode === null) { try { child.kill(); } catch { /* already gone */ } }
+            signalBrowser(child, "SIGKILL");
             removeProfile(profile);
         }
     });
@@ -104,21 +119,19 @@ export async function launchBrowser(executable: string): Promise<LaunchedBrowser
     if (process.platform === "linux" && process.getuid?.() === 0) args.push("--no-sandbox");
     args.push("about:blank");
 
-    const child = spawn(executable, args, { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+    const child = spawn(executable, args, { stdio: ["ignore", "ignore", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
     installExitHook();
     live.set(child, profile);
     let disposed: Promise<void> | null = null;
     const dispose = (): Promise<void> => {
         disposed ??= (async () => {
             const done = exited(child);
-            if (child.exitCode === null) { try { child.kill(); } catch { /* already gone */ } }
+            if (child.exitCode === null) signalBrowser(child, "SIGTERM");
             await done;
-            // A browser still alive past the grace period rewrites its profile after we delete it
-            // (seen on a loaded CI runner: the profile dir outlived the run), so it is killed outright.
-            if (child.exitCode === null && child.signalCode === null) {
-                try { child.kill("SIGKILL"); } catch { /* already gone */ }
-                await exited(child);
-            }
+            // Whatever is still alive - the main process past its grace period, or the helpers it
+            // left behind - would rewrite the profile after it is deleted.
+            signalBrowser(child, "SIGKILL");
+            if (child.exitCode === null && child.signalCode === null) await exited(child);
             live.delete(child);
             removeProfile(profile);
         })();
