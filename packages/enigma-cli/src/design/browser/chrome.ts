@@ -97,7 +97,7 @@ export async function launchBrowser(executable: string): Promise<LaunchedBrowser
     const args = [
         "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`,
         "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-sync",
-        "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
+        "--disable-background-networking", "--disable-component-update", "--disable-default-apps", "--disable-breakpad",
         "--hide-scrollbars", "--mute-audio", "--window-size=1440,900",
     ];
     // Chrome refuses to start its sandbox as root (containers, CI); that is the only case it is lifted.
@@ -113,6 +113,12 @@ export async function launchBrowser(executable: string): Promise<LaunchedBrowser
             const done = exited(child);
             if (child.exitCode === null) { try { child.kill(); } catch { /* already gone */ } }
             await done;
+            // A browser still alive past the grace period rewrites its profile after we delete it
+            // (seen on a loaded CI runner: the profile dir outlived the run), so it is killed outright.
+            if (child.exitCode === null && child.signalCode === null) {
+                try { child.kill("SIGKILL"); } catch { /* already gone */ }
+                await exited(child);
+            }
             live.delete(child);
             removeProfile(profile);
         })();
