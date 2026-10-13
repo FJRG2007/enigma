@@ -58,6 +58,11 @@ export function runningHelp(): string {
     return "The run is still in progress. Do not poll status in a loop: wait for the `axi run` or `axi respond` you started (run it as a background command), which exits at the next decision point or outcome";
 }
 
+/** The hint shown while the run waits on a person (`blocked_on_user`), where "wait for it" would be wrong. */
+export function waitingOnUserHelp(): string {
+    return "The run is waiting on the user (see `blocked_on_user`); tell them, nothing else happens until they act";
+}
+
 /** The hint shown when `axi logs` finds no run to read from. */
 export function noRunLogsHelp(): string {
     return startRunHelp();
@@ -131,8 +136,8 @@ export async function runAxiStatus(deps: AxiDeps, runID: string): Promise<number
         } else if (terminalStatus(rv.status)) {
             fields.push(field("outcome", outcomeFor(rv.status)));
             if (run.error !== null && run.error !== "") fields.push(field("error", run.error));
-        } else if (rv.blockedReason === "") {
-            fields.push(toonHelp([runningHelp()]));
+        } else {
+            fields.push(toonHelp([rv.blockedReason === "" ? runningHelp() : waitingOnUserHelp()]));
         }
         emitDoc(deps.io, fields);
         return 0;

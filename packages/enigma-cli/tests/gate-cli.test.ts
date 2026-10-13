@@ -122,6 +122,7 @@ test("axi status on a run in progress says to wait on the backgrounded run, not 
   const blocked = await status();
   expect(blocked).toContain("blocked_on_user");
   expect(blocked).not.toContain("Do not poll");
+  expect(blocked).toContain("waiting on the user");
 });
 
 test("--help prints usage for every subcommand instead of running it", () => {

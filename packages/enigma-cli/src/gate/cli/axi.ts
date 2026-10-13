@@ -28,6 +28,7 @@ import {
 import {
     runAxiLogs,
     runningHelp,
+    waitingOnUserHelp,
     runAxiStatus,
     currentBranchForRunResolve
 } from "./axiQuery";
@@ -200,7 +201,7 @@ export async function runAxiHome(deps: AxiDeps): Promise<number> {
         } else if (gated) {
             help.push("Run `enigma gate axi respond --action approve` to clear the current gate");
         } else if (waitingOnUser) {
-            help.push("The run is waiting on the user (see `blocked_on_user`); tell them, nothing else happens until they act");
+            help.push(waitingOnUserHelp());
         } else {
             help.push(runningHelp());
         }
