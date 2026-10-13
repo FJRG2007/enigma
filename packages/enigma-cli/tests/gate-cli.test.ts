@@ -17,7 +17,7 @@ const { readInstructions } = await import("../src/gate/cli/axiDrive");
 const { gateSubcommandHelp } = await import("../src/gate/cli/index");
 const { runAxi, axiSubcommandHelp } = await import("../src/gate/cli/axi");
 const { Paths } = await import("../src/gate/paths");
-const { Database, insertRepo, insertRun, updateRunPRURL } = await import("../src/gate/db");
+const { Database, insertRepo, insertRun, updateRunPRURL, setRunBlockedReason } = await import("../src/gate/db");
 const { findGitRoot } = await import("../src/gate/git");
 
 test("a normal prompt rides in argv; an oversized one is routed to stdin", () => {
@@ -94,6 +94,34 @@ test("axi merge refuses a run id that belongs to another repository", async () =
   expect(out).toContain("belongs to another repository");
   // And nothing about the other repo's PR was acted on.
   expect(out).not.toContain("merged");
+});
+
+test("axi status on a run in progress says to wait on the backgrounded run, not to poll", async () => {
+  // Agents read "check progress with status" as a cue for a foreground sleep + status loop, which
+  // locks the user out of the session for as long as the run takes.
+  const paths = Paths.withRoot(join(DIR, "in-progress"));
+  paths.ensureDirs();
+  const db = new Database(paths.db());
+  const repo = insertRepo(db, findGitRoot("."), "https://github.com/acme/here.git", "main");
+  const run = insertRun(db, repo.id, "feature", "a".repeat(40), "b".repeat(40));
+  db.close();
+
+  const daemon = { ensureDaemon: async () => {}, isDaemonRunning: async () => false };
+  const status = async (): Promise<string> => {
+    let out = "";
+    const io = { stdout: (s: string) => { out += s; }, stderr: () => {} };
+    expect(await runAxi(["status", "--run", run.id], { io, daemon, paths })).toBe(0);
+    return out;
+  };
+  expect(await status()).toContain("Do not poll status in a loop");
+
+  // Waiting on the user is not "in progress": that hint would send the agent back to waiting.
+  const again = new Database(paths.db());
+  setRunBlockedReason(again, run.id, "merge the PR");
+  again.close();
+  const blocked = await status();
+  expect(blocked).toContain("blocked_on_user");
+  expect(blocked).not.toContain("Do not poll");
 });
 
 test("--help prints usage for every subcommand instead of running it", () => {

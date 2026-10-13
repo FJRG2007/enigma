@@ -164,14 +164,21 @@ model while review keeps the strong one.
    enigma gate axi run --intent "<what the user set out to accomplish>"
    enigma gate axi run --intent "..." --quick   # small, or already tested: no test/document
    ```
-   `axi run` and every `axi respond` block synchronously - review, test, and CI
-   can each take several minutes, so a single call may not return for a while.
-   That is normal; allow a long timeout and do not cancel or re-issue it. To
-   check progress, use `enigma gate axi status` from a separate call. When status
-   shows `awaiting_agent: parked <duration>`, the run is parked at a gate waiting
-   for your `axi respond`. When it shows `blocked_on_user: <action>`, the run is
-   waiting on the USER, not on you or on the pipeline - say so instead of reporting
-   it as still running.
+   `axi run` and every `axi respond` block until the next decision point or the
+   outcome - review, test, and CI can each take several minutes, so one call can
+   run for half an hour. Start it as a **background** command when your runtime
+   has one (Claude Code: `run_in_background`); the runtime tells you when it
+   exits, and the user can talk to you in the meantime. A foreground call holds
+   the whole thread hostage for that time. Do not cancel or re-issue it.
+
+   **Never wait in a loop.** A `sleep` + `axi status` loop in the foreground blocks
+   the user exactly like the foreground run it replaces, and it only re-reads
+   what the backgrounded `axi run` will report anyway. `enigma gate axi status`
+   is a one-shot read for when you need the detail now. When it shows
+   `awaiting_agent: parked <duration>`, the run is parked at a gate waiting for
+   your `axi respond`. When it shows `blocked_on_user: <action>`, the run is
+   waiting on the USER, not on you or on the pipeline - say so instead of
+   reporting it as still running.
 2. If the output contains a `gate:` object, the pipeline is waiting on you. Read
    its `findings` table. Each finding has an `action`:
    - `auto-fix` - mechanical, low-risk; authorize on your own judgment with
