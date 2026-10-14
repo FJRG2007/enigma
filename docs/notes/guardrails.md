@@ -78,3 +78,7 @@
 - Users kept having to ask for "one Image component used everywhere". The rule blocks a content `<img>` (diff stage) only when the project demonstrably HAS an image component: `@enigmax/primitives`, `next`, `astro` or `@nuxt/image` in RUNTIME `dependencies` (a library listing the framework as peer/dev is the one implementing components), or a `components/Image.*`-style file. No signal, no finding.
 - Decoration stays raw: `alt=""`, `.svg`, a logo/icon/flag/favicon/sprite source. The component's own file and any file defining `Image`/`Img`/`Picture` are exempt; `enigma:allow-raw-img` covers emails and pixels. CASE-SENSITIVE `<img`, so `<Image>` never matches.
 - Measured over this repo's 496 UI files: 6 hits before the decoration and runtime-deps refinements (3 were the primitives library itself, 3 decorative logos), 1 after - the dashboard screenshot on the home page, a true positive.
+
+## sec-private-term
+
+Blocks an added line carrying one of the user's private terms (real names, handles, server names). The list and matcher are the commit guard's (`readPrivateTerms` / `privateTermMatcher` / `privateTermLines` in guard.ts, imported here so both stages agree); see secret-protection.md for the matching rules. Without a list it reports nothing. The rule pairs with the testing-policy line "tests use anonymous data" and the security-policy bullet on real people's data: the skills say why and how to replace a capture, the rule stops the known values.

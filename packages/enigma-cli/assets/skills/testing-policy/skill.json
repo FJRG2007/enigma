@@ -1,9 +1,9 @@
 {
   "name": "testing-policy",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "provider": "FJRG2007/enigma",
   "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
   "updated": "2026-10-10T17:38:23+02:00",
   "cliVersion": "1.64.0",
-  "sha": "86d49572f8e230377fcdafb0ac74bbc86998ffb68c3224b60793bf62a82bab16"
+  "sha": "3bc5b6640e936729cbb06ba3bb132f5bbd3869b17a0d0bf892210c1dedd5c89a"
 }

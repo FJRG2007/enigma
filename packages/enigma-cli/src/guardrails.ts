@@ -33,6 +33,7 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./guard";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "node:fs";
 
@@ -1731,6 +1732,24 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "security-policy",
     },
+    {
+        id: "sec-private-term",
+        label: "Real people's data stays out of the repository",
+        files: ["**"],
+        excludeFiles: [
+            "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/.next/**",
+            "node_modules/**", "dist/**", "build/**", "vendor/**",
+            "*.lock", "*.lockb", "package-lock.json", "*.min.js", "*.map",
+        ],
+        scope: "file",
+        // DIFF stage like sec-operator-env-leak: it fires on the line being added, the moment
+        // before the value reaches the history for good, and never on an old file it did not write.
+        stage: "diff",
+        fileCheck: "sec-private-term",
+        message: "This line carries one of your private terms - the real name, handle, server or community name of you or of the people you serve (the list in ~/.enigma-guard.json, `enigma config private-terms`). Real data never goes into a tracked file, and tests, fixtures, examples and docs use ANONYMOUS data: invent the values (`Player One`, `alice@example.test`, `Test Server`) and, when a real log or payload shape matters, reproduce the shape with invented values instead of pasting the capture. Being shown a real value to work with is permission to use it, never to publish it (security-policy, testing-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
     // The injection class. Every one but sec-unsafe-deserialization is DIFF stage for the reason the
     // stage exists: each has a measured backlog in real repositories (the counts are in guardrails.md),
     // so at the edit stage it would block unrelated edits to a file that already carried the shape.
@@ -2255,6 +2274,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
     "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
+    "sec-private-term": (content) => privateTermLeak(content),
     "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content),
     "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
     "fe-selection-hand-rolled": (content) => handRolledSelection(content),
@@ -3726,6 +3746,23 @@ export function operatorHomePathLeak(content: string): { line: number; detail: s
         if (re.test(lines[i]!)) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
     }
     return out;
+}
+
+let privateTermCache: { key: string; re: RegExp | null; } | undefined;
+
+/**
+ * Lines carrying one of the user's private terms (see the sec-private-term rule). The list and
+ * the matcher are the commit guard's, so an edit and a commit can never disagree on a term.
+ * The list is re-read on every call (one small file) and the matcher recompiled only when it
+ * changed, so a term added mid-session applies to the next edit. The term is never echoed back.
+ */
+export function privateTermLeak(content: string): { line: number; detail: string; }[] {
+    const terms = readPrivateTerms();
+    const key = terms.join("\n");
+    if (privateTermCache?.key !== key) privateTermCache = { key, re: privateTermMatcher(terms) };
+    const re = privateTermCache.re;
+    if (re === null) return [];
+    return privateTermLines(content, re).map((line) => ({ line, detail: "a private term from your list" }));
 }
 
 /**
