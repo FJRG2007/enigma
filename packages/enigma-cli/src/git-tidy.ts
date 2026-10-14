@@ -375,7 +375,7 @@ export async function planTidy(dir: string, remote = "origin", prs: PRHeads | nu
             continue;
         }
         const viaPR = !await containedInAny(dir, base, defaultBranch, branch);
-        if (viaPR && !await landedByPR(dir, remote, branch, sha, prs)) {
+        if (viaPR && !await landedByPR(dir, remote, branch, sha, prs, defaultBranch)) {
             verdicts.push(verdict(false, `${base} does not contain all of its work`, "not-contained"));
             continue;
         }
@@ -397,7 +397,7 @@ export async function planTidy(dir: string, remote = "origin", prs: PRHeads | nu
                 verdicts.push({ ...verdict(true, "merged locally; the remote copy could not be read, so it stays", "remote-unverifiable"), remote: false });
                 continue;
             }
-            if (remoteSha && !await containedInAny(dir, base, defaultBranch, remoteSha) && !await landedByPR(dir, remote, branch, remoteSha, prs)) {
+            if (remoteSha && !await containedInAny(dir, base, defaultBranch, remoteSha) && !await landedByPR(dir, remote, branch, remoteSha, prs, defaultBranch)) {
                 verdicts.push(verdict(false, `the copy on ${remote} has work ${base} does not contain`, "remote-ahead"));
                 continue;
             }
@@ -539,11 +539,17 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
             // repository and by the same proof the plan used, and only force the delete if it holds.
             const base = plan.baseRef ?? plan.defaultBranch;
             const tip = await git.resolveRef(dir, target.branch).catch(() => "");
-            const holds = tip === target.sha && (target.viaPR
-                ? await landedByPR(dir, remote, target.branch, tip, prsNow)
-                : await containedInAny(dir, base, plan.defaultBranch, target.branch));
+            if (tip !== target.sha) {
+                result.problems.push(`kept ${target.branch}: it moved since it was checked`);
+                continue;
+            }
+            const holds = target.viaPR
+                ? await landedByPR(dir, remote, target.branch, tip, prsNow, plan.defaultBranch)
+                : await containedInAny(dir, base, plan.defaultBranch, target.branch);
             if (!holds) {
-                result.problems.push(`kept ${target.branch}: ${base} no longer contains all of its work`);
+                result.problems.push(target.viaPR
+                    ? `kept ${target.branch}: its merged pull request no longer proves all of its work landed in ${plan.defaultBranch}`
+                    : `kept ${target.branch}: ${base} no longer contains all of its work`);
                 continue;
             }
             try {
@@ -604,13 +610,14 @@ async function refTouched(bare: string, branch: string): Promise<number> {
  * squash merge leaves; content containment cannot give it once the base edits the same files
  * again. Every commit of the branch is then inside a merged PR, so nothing is lost. Never true
  * with an open PR on the branch, nor for a long-lived branch (the base of a PR, or the head of
- * more than one merged PR), nor when the PR list could not be read.
+ * more than one merged PR), nor when the PR list could not be read, nor when the PR merged into
+ * a branch other than the default one - an integration branch may never reach it.
  */
-async function landedByPR(dir: string, remote: string, branch: string, sha: string, prs: PRHeads | null): Promise<boolean> {
+async function landedByPR(dir: string, remote: string, branch: string, sha: string, prs: PRHeads | null, defaultBranch: string): Promise<boolean> {
     if (!prs || !sha || prs.open.has(branch) || prs.bases.has(branch)) return false;
     const heads = prs.merged.get(branch) ?? [];
-    if (heads.length !== 1) return false;
-    const head = heads[0]!;
+    if (heads.length !== 1 || heads[0]!.base !== defaultBranch) return false;
+    const head = heads[0]!.sha;
     if (head === sha) return true;
     if (!remote || !await fetchTip(dir, remote, branch, head)) return false;
     return (await git.runRaw(dir, ["merge-base", "--is-ancestor", sha, head]).catch(() => ({ code: 1 }))).code === 0;
@@ -653,7 +660,7 @@ async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, d
         if (now - await refTouched(bare, branch) < MIRROR_IDLE_MS) continue;
         const prs = await listPRs(dir);
         if (prs?.open.has(branch)) continue;
-        const mergedAtTip = (prs?.merged.get(branch) ?? []).includes(sha);
+        const mergedAtTip = (prs?.merged.get(branch) ?? []).some((pr) => pr.sha === sha && pr.base === plan.defaultBranch);
         if (!await fetchTip(dir, GATE_REMOTE, branch, sha)) continue;
         if (!mergedAtTip && !await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
         if (dryRun) { result.mirror.push({ branch, sha, bare }); continue; }
@@ -760,7 +767,7 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
  *   the branch;
  * - the PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not logged
  *   in - every remote-only branch is kept;
- * - no PR on the branch is open, and a merged PR from this repository had it as its head at
+ * - no PR on the branch is open, and a merged PR from this repository into the default branch had it as its head at
  *   this very sha - that commit's work is in the base by construction. Content containment is
  *   neither required nor enough: a squash merge followed by later edits to the same files (a
  *   version, a changelog, the gate's own fix commits) means the base never contains the branch
@@ -785,7 +792,7 @@ export async function remoteOnlyBranches(dir: string, remote: string, plan: Tidy
         const branch = ref.replace("refs/heads/", "");
         if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || prs.open.has(branch)) continue;
         const mergedAt = prs.merged.get(branch) ?? [];
-        if (!mergedAt.includes(sha) || mergedAt.length > 1 || prs.bases.has(branch)) continue;
+        if (mergedAt.length !== 1 || mergedAt[0]!.sha !== sha || mergedAt[0]!.base !== plan.defaultBranch || prs.bases.has(branch)) continue;
         verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, merged into ${base} by a PR at this commit`, remote: true });
     }
     return { verdicts };
@@ -805,8 +812,8 @@ async function pruneRemotes(dir: string): Promise<number> {
 export interface PRHeads {
     /** Head branch names of the open PRs. */
     open: Set<string>;
-    /** Head branch name -> the head sha of each merged PR from this repository. */
-    merged: Map<string, string[]>;
+    /** Head branch name -> the head sha and base branch of each merged PR from this repository. */
+    merged: Map<string, Array<{ sha: string; base: string; }>>;
     /** Base branch names of every PR, in any state. */
     bases: Set<string>;
 }
@@ -828,7 +835,7 @@ export async function prHeads(dir: string): Promise<PRHeads | null> {
                     if (row.state === "OPEN") heads.open.add(branch);
                     if (row.state !== "MERGED" || row.isCrossRepository !== false || typeof row.headRefOid !== "string") continue;
                     if (!heads.merged.has(branch)) heads.merged.set(branch, []);
-                    heads.merged.get(branch)!.push(row.headRefOid);
+                    heads.merged.get(branch)!.push({ sha: row.headRefOid, base: String(row.baseRefName ?? "") });
                 }
                 resolveHeads(heads);
             } catch {
