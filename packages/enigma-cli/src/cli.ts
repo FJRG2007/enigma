@@ -2655,7 +2655,7 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
     if (sub && sub !== "tidy") { console.error(`Unknown subcommand '${sub}'. Usage: enigma branches [tidy] [branch...]`); return 1; }
 
     if (sub !== "tidy") {
-        const plan = await tidyMod.planTidy(dir, remote);
+        const plan = await tidyMod.planTidy(dir, remote, remote ? await tidyMod.prHeads(dir) : null);
         if (plan.blocked) { console.log(`Nothing can be cleaned up here: ${plan.blocked}.`); return 0; }
         const ready = plan.verdicts.filter((v) => v.tidyable);
         for (const v of plan.verdicts) console.log(`  ${v.tidyable ? "x" : "-"} ${v.branch.padEnd(32)} ${v.detail}`);

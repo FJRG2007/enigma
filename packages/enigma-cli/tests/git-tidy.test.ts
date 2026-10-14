@@ -439,22 +439,24 @@ test("a background tidy is claimed once an hour per repository", async () => {
 
 // A branch that exists only on the remote is deleted there only when it is merged, nothing is in
 // review on it, AND a merged PR had it as head at that very sha; an unreadable list keeps them all.
-// A long-lived branch (the base of some PR, or the head of several merged PRs) is always kept.
+// A long-lived branch (the base of some PR, or the head of several merged PRs) is always kept, and
+// so is one whose PR merged into a branch other than the default one.
 test("a remote-only branch goes only when merged through a PR at its tip", async () => {
     const { remoteOnlyBranches } = await import("../src/git-tidy");
     const { dir } = repo("remote-only");
-    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on", "release/1", "next"]) {
+    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on", "release/1", "next", "into-dev"]) {
         git(dir, "checkout", "-q", "-b", name, "main");
         commit(dir, `${name.replace("/", "-")}.txt`);
         git(dir, "push", "-q", "origin", name);
         git(dir, "checkout", "-q", "main");
     }
-    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review", "staging", "moved-on", "release/1", "next");
+    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review", "staging", "moved-on", "release/1", "next", "into-dev");
     git(dir, "push", "-q", "origin", "main");
     git(dir, "fetch", "-q", "origin");
     const tip = (name: string) => git(dir, "rev-parse", name).trim();
-    const merged = new Map([["merged-a", [tip("merged-a")]], ["moved-on", ["0".repeat(40)]], ["release/1", [tip("release/1")]], ["next", ["1".repeat(40), tip("next")]]]);
-    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on", "release/1", "next"]) git(dir, "branch", "-q", "-D", name);
+    const into = (sha: string, base = "main") => ({ sha, base });
+    const merged = new Map([["merged-a", [into(tip("merged-a"))]], ["moved-on", [into("0".repeat(40))]], ["release/1", [into(tip("release/1"))]], ["next", [into("1".repeat(40)), into(tip("next"))]], ["into-dev", [into(tip("into-dev"), "dev")]]]);
+    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on", "release/1", "next", "into-dev"]) git(dir, "branch", "-q", "-D", name);
 
     const plan = await planTidy(dir);
     const found = await remoteOnlyBranches(dir, "origin", plan, async () => ({ open: new Set(["in-review"]), merged, bases: new Set(["main", "release/1"]) }));
@@ -462,6 +464,71 @@ test("a remote-only branch goes only when merged through a PR at its tip", async
     const unreadable = await remoteOnlyBranches(dir, "origin", plan, async () => null);
     expect(unreadable.verdicts).toEqual([]);
     expect(unreadable.note).toContain("left alone");
+}, 120_000);
+
+/**
+ * The gate's own shape: the local branch is pushed, the gate adds a fix commit on top, the PR is
+ * squash-merged, and the base then edits the same file again - so no content proof can ever hold.
+ * The merged PR whose head descends from the local tip is the proof, and only that shape is.
+ */
+test("a branch landed by a merged PR goes even when the base no longer contains it; a rebased, open, unprovable or elsewhere-merged one stays", async () => {
+    const { dir } = repo("pr-landed");
+    const shaOf = (ref: string) => git(dir, "rev-parse", ref).trim();
+    for (const name of ["feat/landed", "feat/rebased", "feat/open", "feat/to-dev"]) {
+        git(dir, "checkout", "-q", "-b", name, "main");
+        commit(dir, "shared.txt", `${name} work`);
+        git(dir, "push", "-q", "origin", name);
+    }
+    // The gate's fix commit on top of feat/landed becomes its PR head.
+    git(dir, "checkout", "-q", "feat/landed");
+    const local = shaOf("feat/landed");
+    commit(dir, "shared.txt", "feat/landed work, fixed by the gate");
+    git(dir, "push", "-q", "origin", "feat/landed");
+    const head = shaOf("feat/landed");
+    git(dir, "reset", "-q", "--hard", local);
+    // feat/rebased merged as a rewritten history its local tip is not part of.
+    git(dir, "checkout", "-q", "-b", "rewritten", "main");
+    commit(dir, "shared.txt", "rebased work, rewritten");
+    const rewritten = shaOf("rewritten");
+    git(dir, "push", "-q", "origin", "rewritten:feat/rebased", "--force");
+    git(dir, "checkout", "-q", "main");
+    git(dir, "branch", "-q", "-D", "rewritten");
+    git(dir, "merge", "-q", "--squash", head);
+    git(dir, "-c", "user.name=t", "-c", "user.email=t@e.test", "commit", "-q", "-m", "squash feat/landed");
+    commit(dir, "shared.txt", "edited again on main");
+    git(dir, "push", "-q", "origin", "main");
+    const into = (sha: string, base = "main") => ({ sha, base });
+    const prs = { open: new Set(["feat/open"]), merged: new Map([["feat/landed", [into(head)]], ["feat/rebased", [into(rewritten)]], ["feat/open", [into(shaOf("feat/open"))]], ["feat/to-dev", [into(shaOf("feat/to-dev"), "dev")]]]), bases: new Set(["main", "dev"]) };
+
+    expect((await tidy(dir, { dryRun: true, listPRs: async () => null })).plan.verdicts.filter((v) => v.tidyable)).toEqual([]);
+    const plan = (await tidy(dir, { dryRun: true, listPRs: async () => prs })).plan;
+    expect(plan.verdicts.filter((v) => v.tidyable).map((v) => [v.branch, v.remote, v.viaPR])).toEqual([["feat/landed", true, true]]);
+
+    const result = await tidy(dir, { listPRs: async () => prs });
+    expect(result.problems).toEqual([]);
+    expect(result.deleted).toEqual(["feat/landed"]);
+    expect(result.deletedRemote).toEqual(["feat/landed"]);
+    expect(git(dir, "branch", "--list", "feat/rebased", "feat/open", "feat/to-dev").split("\n").map((l) => l.trim())).toEqual(["feat/open", "feat/rebased", "feat/to-dev"]);
+    // The landed work is still reachable: the undo ledger records the local tip.
+    expect(readLedger().some((e) => e.branch === "feat/landed" && e.sha === local)).toBe(true);
+}, 120_000);
+
+test("a remote-only branch merged by a PR at its tip goes even when the base edited the same file since", async () => {
+    const { remoteOnlyBranches } = await import("../src/git-tidy");
+    const { dir } = repo("remote-only-squash");
+    git(dir, "checkout", "-q", "-b", "feat/web", "main");
+    commit(dir, "shared.txt", "web work");
+    git(dir, "push", "-q", "origin", "feat/web");
+    const tip = git(dir, "rev-parse", "feat/web").trim();
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--squash", "feat/web");
+    git(dir, "-c", "user.name=t", "-c", "user.email=t@e.test", "commit", "-q", "-m", "squash");
+    commit(dir, "shared.txt", "edited again on main");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "branch", "-q", "-D", "feat/web");
+    const plan = await planTidy(dir);
+    const found = await remoteOnlyBranches(dir, "origin", plan, async () => ({ open: new Set<string>(), merged: new Map([["feat/web", [{ sha: tip, base: "main" }]]]), bases: new Set(["main"]) }));
+    expect(found.verdicts.map((v) => v.branch)).toEqual(["feat/web"]);
 }, 120_000);
 
 // The background run never moves the checkout: a branch just created for the next turn has no
@@ -578,7 +645,7 @@ test("a squash-landed run branch leaves the mirror on its merged PR, even when t
     // A run branch this clone never fetched: it has no tracking ref here, and keeping it must not add one.
     git(bare, "branch", "feat/parked", git(bare, "rev-parse", "feat/aborted").trim());
     age(bare, "feat/parked", 24);
-    const listPRs = async () => ({ open: new Set(["feat/review"]), merged: new Map([["release/1", [tip]], ["feat/review", [reviewTip]]]), bases: new Set(["main"]) });
+    const listPRs = async () => ({ open: new Set(["feat/review"]), merged: new Map([["release/1", [{ sha: tip, base: "main" }]], ["feat/review", [{ sha: reviewTip, base: "main" }]]]), bases: new Set(["main"]) });
 
     // A dry run reports and writes no ref, not even a lagging tracking ref.
     const trackingBefore = git(dir, "for-each-ref", "refs/remotes/gate");

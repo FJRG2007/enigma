@@ -57,6 +57,10 @@ export interface BranchVerdict {
     detail: string;
     /** True when the branch also exists on the remote and that copy is contained too. */
     remote: boolean;
+    /** The remote copy's tip that was proved, so its delete is leased to exactly that commit. */
+    remoteSha?: string;
+    /** Proved landed by a merged PR rather than by content; the delete re-proves it the same way. */
+    viaPR?: boolean;
 }
 
 export interface TidyPlan {
@@ -323,7 +327,7 @@ async function containmentBase(dir: string, remote: string, defaultBranch: strin
  * Decide what may be tidied in `dir`, touching nothing. `remote` is the remote whose
  * copies are considered (default `origin`); pass "" to ignore remotes entirely.
  */
-export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan> {
+export async function planTidy(dir: string, remote = "origin", prs: PRHeads | null = null): Promise<TidyPlan> {
     const empty = (blocked: string): TidyPlan => ({ defaultBranch: "", currentBranch: "", verdicts: [], blocked });
 
     let defaultBranch: string;
@@ -370,10 +374,12 @@ export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan
             verdicts.push(verdict(false, "a stash entry is based on it", "has-stash"));
             continue;
         }
-        if (!await containedInAny(dir, base, defaultBranch, branch)) {
+        const viaPR = !await containedInAny(dir, base, defaultBranch, branch);
+        if (viaPR && !await landedByPR(dir, remote, branch, sha, prs, defaultBranch)) {
             verdicts.push(verdict(false, `${base} does not contain all of its work`, "not-contained"));
             continue;
         }
+        const landed = viaPR ? `landed in ${base} through its merged pull request` : `fully contained in ${base}`;
 
         // The local branch is merged. The REMOTE copy is a separate question: it can
         // hold commits this checkout has never seen, and deleting it would take them
@@ -391,13 +397,17 @@ export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan
                 verdicts.push({ ...verdict(true, "merged locally; the remote copy could not be read, so it stays", "remote-unverifiable"), remote: false });
                 continue;
             }
-            if (remoteSha && !await containedInAny(dir, base, defaultBranch, remoteSha)) {
+            if (remoteSha && !await containedInAny(dir, base, defaultBranch, remoteSha) && !await landedByPR(dir, remote, branch, remoteSha, prs, defaultBranch)) {
                 verdicts.push(verdict(false, `the copy on ${remote} has work ${base} does not contain`, "remote-ahead"));
                 continue;
             }
             onRemote = Boolean(remoteSha);
+            if (remoteSha) {
+                verdicts.push({ ...verdict(true, landed), remote: true, remoteSha, viaPR });
+                continue;
+            }
         }
-        verdicts.push({ ...verdict(true, `fully contained in ${base}`), remote: onRemote });
+        verdicts.push({ ...verdict(true, landed), remote: onRemote, viaPR });
     }
 
     verdicts.sort((a, b) => Number(b.tidyable) - Number(a.tidyable) || a.branch.localeCompare(b.branch));
@@ -450,10 +460,11 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     // list shows after a PR workflow - measured in one repository, the 40 `origin/*` refs stood
     // for 4 real branches, and the gate's mirror remotes carried 279 more.
     const pruned = opts.dryRun ? 0 : await pruneRemotes(dir);
-    let plan = await planTidy(dir, remote);
-    // Read once: the gate mirror and the remote-only pass both prove a branch landed by its PR.
+    // Read once: the local plan, the gate mirror and the remote-only pass all prove a branch landed by its PR.
     let prs: Promise<PRHeads | null> | undefined;
     const listPRs = (d: string) => prs ??= (opts.listPRs ?? prHeads)(d);
+    const prsNow = remote ? await listPRs(dir) : null;
+    let plan = await planTidy(dir, remote, prsNow);
     const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [], notes: [], worktrees: [], remoteOnly: [], pruned, mirror: [], orphanRefs: [] };
     if (plan.blocked) return result;
     await tidyGateMirror(dir, plan, result, !!opts.dryRun, listPRs);
@@ -472,7 +483,7 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
         }
     }
     if (result.worktrees.length && !opts.dryRun) {
-        plan = await planTidy(dir, remote);
+        plan = await planTidy(dir, remote, prsNow);
         result.plan = plan;
         if (plan.blocked) return result;
     }
@@ -524,11 +535,21 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
             await git.run(dir, ["branch", "-d", target.branch]);
             result.deleted.push(target.branch);
         } catch {
-            // git's ancestry check refused. Re-prove containment by content NOW, against
-            // the live repository, and only force the delete if it still holds.
+            // git's ancestry check refused. Re-prove the landing NOW, against the live
+            // repository and by the same proof the plan used, and only force the delete if it holds.
             const base = plan.baseRef ?? plan.defaultBranch;
-            if (!await containedInAny(dir, base, plan.defaultBranch, target.branch)) {
-                result.problems.push(`kept ${target.branch}: ${base} no longer contains all of its work`);
+            const tip = await git.resolveRef(dir, target.branch).catch(() => "");
+            if (tip !== target.sha) {
+                result.problems.push(`kept ${target.branch}: it moved since it was checked`);
+                continue;
+            }
+            const holds = target.viaPR
+                ? await landedByPR(dir, remote, target.branch, tip, prsNow, plan.defaultBranch)
+                : await containedInAny(dir, base, plan.defaultBranch, target.branch);
+            if (!holds) {
+                result.problems.push(target.viaPR
+                    ? `kept ${target.branch}: its merged pull request no longer proves all of its work landed in ${plan.defaultBranch}`
+                    : `kept ${target.branch}: ${base} no longer contains all of its work`);
                 continue;
             }
             try {
@@ -541,7 +562,8 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
         }
         if (!target.remote || !remote) continue;
         try {
-            await git.run(dir, ["push", remote, "--delete", target.branch]);
+            // Leased to the proved tip: a push made since the proof keeps the remote branch.
+            await git.run(dir, ["push", remote, "--delete", ...(target.remoteSha ? [`--force-with-lease=${target.branch}:${target.remoteSha}`] : []), target.branch]);
             result.deletedRemote.push(target.branch);
         } catch (err) {
             result.problems.push(`${target.branch} is gone locally but still on ${remote} (${(err as Error).message})`);
@@ -582,6 +604,26 @@ async function refTouched(bare: string, branch: string): Promise<number> {
 }
 
 /**
+ * Whether `sha` on `branch` landed through a merged pull request: it is the head of a PR merged
+ * from this repository, or an ancestor of one - the gate pushes its fix commits on top of the
+ * branch before it merges, so the PR head descends from the local tip. That is the proof a
+ * squash merge leaves; content containment cannot give it once the base edits the same files
+ * again. Every commit of the branch is then inside a merged PR, so nothing is lost. Never true
+ * with an open PR on the branch, nor for a long-lived branch (the base of a PR, or the head of
+ * more than one merged PR), nor when the PR list could not be read, nor when the PR merged into
+ * a branch other than the default one - an integration branch may never reach it.
+ */
+async function landedByPR(dir: string, remote: string, branch: string, sha: string, prs: PRHeads | null, defaultBranch: string): Promise<boolean> {
+    if (!prs || !sha || prs.open.has(branch) || prs.bases.has(branch)) return false;
+    const heads = prs.merged.get(branch) ?? [];
+    if (heads.length !== 1 || heads[0]!.base !== defaultBranch) return false;
+    const head = heads[0]!.sha;
+    if (head === sha) return true;
+    if (!remote || !await fetchTip(dir, remote, branch, head)) return false;
+    return (await git.runRaw(dir, ["merge-base", "--is-ancestor", sha, head]).catch(() => ({ code: 1 }))).code === 0;
+}
+
+/**
  * Make `remote`'s `branch` at `sha` available here, fetching it when the commit is missing.
  * Nothing fetches these refs on its own, so a check that required a current tracking ref
  * skipped every branch that moved after the last fetch - for good. The fetch writes no ref
@@ -618,7 +660,7 @@ async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, d
         if (now - await refTouched(bare, branch) < MIRROR_IDLE_MS) continue;
         const prs = await listPRs(dir);
         if (prs?.open.has(branch)) continue;
-        const mergedAtTip = (prs?.merged.get(branch) ?? []).includes(sha);
+        const mergedAtTip = (prs?.merged.get(branch) ?? []).some((pr) => pr.sha === sha && pr.base === plan.defaultBranch);
         if (!await fetchTip(dir, GATE_REMOTE, branch, sha)) continue;
         if (!mergedAtTip && !await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
         if (dryRun) { result.mirror.push({ branch, sha, bare }); continue; }
@@ -721,14 +763,16 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
  * pull request - the dead branches a PR workflow leaves on the remote after a squash merge from
  * the web, which no local branch ever represented. A remote branch is someone's work until proved
  * otherwise, so each condition must be SHOWN, never assumed:
- * - the tip the remote reports is fetched when it is missing here, and the delete
- *   is leased to that tip, so a push made after the proof keeps the branch;
+ * - the delete is leased to the tip the remote reported, so a push made after the proof keeps
+ *   the branch;
  * - the PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not logged
  *   in - every remote-only branch is kept;
- * - no PR on the branch is open, and a merged PR from this repository had it as its head at
- *   this very sha. Containment alone is not enough: a long-lived shared branch (staging, a
- *   deploy branch, a teammate's branch pushed before its first commit) is contained in the
- *   default branch every time it is fast-forwarded, and is nobody's leftover;
+ * - no PR on the branch is open, and a merged PR from this repository into the default branch had it as its head at
+ *   this very sha - that commit's work is in the base by construction. Content containment is
+ *   neither required nor enough: a squash merge followed by later edits to the same files (a
+ *   version, a changelog, the gate's own fix commits) means the base never contains the branch
+ *   byte for byte, while a long-lived shared branch (staging, a deploy branch) is contained
+ *   every time it is fast-forwarded and is nobody's leftover;
  * - the branch is not long-lived: one that was the base of a PR, or the head of more than one
  *   merged PR (staging, production, next, release/x merged through release PRs), is kept. Only
  *   the most recent 1000 PRs are read, so a long-lived branch whose PRs all fall outside that
@@ -748,10 +792,8 @@ export async function remoteOnlyBranches(dir: string, remote: string, plan: Tidy
         const branch = ref.replace("refs/heads/", "");
         if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || prs.open.has(branch)) continue;
         const mergedAt = prs.merged.get(branch) ?? [];
-        if (!mergedAt.includes(sha) || mergedAt.length > 1 || prs.bases.has(branch)) continue;
-        if (!await fetchTip(dir, remote, branch, sha)) continue;
-        if (!await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
-        verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, fully contained in ${base}, merged by a PR at this commit`, remote: true });
+        if (mergedAt.length !== 1 || mergedAt[0]!.sha !== sha || mergedAt[0]!.base !== plan.defaultBranch || prs.bases.has(branch)) continue;
+        verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, merged into ${base} by a PR at this commit`, remote: true });
     }
     return { verdicts };
 }
@@ -770,14 +812,14 @@ async function pruneRemotes(dir: string): Promise<number> {
 export interface PRHeads {
     /** Head branch names of the open PRs. */
     open: Set<string>;
-    /** Head branch name -> the head sha of each merged PR from this repository. */
-    merged: Map<string, string[]>;
+    /** Head branch name -> the head sha and base branch of each merged PR from this repository. */
+    merged: Map<string, Array<{ sha: string; base: string; }>>;
     /** Base branch names of every PR, in any state. */
     bases: Set<string>;
 }
 
 /** The repository's PR heads, open and merged, or null when they cannot be listed. */
-async function prHeads(dir: string): Promise<PRHeads | null> {
+export async function prHeads(dir: string): Promise<PRHeads | null> {
     const { execFile } = await import("node:child_process");
     return new Promise((resolveHeads) => {
         execFile("gh", ["pr", "list", "--state", "all", "--limit", "1000", "--json", "headRefName,headRefOid,baseRefName,state,isCrossRepository"], { cwd: dir, windowsHide: true, timeout: 30_000 }, (err, stdout) => {
@@ -793,7 +835,7 @@ async function prHeads(dir: string): Promise<PRHeads | null> {
                     if (row.state === "OPEN") heads.open.add(branch);
                     if (row.state !== "MERGED" || row.isCrossRepository !== false || typeof row.headRefOid !== "string") continue;
                     if (!heads.merged.has(branch)) heads.merged.set(branch, []);
-                    heads.merged.get(branch)!.push(row.headRefOid);
+                    heads.merged.get(branch)!.push({ sha: row.headRefOid, base: String(row.baseRefName ?? "") });
                 }
                 resolveHeads(heads);
             } catch {
