@@ -21,11 +21,11 @@
     },
     {
       "name": "backend-policy",
-      "version": "1.5.0",
-      "description": "Backend/API architecture: controller-service-repository layering, modern TypeScript project configuration (module resolution, strict flags, @/* path alias), API and request optimization (batching, avoiding redundant calls, skipping no-op writes), server-side caching (Redis), and Zod boundary validation.",
+      "version": "1.6.0",
+      "description": "Backend/API architecture: controller-service-repository layering, modern TypeScript project configuration (module resolution, strict flags, @/* path alias), API and request optimization (batching, avoiding redundant calls, skipping no-op writes), server-side caching (Redis), state lifecycle (expiry, purge and cascade of everything the server stores), and Zod boundary validation.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-08-02T19:59:01+02:00",
-      "sha": "652637f818b4ce4f4d5d83fa68fa57fe7842e32fb179523958c5496af54bb938"
+      "sha": "65ddda567a5e7a83041374b2605ac4f4a2dcae5d66b741390da618e8d3372892"
     },
     {
       "name": "ci-policy",

@@ -1,6 +1,6 @@
 ---
 name: backend-policy
-description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
+description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, state lifecycle (what expires, purges or closes every token, counter, pending record, connection and live channel the server keeps), and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
 ---
 
 # Backend & API Architecture Policy
@@ -115,6 +115,21 @@ Cache expensive or hot reads on the server to reduce database load, complementin
 - Make external/service calls resilient: timeouts, bounded retries with backoff, and circuit breaking where appropriate.
 - Keep requests idempotent where possible; use idempotency keys for unsafe operations that may be retried.
 - Fail gracefully and degrade (e.g. serve cached data) instead of cascading failures.
+
+---
+
+## State Lifecycle (Every Write Has an End)
+
+Decide when you design a write what removes it, and ship that removal in the same change. Nobody asks for it, so it gets left out, and the leftovers pile up until someone notices.
+
+- Covers everything the server stores or holds open: tokens, codes and sessions; pending registrations, invites and unconfirmed records; rate-limit counters and dedupe/idempotency keys; connections and integrations with their child rows (rules, grants, settings); uploads and temp files; live channels (WebSocket, SSE, subscriptions, polling jobs).
+- Event trigger: when the owner ends it (disconnect, revoke, logout, delete), remove its dependents and close its live channels right then. An open channel or a still-valid token after a disconnect is a defect.
+- Time trigger: what expires gets purged. Use a native TTL where the store has one (Redis `EXPIRE`, a Mongo TTL index). Otherwise run a scheduled, idempotent, batched purge on an indexed expiry column. "It gets cleaned up when the next one is created" is not a trigger.
+- Grace window: where a user may come back (a disconnected connection, a deleted item), soft-remove with a stated window. Reconnecting inside it restores the user's settings. After it, hard-purge.
+- No orphans: deleting a parent removes or detaches its children, via the foreign key's `ON DELETE` or explicitly in the same transaction.
+- Kept on purpose: an audit log or anything else that must stay is retained only under its own retention policy (personal data: database-expert). Name that policy, never "forever".
+- Retroactive: the purge also removes the leftovers that existed before it shipped.
+- Tested: a test proves the purge removes expired and orphaned rows and keeps live ones.
 
 ---
 
