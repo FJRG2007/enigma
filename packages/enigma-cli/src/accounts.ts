@@ -862,11 +862,24 @@ async function maybeStartProxy(
         const proxy = await startMeasuringProxy(cfg.promptSecretGuard
             ? { scanPrompts: true, mode: cfg.promptSecretMode, extraPatterns: readGlobalGuard().secretPatterns }
             : {});
-        env.ANTHROPIC_BASE_URL = proxy.url;
+        pointAtProxy(env, proxy.url);
         return proxy;
     } catch {
         return null;
     }
+}
+
+/**
+ * Point Claude Code at enigma's loopback proxy without losing MCP tool search. Claude Code turns
+ * tool search OFF for any non-first-party ANTHROPIC_BASE_URL unless ENABLE_TOOL_SEARCH=true
+ * (code.claude.com/docs/en/env-vars), so the proxy alone loaded every MCP tool definition
+ * upfront: Vega's 207 tools put ~406k tokens into the first request of a one-line prompt. The
+ * proxy forwards bodies verbatim to api.anthropic.com, `tool_reference` blocks included, so
+ * tool search is safe through it. A value the user set themselves is kept.
+ */
+export function pointAtProxy(env: NodeJS.ProcessEnv, url: string): void {
+    env.ANTHROPIC_BASE_URL = url;
+    if (env.ENABLE_TOOL_SEARCH === undefined) env.ENABLE_TOOL_SEARCH = "true";
 }
 
 /**
