@@ -12,7 +12,7 @@
  * expects the deletion to stop, and that is the assertion protecting the work.
  */
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test, expect, afterAll } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, utimesSync } from "node:fs";
@@ -494,10 +494,17 @@ function gateMirror(dir: string, id: string): string {
     return bare;
 }
 
-/** Make a ref in a bare repo look last moved `hours` ago. */
+/** Make a ref in a bare repo look last moved `hours` ago: its loose ref, or its reflog once packed. */
 function age(bare: string, branch: string, hours: number): void {
     const when = new Date(Date.now() - hours * 3600_000);
-    utimesSync(join(bare, "refs", "heads", ...branch.split("/")), when, when);
+    const loose = join(bare, "refs", "heads", ...branch.split("/"));
+    const reflog = join(bare, "logs", "refs", "heads", ...branch.split("/"));
+    if (existsSync(loose)) utimesSync(loose, when, when);
+    if (!existsSync(loose) || existsSync(reflog)) {
+        mkdirSync(dirname(reflog), { recursive: true });
+        if (!existsSync(reflog)) writeFileSync(reflog, "");
+        utimesSync(reflog, when, when);
+    }
 }
 
 test("merged, idle branches leave the gate mirror; unmerged or recent ones stay", async () => {
@@ -533,6 +540,63 @@ test("merged, idle branches leave the gate mirror; unmerged or recent ones stay"
     git(dir, `--git-dir=${bare}`, "branch", "feat/landed", entry!.sha);
     expect(git(bare, "rev-parse", "feat/landed")).toBe(entry!.sha);
 });
+
+// What the gate actually leaves: its run branch is squash-merged, the base then edits the same
+// lines (a version bump), and the mirror's tip moved after the last fetch. Content proves
+// nothing there; the PR merged at that very tip does.
+test("a squash-landed run branch leaves the mirror on its merged PR, even when the base moved on and the tracking ref lags", async () => {
+    const { dir } = repo("mirror-squash");
+    const bare = gateMirror(dir, "mirror-squash");
+    for (const b of ["release/1", "feat/review", "feat/aborted"]) {
+        git(dir, "checkout", "-q", "-b", b, "main");
+        writeFileSync(join(dir, "version.txt"), `${b}\n`);
+        git(dir, "add", "version.txt");
+        git(dir, "commit", "-q", "-m", b);
+        git(dir, "push", "-q", "gate", b);
+        git(dir, "checkout", "-q", "main");
+    }
+    git(dir, "fetch", "-q", "gate");
+    // The run pushes a fix commit after the last fetch: the tracking ref is now one behind.
+    git(dir, "checkout", "-q", "release/1");
+    commit(dir, "fix.txt");
+    git(dir, "push", "-q", "gate", "release/1");
+    git(dir, "checkout", "-q", "main");
+    const tip = git(dir, "rev-parse", "release/1").trim();
+    git(dir, "merge", "-q", "--squash", "release/1");
+    git(dir, "commit", "-q", "-m", "squash release/1");
+    writeFileSync(join(dir, "version.txt"), "release/2\n");
+    git(dir, "commit", "-q", "-am", "next version");
+    git(dir, "push", "-q", "origin", "main");
+    // The real mirror packs its refs, and git rewrites packed-refs on every ref change: idleness
+    // must come from each branch's own reflog, not that shared file's fresh mtime.
+    git(bare, "pack-refs", "--all");
+    for (const b of ["release/1", "feat/review", "feat/aborted"]) {
+        git(dir, "branch", "-q", "-D", b);
+        age(bare, b, 24);
+    }
+    const reviewTip = git(bare, "rev-parse", "feat/review").trim();
+    // A run branch this clone never fetched: it has no tracking ref here, and keeping it must not add one.
+    git(bare, "branch", "feat/parked", git(bare, "rev-parse", "feat/aborted").trim());
+    age(bare, "feat/parked", 24);
+    const listPRs = async () => ({ open: new Set(["feat/review"]), merged: new Map([["release/1", [tip]], ["feat/review", [reviewTip]]]), bases: new Set(["main"]) });
+
+    // A dry run reports and writes no ref, not even a lagging tracking ref.
+    const trackingBefore = git(dir, "for-each-ref", "refs/remotes/gate");
+    // Without the PR list there is no proof, and the superseded content proves nothing.
+    expect((await tidy(dir, { dryRun: true, listPRs: async () => null })).mirror).toEqual([]);
+    expect((await tidy(dir, { dryRun: true, listPRs })).mirror.map((m) => m.branch)).toEqual(["release/1"]);
+    expect(git(dir, "for-each-ref", "refs/remotes/gate")).toBe(trackingBefore);
+
+    const result = await tidy(dir, { listPRs });
+    expect(result.problems).toEqual([]);
+    expect(result.mirror.map((m) => m.branch)).toEqual(["release/1"]);
+    expect(git(bare, "branch", "--list", "release/1")).toBe("");
+    expect(readLedger().find((e) => e.branch === "gate/release/1")?.sha).toBe(tip);
+    // Under review again, and never merged: both stay.
+    expect(git(bare, "branch", "--list", "feat/review")).not.toBe("");
+    expect(git(bare, "branch", "--list", "feat/aborted")).not.toBe("");
+    expect(git(dir, "for-each-ref", "refs/remotes/gate/feat/parked")).toBe("");
+}, 120_000);
 
 test("a remote called gate that is not enigma's mirror is never touched", async () => {
     const { dir } = repo("not-mirror");

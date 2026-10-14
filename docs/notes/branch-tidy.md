@@ -45,3 +45,11 @@ After all of the above the author still saw dead branches in this repository, an
 - **Tracking refs of a remote that no longer exists** (`refs/remotes/gatebare/main` here, from a renamed remote): `remote prune` cannot reach a remote that is gone. `tidyOrphanRefs` removes one only when contained in the base - with its remote gone the ref may be the last pointer to its commits - and reports the rest as a note. Ledgered under the full ref name; restore with `git update-ref <ref> <sha>`.
 
 Both run inside `tidy`, so the hourly background pass, the gate's end-of-run pass and `enigma branches tidy` all get them; `--dry-run` lists them.
+
+## Why the mirror still kept every branch (2026-10-14)
+
+`tidyGateMirror` removed nothing in this repository for three independent reasons, each enough on its own:
+
+- **Idleness read the shared `packed-refs` mtime.** Packed branches have no loose ref file, and git rewrites `packed-refs` on every ref change, so every packed branch looked touched minutes ago. `refTouched` now reads the branch's own reflog (`logs/refs/heads/<b>`), then its loose ref, then its tip's commit time - never `packed-refs`.
+- **It required the local tracking ref to equal the mirror tip.** Nothing fetches `gate/*` after a run pushes its last fix, so 7 of 14 lagged one commit and were skipped forever. `fetchTip` fetches the lagging branch first. `remoteOnlyBranches` had the same requirement against `origin` and now fetches too; its delete is leased to the proved tip (`--force-with-lease=<b>:<sha>`).
+- **Content containment cannot prove a squash-landed run branch.** The gate squash-merges and the base keeps editing the same lines (version bumps, CITATION), so a landed release branch is never "contained". A merged PR whose head was this branch at this exact tip is the proof now (no open PR on it), with containment as the fallback when PRs cannot be listed. All 10 landed mirror branches here matched a merged PR head (#123-#134).

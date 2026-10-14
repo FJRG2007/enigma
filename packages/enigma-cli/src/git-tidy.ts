@@ -418,6 +418,8 @@ export interface TidyOptions {
      * commit on the default branch.
      */
     keepCurrent?: boolean;
+    /** The repository's PR heads; defaults to `gh pr list`. Injected by tests. */
+    listPRs?: (dir: string) => Promise<PRHeads | null>;
 }
 
 /**
@@ -449,9 +451,12 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     // for 4 real branches, and the gate's mirror remotes carried 279 more.
     const pruned = opts.dryRun ? 0 : await pruneRemotes(dir);
     let plan = await planTidy(dir, remote);
+    // Read once: the gate mirror and the remote-only pass both prove a branch landed by its PR.
+    let prs: Promise<PRHeads | null> | undefined;
+    const listPRs = (d: string) => prs ??= (opts.listPRs ?? prHeads)(d);
     const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [], notes: [], worktrees: [], remoteOnly: [], pruned, mirror: [], orphanRefs: [] };
     if (plan.blocked) return result;
-    await tidyGateMirror(dir, plan, result, !!opts.dryRun);
+    await tidyGateMirror(dir, plan, result, !!opts.dryRun, listPRs);
     await tidyOrphanRefs(dir, plan, result, !!opts.dryRun);
 
     // Abandoned worktrees first: each one pins its branch, so the plan is rebuilt once after
@@ -490,7 +495,7 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
 
     // Branches that exist only on the remote. A branch with a local copy is never one of them -
     // the local verdict above decides both copies - and a dry run only reports them.
-    const remoteOnly = await remoteOnlyBranches(dir, remote, plan);
+    const remoteOnly = await remoteOnlyBranches(dir, remote, plan, listPRs);
     // An unreadable PR list is a normal state (no gh, not GitHub), not a failure: the branches
     // are simply kept, and the report says why without turning the exit code red.
     if (remoteOnly.note) result.notes.push(remoteOnly.note);
@@ -499,7 +504,8 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
         if (opts.dryRun) { result.remoteOnly.push({ branch: target.branch, sha: target.sha }); continue; }
         try {
             recordDeletion(dir, { branch: target.branch, sha: target.sha, remote: true });
-            await git.run(dir, ["push", remote, "--delete", target.branch]);
+            // The lease deletes only the tip that was proved; a push since then keeps the branch.
+            await git.run(dir, ["push", remote, "--delete", `--force-with-lease=${target.branch}:${target.sha}`, target.branch]);
             result.deletedRemote.push(target.branch);
             result.remoteOnly.push({ branch: target.branch, sha: target.sha });
         } catch (err) {
@@ -562,24 +568,46 @@ async function gateMirrorPath(dir: string): Promise<string | null> {
     return path.toLowerCase().startsWith(`${root}/`) && existsSync(path) ? path : null;
 }
 
-/** When a branch ref in a bare repository last moved: its loose ref file, else the packed-refs file. */
-function refTouched(bare: string, branch: string): number {
-    for (const file of [join(bare, "refs", "heads", ...branch.split("/")), join(bare, "packed-refs")]) {
+/**
+ * When a branch ref in a bare repository last moved: its own reflog or loose ref file, else its
+ * tip's commit time. Never the shared packed-refs file - git rewrites it whenever any ref is
+ * packed or deleted, so every packed branch looked freshly touched and was never idle.
+ */
+async function refTouched(bare: string, branch: string): Promise<number> {
+    for (const file of [join(bare, "logs", "refs", "heads", ...branch.split("/")), join(bare, "refs", "heads", ...branch.split("/"))]) {
         try { return statSync(file).mtimeMs; } catch { /* try the next */ }
     }
-    return Date.now();
+    const seconds = Number((await git.run(bare, ["log", "-1", "--format=%ct", `refs/heads/${branch}`]).catch(() => "")).trim());
+    return seconds > 0 ? seconds * 1000 : Date.now();
+}
+
+/**
+ * Make `remote`'s `branch` at `sha` available here, fetching it when the commit is missing.
+ * Nothing fetches these refs on its own, so a check that required a current tracking ref
+ * skipped every branch that moved after the last fetch - for good. The fetch writes no ref
+ * (an empty refmap), so a dry run changes nothing and a branch that is kept leaves no
+ * tracking ref behind.
+ */
+async function fetchTip(dir: string, remote: string, branch: string, sha: string): Promise<boolean> {
+    const present = async () => (await git.runRaw(dir, ["cat-file", "-e", `${sha}^{commit}`]).catch(() => ({ code: 1 }))).code === 0;
+    if (await present()) return true;
+    await git.run(dir, ["fetch", "--quiet", "--no-tags", "--refmap=", remote, `refs/heads/${branch}`]).catch(() => "");
+    return present();
 }
 
 /**
  * Remove merged branches from the gate's own bare mirror. Every gate run pushes its branch
  * there and nothing ever removed one, so they pile up and reappear in the repository as
  * `gate/feat/...` tracking refs - the branches the user kept seeing after every cleanup. A
- * mirror branch goes only when it is idle, its tracking ref here is at the mirror's tip, and
- * that tip is contained in the base by the same proof the local branches get. A branch a run
- * still has checked out is refused by git itself (the mirror's worktree pins it). The delete
- * runs IN the bare repository, never as a push: a push to the gate remote is how runs start.
+ * mirror branch goes only when it is idle, has no open PR, and its work is proved landed:
+ * a merged PR had it as head at this very tip, or the tip is contained in the base by the same
+ * proof the local branches get. The PR proof is the one that matters here: the gate squash-merges
+ * and the base keeps editing the same files (versions, changelogs), so a landed run branch is
+ * almost never "contained" by content. A branch a run still has checked out is refused by git
+ * itself (the mirror's worktree pins it). The delete runs IN the bare repository, never as a
+ * push: a push to the gate remote is how runs start.
  */
-async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, dryRun: boolean, now = Date.now()): Promise<void> {
+async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, dryRun: boolean, listPRs: (dir: string) => Promise<PRHeads | null>, now = Date.now()): Promise<void> {
     const bare = await gateMirrorPath(dir);
     if (!bare) return;
     const base = plan.baseRef ?? plan.defaultBranch;
@@ -587,10 +615,12 @@ async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, d
         .split("\n").map((l) => l.trim().split(" ")).filter((p): p is [string, string] => p.length === 2);
     for (const [branch, sha] of heads) {
         if (PROTECTED.has(branch) || branch === plan.defaultBranch) continue;
-        if (now - refTouched(bare, branch) < MIRROR_IDLE_MS) continue;
-        const tracking = (await git.run(dir, ["rev-parse", "--verify", "--quiet", `refs/remotes/${GATE_REMOTE}/${branch}`]).catch(() => "")).trim();
-        if (tracking !== sha) continue;
-        if (!await containedInAny(dir, base, plan.defaultBranch, `refs/remotes/${GATE_REMOTE}/${branch}`)) continue;
+        if (now - await refTouched(bare, branch) < MIRROR_IDLE_MS) continue;
+        const prs = await listPRs(dir);
+        if (prs?.open.has(branch)) continue;
+        const mergedAtTip = (prs?.merged.get(branch) ?? []).includes(sha);
+        if (!await fetchTip(dir, GATE_REMOTE, branch, sha)) continue;
+        if (!mergedAtTip && !await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
         if (dryRun) { result.mirror.push({ branch, sha, bare }); continue; }
         try {
             recordDeletion(dir, { branch: `${GATE_REMOTE}/${branch}`, sha, remote: true });
@@ -691,8 +721,8 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
  * pull request - the dead branches a PR workflow leaves on the remote after a squash merge from
  * the web, which no local branch ever represented. A remote branch is someone's work until proved
  * otherwise, so each condition must be SHOWN, never assumed:
- * - the remote-tracking ref must exist locally at the very sha the remote reports, or there is
- *   nothing to prove containment against (no fetch is forced here);
+ * - the tip the remote reports is fetched when it is missing here, and the delete
+ *   is leased to that tip, so a push made after the proof keeps the branch;
  * - the PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not logged
  *   in - every remote-only branch is kept;
  * - no PR on the branch is open, and a merged PR from this repository had it as its head at
@@ -719,8 +749,7 @@ export async function remoteOnlyBranches(dir: string, remote: string, plan: Tidy
         if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || prs.open.has(branch)) continue;
         const mergedAt = prs.merged.get(branch) ?? [];
         if (!mergedAt.includes(sha) || mergedAt.length > 1 || prs.bases.has(branch)) continue;
-        const tracking = await git.resolveRef(dir, `refs/remotes/${remote}/${branch}`).catch(() => "");
-        if (tracking !== sha) continue;
+        if (!await fetchTip(dir, remote, branch, sha)) continue;
         if (!await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
         verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, fully contained in ${base}, merged by a PR at this commit`, remote: true });
     }

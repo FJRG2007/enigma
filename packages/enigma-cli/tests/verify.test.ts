@@ -2135,3 +2135,46 @@ test("an unpushed commit carrying AI attribution denies the stop while attributi
         if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
     }
 }, 120_000);
+
+test("a reply over its prose budget is blocked; tables, code and the marker do not count", async () => {
+    const { styleFindings } = await import("../src/verify");
+    const sentence = "The background tidy now proves a landed branch by its merged pull request at that tip.";
+    const prose = (n: number) => Array.from({ length: n }, () => sentence).join(" ");
+    const keys = (m: string, level?: string) => blockingStyleFindings(styleFindings(m, level)).map((h) => h.key);
+    // 16 words a sentence: 13 fit the full budget (220), 15 do not.
+    expect(keys(prose(13))).toEqual([]);
+    expect(keys(prose(15))).toEqual(["style:length"]);
+    // The budget follows the level the user chose.
+    expect(keys(prose(10), "ultra")).toEqual(["style:length"]);
+    expect(keys(prose(20), "lite")).toEqual([]);
+    // Structure is what the style asks for: a long table or code block is not padding.
+    const table = Array.from({ length: 60 }, (_, i) => `| item ${i} | done | verified by the suite and a real run |`).join("\n");
+    expect(keys(`${prose(2)}\n\n${table}`)).toEqual([]);
+    expect(keys(`${prose(2)}\n\n\`\`\`\n${prose(40)}\n\`\`\``)).toEqual([]);
+    // A checklist is structure too: one item per line, however many items the report has.
+    expect(keys(`${prose(2)}\n\n${Array.from({ length: 20 }, () => `- ${sentence}`).join("\n")}`)).toEqual([]);
+    expect(keys(`${prose(2)}\n\n${Array.from({ length: 20 }, (_, i) => `${i + 1}. ${sentence}`).join("\n")}`)).toEqual([]);
+    // A line that must stay long carries the marker and leaves the count.
+    expect(keys(`${prose(2)}\n${prose(20)} enigma:style-ignore`)).toEqual([]);
+    expect(styleFindings(prose(15))[0]?.detail).toContain("words of prose against the 220-word budget");
+});
+
+test("handing doable work back to the user is caught; a report or a named blocker is not", async () => {
+    const { handsBackWork } = await import("../src/verify");
+    for (const m of [
+        "Done.\n\nNext steps:\n- run the migration",
+        "Hecho.\n\n**Siguientes pasos:** probar en el dashboard",
+        "The fix is in. You can run the full suite yourself to confirm.",
+        "Listo. Puedes ajustar el timeout tú mismo si hace falta.",
+        "I left the docs as a follow-up.",
+        "La parte del dashboard la dejo para un siguiente paso.",
+    ]) expect(handsBackWork(m)).not.toBe("");
+    for (const m of [
+        "Done: the next step ran and the suite passes.",
+        "You can see the result in the dashboard's Agents tab.",
+        "| step | done |\n| tests | 100 pass |",
+        "Next steps: the release needs your npm credentials, which I do not have.",
+        "Quoted, not used: \"you can run it yourself\" is what the gate blocks.",
+    ]) expect(handsBackWork(m)).toBe("");
+    expect(handsBackWork("Ok.\nYou can run the suite yourself later.\nBye")).toBe("You can run the suite yourself later.");
+});

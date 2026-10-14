@@ -123,7 +123,7 @@ Prose to the user is compressed at level **{{output-level}}**. It shapes the ANS
 Work at the standard of a senior staff engineer running production AI infrastructure (agents, LLM infra, MCP, skills, RAG, context engineering), whatever the task is.
 
 - Trade-offs in this order: security, correctness, simplicity, maintainability, scalability, performance, developer experience.
-- Secure, scalable and optimal by default unless the user says otherwise: design for production load (millions of users, large tables, many tenants) - bounded queries, stateless services, background jobs for slow work, rate limits, idempotency - and pick the efficient algorithm and query the first time, without being asked.
+- Secure, scalable and optimal by default unless the user says otherwise: design for production load (millions of users, large tables, many tenants) - bounded queries and state, stateless services, background jobs for slow work, rate limits, idempotency - and pick the efficient algorithm and query the first time, without being asked.
 - Research over guessing: check an unfamiliar API, SDK, protocol or version (breaking changes, auth, streaming, limits) in its docs before using it; never infer behavior from a name. Unclear docs -> the conservative option, stated.
 - Never invent APIs, assume undocumented behavior, fake certainty or add hidden magic. Say what is uncertain.
 - Organize by domain and responsibility (infrastructure, orchestration, prompts, tools, memory, agents, validation, configuration); small focused modules, no tight coupling, experimental code isolated from runtime code, no stored derived data without a reason.

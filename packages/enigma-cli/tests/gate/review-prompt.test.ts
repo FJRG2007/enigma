@@ -62,6 +62,25 @@ test("every prompt asks for object-level authorization and bounded role changes"
     }
 });
 
+test("every prompt carries the production lens; only a UI diff gets the responsive check", () => {
+    // The defects users kept reporting after "done": an unwired or disabled control, lists and
+    // queries that collapse at volume, state nothing ever removes, re-implemented components,
+    // personal data in code, and suites that pass against a mock while the real path fails.
+    for (const ui of [false, true]) {
+        const prompt = buildReviewPrompt(input(ui));
+        expect(prompt).toContain("Production lens");
+        expect(prompt).toContain("a button left disabled");
+        expect(prompt).toContain("incremental loading AND dropping off-screen rows");
+        expect(prompt).toContain("state that nothing ever removes");
+        expect(prompt).toContain("re-implements a component, helper or primitive");
+        expect(prompt).toContain("home-directory path");
+        expect(prompt).toContain("the real entry point");
+        expect(prompt.indexOf("Production lens")).toBeLessThan(prompt.indexOf("Rules:"));
+    }
+    expect(buildReviewPrompt(input(false))).not.toContain("390px");
+    expect(buildReviewPrompt(input(true))).toContain("at a 390px viewport nothing overflows");
+});
+
 test("the prompt ends with the history section so the user intent stays last", () => {
     const prompt = buildReviewPrompt({ ...input(false), historySection: "\n\nUSER-INTENT-MARKER" });
     expect(prompt.endsWith("\n\nUSER-INTENT-MARKER")).toBe(true);

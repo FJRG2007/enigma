@@ -1,6 +1,6 @@
 ---
 name: backend-policy
-description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
+description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, bounded state (everything stored or held open has a designed end), and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
 ---
 
 # Backend & API Architecture Policy
@@ -116,6 +116,17 @@ Cache expensive or hot reads on the server to reduce database load, complementin
 - Keep requests idempotent where possible; use idempotency keys for unsafe operations that may be retried.
 - Fail gracefully and degrade (e.g. serve cached data) instead of cascading failures.
 
+---
+
+## Bounded State
+
+Storage is a cost that compounds: every row, key, file, process and open connection that outlives its use slows the queries, indexes, backups and scans that touch it, and grows without limit at scale. Keeping what is no longer needed is a scalability defect, not a safe default.
+
+- Whatever you create - persisted, cached or held open - is designed with its end in the same change: what ends it, when, and what goes with it. If nothing ever ends it, it is a leak.
+- End it on the event that makes it useless (the owner revokes, disconnects, finishes or is deleted), and on time for whatever simply expires: a native TTL where the store has one, otherwise an idempotent, batched purge on an indexed expiry column. Never rely on an unrelated later write to clean up.
+- Removing a thing removes or detaches what depends on it and releases what it holds open; nothing is left orphaned or running.
+- Where a user can reasonably come back, keep it for a stated grace window, then remove it. What must be kept (audit, legal) is kept under a named retention policy (personal data: database-expert), never "forever".
+- The fix is retroactive: what already accumulated is cleaned up too. A test proves expired or orphaned state goes and live state stays.
 ---
 
 ## Observability
