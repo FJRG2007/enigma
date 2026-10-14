@@ -1,0 +1,34 @@
+{
+  "name": "@enigmax/vega",
+  "version": "0.1.0",
+  "description": "Vega, an optional enigma agent built on REA (Reverse Engineer Anything): the REA MCP server, its reverse-engineering skill and investigation commands, run in an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
+  "type": "module",
+  "files": [
+    "assets",
+    "README.md",
+    "LICENSE",
+    "LICENSE-REA"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "enigma",
+    "enigma-agent",
+    "vega",
+    "rea",
+    "reverse-engineering",
+    "mcp",
+    "skills"
+  ],
+  "license": "Apache-2.0 AND MIT",
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/vega"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

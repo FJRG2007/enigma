@@ -229,8 +229,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # @enigmax/helio is the optional Helio bug-bounty pack: an asset-only package
-      # enigma-cli fetches on demand when the user enables the pack. Publish it (skip if
+      # @enigmax/helio is the optional Helio bug-bounty agent: an asset-only package
+      # enigma-cli fetches on demand when the user enables the agent. Publish it (skip if
       # its version already exists) so the on-demand fetch and `enigma update` find it.
       # No build step: it ships only vendored static assets.
       - name: Determine if helio pack version is new
@@ -249,8 +249,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # @enigmax/orion is the optional Orion pack (bugs, speed, scalability): asset-only, fetched on
-      # demand when the user enables it. Same version guard as the packs above.
+      # @enigmax/orion is the optional Orion agent (bugs, speed, scalability): asset-only, fetched on
+      # demand when the user enables it. Same version guard as the agents above.
       - name: Determine if orion pack version is new
         id: orionver
         run: |
@@ -264,5 +264,24 @@ jobs:
       - name: Publish orion pack
         if: steps.orionver.outputs.publish == 'true'
         run: bash scripts/npm-publish.sh @enigmax/orion packages/orion
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # @enigmax/vega is the optional Vega agent (reverse engineering): asset-only, fetched on demand
+      # when the user enables it; enigma installs the REA engine it pins separately. Same version
+      # guard as the agents above.
+      - name: Determine if vega agent version is new
+        id: vegaver
+        run: |
+          RV="$(node -p "require('./packages/vega/package.json').version")"
+          if npm view "@enigmax/vega@$RV" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "@enigmax/vega@$RV already published; skipping."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish vega agent
+        if: steps.vegaver.outputs.publish == 'true'
+        run: bash scripts/npm-publish.sh @enigmax/vega packages/vega
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

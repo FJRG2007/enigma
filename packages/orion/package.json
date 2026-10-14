@@ -1,7 +1,7 @@
 {
   "name": "@enigmax/orion",
-  "version": "0.1.0",
-  "description": "Orion packaged as an optional enigma pack: skills, slash commands and sub-agents that hunt broken flows, slow loads and scaling limits in a real browser. Installed on demand into an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
+  "version": "0.1.1",
+  "description": "Orion packaged as an optional enigma agent: skills, slash commands and sub-agents that hunt broken flows, slow loads and scaling limits in a real browser. Installed on demand into an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
   "type": "module",
   "files": [
     "assets",
@@ -13,7 +13,7 @@
   },
   "keywords": [
     "enigma",
-    "enigma-pack",
+    "enigma-agent",
     "orion",
     "qa",
     "performance",

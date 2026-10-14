@@ -1,0 +1,42 @@
+---
+title: Overview
+description: Vega, the enigma agent built on REA (Reverse Engineer Anything) - one MCP server and skill to reverse binaries, apps, firmware and captures, with the evidence for every claim.
+group: Guide
+order: 1
+space: packs
+pack: vega
+---
+import { docHref } from "../../../lib/url";
+
+**Vega** is an enigma <a href={docHref("packs")}>agent</a> built on [REA - Reverse Engineer Anything](https://github.com/morluto/rea) (MIT, by morluto). It gives a coding agent one MCP server for reverse engineering - native binaries, Electron/JavaScript apps, .NET assemblies, Android APKs, firmware, WASM, websites, network and packet captures, crashes and process behavior - and REA's own skill for routing each target to the right tool. Like every agent it runs in a **dedicated, isolated context**, so REA's 207 tools never load into the agent you code with.
+
+## What you can ask
+
+- How a feature of a shipped app works, traced from its own code.
+- What changed between two versions of an app.
+- Where a crash comes from.
+- How to rebuild a behavior in your own project, verified against the original.
+
+## The rule every claim obeys
+
+Vega returns its evidence inline with every result. The agent keeps what it **observed**, what it **derived**, what it **infers** and what stays **unknown** apart, and never fills an unknown with a guess.
+
+## What's in the agent
+
+- **The REA MCP server** - pinned to the REA release the skill was written for, registered on every launch for Claude Code, Codex, OpenCode or Kimi Code.
+- **1 skill** - `reverse-engineer-anything`, REA's own, with a reference guide per target type.
+- **6 slash commands** - `/investigate`, `/compare`, `/trace-crash`, `/reconstruct`, `/unknowns`, `/capture`, one per REA guided workflow.
+
+## What enigma adds to REA's own setup
+
+- **Installed once, started directly** - the pinned `rea-agents` release is installed into the agent's own directory and started with `node`, not resolved through `npx` on every agent start.
+- **The right Node.js** - REA needs Node.js 22.19+, 24.11+ or 26+. enigma picks a runtime that qualifies from the ones on your machine, even when your shell defaults to an older one.
+- **Long analyses finish** - a large binary can take Ghidra many minutes; the server is registered with a 6-hour tool timeout instead of the clients' defaults (60 s per call in Codex), so the client does not cut the analysis off and make it restart.
+- **Your login, no setup** - the agent starts signed in with one of your accounts, and your provider settings survive every relaunch.
+
+Use REA only for lawful, authorized analysis - see REA's [disclaimer](https://github.com/morluto/rea/blob/main/DISCLAIMER.md).
+
+## Where to go next
+
+- <a href={docHref("vega/getting-started")}>Getting started</a> - install Vega, connect Ghidra, Hopper or IDA, and launch it.
+- <a href={docHref("vega/commands")}>Commands</a> - every slash command and what it reports.

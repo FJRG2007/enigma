@@ -178,3 +178,26 @@ test("an account name alone launches that account", () => {
     expect(`${taken.stdout}${taken.stderr}`).toContain("enigma command");
     expect(cli("version").stdout).toMatch(/^\d+\.\d+\.\d+/);
 }, 60_000);
+
+test("`enigma agent` lists the agents; the former `enigma pack` still works and says it is deprecated", () => {
+    const packsDir = join(HOME, "agents-packs");
+    const agent = cliEnv({ ENIGMA_PACKS_DIR: packsDir }, "agent", "list");
+    expect(agent.code).toBe(0);
+    expect(agent.stdout).toContain("Agents (optional, isolated)");
+    for (const id of ["helio", "orion", "vega"]) expect(agent.stdout).toContain(id);
+    expect(agent.stderr).not.toContain("deprecated");
+
+    for (const alias of ["pack", "packs"]) {
+        const old = cliEnv({ ENIGMA_PACKS_DIR: packsDir }, alias, "list");
+        expect(old.code).toBe(0);
+        expect(old.stdout).toBe(agent.stdout);
+        expect(old.stderr).toContain(`'enigma ${alias}' is deprecated`);
+        expect(old.stderr).toContain("enigma agent");
+    }
+});
+
+test("`enigma agent` rejects an unknown agent by name", () => {
+    const run = cliEnv({ ENIGMA_PACKS_DIR: join(HOME, "agents-packs") }, "agent", "install", "nope");
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("Unknown agent 'nope'");
+});

@@ -86,7 +86,7 @@ export function serializeSessionSources(): DashSessionSource[] {
     });
     for (const s of packSessionSources("claude")) {
         const state = sessionState(s.dir);
-        sources.push({ id: `pack:${s.id}`, kind: "pack", tool: "claude", label: `pack: ${s.label}`, email: sessionEmail(s.dir), state, usable: isUsableSession(state) });
+        sources.push({ id: `pack:${s.id}`, kind: "pack", tool: "claude", label: `agent: ${s.label}`, email: sessionEmail(s.dir), state, usable: isUsableSession(state) });
     }
     return sources;
 }

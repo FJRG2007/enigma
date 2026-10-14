@@ -9,7 +9,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-packs-"));
 process.env.USERPROFILE = HOME;
@@ -19,6 +19,7 @@ process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
 // Resolve the Helio pack from the in-repo vendored assets (no npm fetch).
 process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
 process.env.ENIGMA_ORION_ASSETS = join(__dirname, "..", "..", "orion", "assets");
+process.env.ENIGMA_VEGA_ASSETS = join(__dirname, "..", "..", "vega", "assets");
 
 const packs = await import("../src/packs");
 const { readConfig, setEnigmaValue } = await import("../src/config");
@@ -301,4 +302,97 @@ test("Orion follows the browser toggle and never rewrites an unparseable context
     writeFileSync(cfg, "{ \"oauthAccount\": ");
     packs.deployPack("orion", "claude");
     expect(readFileSync(cfg, "utf8")).toBe("{ \"oauthAccount\": ");
+});
+
+/** Stand in for an installed REA engine at the version the bundle pins, so nothing is fetched. */
+function fakeReaEngine(): string {
+    const pin = JSON.parse(readFileSync(join(process.env.ENIGMA_VEGA_ASSETS!, "engine.json"), "utf8")) as { version: string; };
+    const pkg = join(HOME, "packs", "vega", "engine", "node_modules", "rea-agents");
+    mkdirSync(join(pkg, "scripts"), { recursive: true });
+    writeFileSync(join(pkg, "scripts", "rea.mjs"), "");
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "rea-agents", version: pin.version, bin: { rea: "scripts/rea.mjs" }, engines: { node: "^22.19.0 || ^24.11.0 || >=26.0.0" } }));
+    return join(pkg, "scripts", "rea.mjs");
+}
+
+test("Vega deploys its skill, commands and memory; its server waits for the engine", () => {
+    const ctx = packs.deployPack("vega", "claude")!;
+    expect(existsSync(join(ctx, "skills", "reverse-engineer-anything", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(ctx, "skills", "reverse-engineer-anything", "references", "native-and-artifacts.md"))).toBe(true);
+    for (const cmd of ["investigate", "compare", "trace-crash", "reconstruct", "unknowns", "capture"]) {
+        expect(existsSync(join(ctx, "commands", `${cmd}.md`))).toBe(true);
+    }
+    expect(readFileSync(join(ctx, "CLAUDE.md"), "utf8")).toContain("REA");
+    // No engine installed yet: no entry that could not start.
+    const cfg = join(ctx, ".claude.json");
+    expect(existsSync(cfg) ? JSON.parse(readFileSync(cfg, "utf8")).mcpServers?.rea : undefined).toBeUndefined();
+    expect(packs.engineInvocation("vega")).toBeNull();
+});
+
+test("Vega's server is registered for every tool, launched by node with long timeouts", async () => {
+    const script = fakeReaEngine();
+    expect(packs.ensurePackEngine("vega")).toBeNull(); // pinned version present: no npm run
+    expect(await packs.ensurePackEngineAsync("vega")).toBeNull();
+    const root = join(HOME, "packs", "vega", "context");
+    for (const tool of ["claude", "codex", "opencode", "kimi"]) packs.deployPack("vega", tool);
+
+    const claude = JSON.parse(readFileSync(join(root, "claude", ".claude.json"), "utf8")).mcpServers.rea;
+    expect(claude.type).toBe("stdio");
+    expect(claude.args).toEqual([script, "mcp"]);
+    expect(claude.command).not.toMatch(/npx|cmd/);
+    expect(claude.timeout).toBe(6 * 60 * 60_000);
+
+    const codex = readFileSync(join(root, "codex", "config.toml"), "utf8");
+    expect(codex).toContain("[mcp_servers.rea]");
+    expect(codex).toContain("tool_timeout_sec = 21600");
+    expect(codex).toContain("startup_timeout_sec = 30");
+
+    const opencode = JSON.parse(readFileSync(join(root, "opencode", "xdg-config", "opencode", "opencode.json"), "utf8")).mcp.rea;
+    expect(opencode.command.slice(1)).toEqual([script, "mcp"]);
+    expect(opencode.enabled).toBe(true);
+    expect(opencode.timeout).toBe(30_000);
+
+    const kimi = JSON.parse(readFileSync(join(root, "kimi", "mcp.json"), "utf8")).mcpServers.rea;
+    expect(kimi.args).toEqual([script, "mcp"]);
+    expect(kimi.toolTimeoutMs).toBe(6 * 60 * 60_000);
+    expect(kimi.startupTimeoutMs).toBe(30_000);
+});
+
+test("re-registration keeps provider settings REA's setup wrote, and restores enigma's launcher", () => {
+    const script = fakeReaEngine();
+    const root = join(HOME, "packs", "vega", "context");
+    // What `rea setup` leaves behind: its own npx launcher plus discovered provider paths.
+    const file = join(root, "claude", ".claude.json");
+    const cfg = JSON.parse(readFileSync(file, "utf8"));
+    cfg.mcpServers.rea = { type: "stdio", command: "cmd.exe", args: ["/d", "/c", "npx", "-y", "rea-agents@6.5.0", "mcp"], env: { GHIDRA_INSTALL_DIR: "/opt/ghidra" } };
+    writeFileSync(file, JSON.stringify(cfg));
+    const toml = join(root, "codex", "config.toml");
+    writeFileSync(toml, `${readFileSync(toml, "utf8")}
+[mcp_servers.rea.env]
+GHIDRA_INSTALL_DIR = "/opt/ghidra"
+`);
+
+    packs.deployPack("vega", "claude");
+    packs.deployPack("vega", "codex");
+    const entry = JSON.parse(readFileSync(file, "utf8")).mcpServers.rea;
+    expect(entry.args).toEqual([script, "mcp"]);
+    expect(entry.env).toEqual({ GHIDRA_INSTALL_DIR: "/opt/ghidra" });
+    const after = readFileSync(toml, "utf8");
+    expect(after).toContain("[mcp_servers.rea.env]");
+    // A fixed point: a second deploy changes nothing.
+    packs.deployPack("vega", "codex");
+    expect(readFileSync(toml, "utf8")).toBe(after);
+});
+
+test("an agent's engine.json that is not an exact pin is refused before npm runs", () => {
+    const assets = mkdtempSync(join(tmpdir(), "enigma-vega-assets-"));
+    cpSync(process.env.ENIGMA_VEGA_ASSETS!, assets, { recursive: true });
+    writeFileSync(join(assets, "engine.json"), JSON.stringify({ package: "rea-agents", version: "latest" }));
+    const previous = process.env.ENIGMA_VEGA_ASSETS;
+    process.env.ENIGMA_VEGA_ASSETS = assets;
+    try {
+        expect(packs.ensurePackEngine("vega")).toContain("no valid engine");
+    } finally {
+        process.env.ENIGMA_VEGA_ASSETS = previous;
+        rmSync(assets, { recursive: true, force: true });
+    }
 });

@@ -13,26 +13,26 @@ Helio installs on demand and launches into its own agent context. You never sign
 
 ## Install and launch
 
-<Cmd name="enigma pack install helio" ex={["enigma pack install helio", "enigma pack list"]}>
-Fetch the pack (the `@enigmax/helio` asset package) into `~/.enigma/packs/helio`. `list` shows every pack and its install state. You can skip this - launching also fetches on demand.
+<Cmd name="enigma agent install helio" ex={["enigma agent install helio", "enigma agent list"]}>
+Fetch the agent (the `@enigmax/helio` asset package) into `~/.enigma/packs/helio`. `list` shows every agent and its install state. You can skip this - launching also fetches on demand.
 </Cmd>
 
 <Cmd name="enigma helio [account]" ex={["enigma helio", "enigma helio work", "enigma helio --tool codex"]}>
-Launch a coding agent inside Helio's isolated context, seeded with one of your logins. With no account it uses the pinned pack account, else your active profile's account, else the tool's active account. Defaults to Claude Code; target another agent with `--tool`.
+Launch a coding agent inside Helio's isolated context, seeded with one of your logins. With no account it uses the pinned agent account, else your active profile's account, else the tool's active account. Defaults to Claude Code; target another agent with `--tool`.
 </Cmd>
 
-<Cmd name="enigma pack setup helio" ex="enigma pack setup helio">
-Register Helio's MCP servers (HackerOne, and a Burp client if you configure it). Kept out of the default launch because they need Python and the pack's tooling. `enigma pack update helio` / `enigma pack remove helio` keep or delete the pack. See <a href={docHref("helio/mcp")}>MCP and tooling</a>.
+<Cmd name="enigma agent setup helio" ex="enigma agent setup helio">
+Register Helio's MCP servers (HackerOne, and a Burp client if you configure it). Kept out of the default launch because they need Python and the agent's tooling. `enigma agent update helio` / `enigma agent remove helio` keep or delete the agent. See <a href={docHref("helio/mcp")}>MCP and tooling</a>.
 </Cmd>
 
-You can also manage Helio from the dashboard's **Packs** tab - install, update, remove, pick the seeding account, and copy the launch command.
+You can also manage Helio from the dashboard's **Agents** tab - install, update, remove, pick the seeding account, and copy the launch command.
 
 ## Which account Helio uses
 
-A pack runs under one of your configured logins, seeded into its isolated context so you do not log in again. You can point it at any account or profile - or a dedicated one for authorised security testing.
+An agent runs under one of your configured logins, seeded into its isolated context so you do not log in again. You can point it at any account or profile - or a dedicated one for authorised security testing.
 
-<Cmd name="enigma pack use helio <account|->" ex={["enigma pack use helio work", "enigma pack use helio -", "enigma account add pentest", "enigma helio pentest"]}>
+<Cmd name="enigma agent use helio <account|->" ex={["enigma agent use helio work", "enigma agent use helio -", "enigma account add pentest", "enigma helio pentest"]}>
 Pin which login seeds Helio by default (`-` clears the pin). `enigma helio <account>` overrides it for a single launch. To keep security work under its own identity, create a login with `enigma account add <name>`, log in, then pin it.
 </Cmd>
 
-This lets Helio run under a different identity than your everyday agent without touching your normal `enigma claude` setup. See <a href={docHref("packs")}>Packs</a> for how isolation, seeding and MCP work across every pack.
+This lets Helio run under a different identity than your everyday agent without touching your normal `enigma claude` setup. See <a href={docHref("packs")}>Agents</a> for how isolation, seeding and MCP work across every agent.

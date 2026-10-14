@@ -158,8 +158,14 @@ function tomlLiteral(value: string): string {
     return `'${value.replace(/'/g, "")}'`;
 }
 
-/** Merge or delete `[mcp_servers.<name>]` in a codex config.toml. Returns whether it changed. */
-function applyCodexEntry(file: string, name: string, command: string | null, args: string[]): boolean {
+/**
+ * Merge or delete `[mcp_servers.<name>]` in a codex config.toml. Returns whether it changed.
+ * `extra` holds further `key = value` lines for the table (timeouts). An `env`/`env_vars` line
+ * already in the table is kept, as is a separate `[mcp_servers.<name>.env]` table: both hold
+ * settings someone else wrote (a server's own setup, the user), which a re-registration must not
+ * wipe. Removing the entry removes its env table with it.
+ */
+function applyCodexEntry(file: string, name: string, command: string | null, args: string[], extra: string[] = []): boolean {
     const fileExists = existsSync(file);
     if (!fileExists && command === null) return false;
     const before = fileExists ? readFileSync(file, "utf8") : "";
@@ -173,19 +179,21 @@ function applyCodexEntry(file: string, name: string, command: string | null, arg
     // re-appending each in turn moved the first one behind the second on every sync, so the file
     // never reached a fixed point and every run reported a change.
     const header = `mcp_servers.${name}`;
-    const block = command === null ? "" : `[${header}]\ncommand = ${tomlLiteral(command)}\nargs = [${args.map(tomlLiteral).join(", ")}]\n`;
     const lines = before.split("\n");
     const start = lines.findIndex((l) => l.trim() === `[${header}]`);
+    let end = start + 1;
+    if (start !== -1) while (end < lines.length && !/^\s*\[/.test(lines[end]!)) end++;
+    const kept = start === -1 ? [] : lines.slice(start + 1, end).filter((l) => /^\s*env(_vars)?\s*=/.test(l));
+    const block = command === null ? "" : `${[`[${header}]`, `command = ${tomlLiteral(command)}`, `args = [${args.map(tomlLiteral).join(", ")}]`, ...extra, ...kept].join("\n")}\n`;
     let after: string;
     if (start !== -1 && command !== null) {
-        let end = start + 1;
-        while (end < lines.length && !/^\s*\[/.test(lines[end]!)) end++;
         // Keep the blank separator line that preceded the next table, if any.
         const trailing = end < lines.length ? "\n" : "";
         after = [...lines.slice(0, start), block.replace(/\n$/, ""), ...(trailing ? [""] : []), ...lines.slice(end)].join("\n");
         if (!after.endsWith("\n")) after += "\n";
     } else {
-        const head = removeTomlTable(before, header).replace(/\s*$/, "");
+        const stripped = removeTomlTable(before, header);
+        const head = (command === null ? removeTomlTable(stripped, `${header}.env`) : stripped).replace(/\s*$/, "");
         if (command !== null) after = head ? `${head}\n\n${block}` : block;
         else after = head ? `${head}\n` : "";
     }
@@ -285,6 +293,85 @@ export function applyMcpForAccount(tool: string, dir: string): boolean {
     const file = mcpAccountPath(tool, dir);
     if (!file) return false;
     return writeEntries(tool, file);
+}
+
+/** An MCP server an enigma agent registers in its own isolated context. */
+export interface ContextServer {
+    command: string;
+    args: string[];
+    /** Longest a single tool call may run before the client gives up on it. */
+    toolTimeoutMs?: number;
+    /** Longest the client waits for the server to start and list its tools. */
+    startupTimeoutMs?: number;
+}
+
+/** The current entry `name` under `parentKey` in a JSON config, or {} when there is none. */
+function currentJsonEntry(file: string, parentKey: string, name: string): Record<string, unknown> {
+    const parent = existsSync(file) ? readJson<Record<string, unknown>>(file)?.[parentKey] : undefined;
+    const entry = parent && typeof parent === "object" ? (parent as Record<string, unknown>)[name] : undefined;
+    return entry && typeof entry === "object" && !Array.isArray(entry) ? { ...entry as Record<string, unknown> } : {};
+}
+
+/**
+ * Register (or, with null, remove) one MCP server in an agent context dir for `tool`, in that
+ * tool's own format and file. Fields the entry already carries and enigma does not own (env set
+ * by the server's own setup, such as `rea setup`'s provider paths, or a tool allow-list) are
+ * kept; command, args and timeouts are enigma's and are rewritten. Timeouts map to each client's own keys:
+ *
+ *   claude    `timeout` (ms) - per-server tool-call limit; it also raises the idle cutoff for a
+ *             stdio call, which otherwise ends a silent call after 30 minutes
+ *   codex     `tool_timeout_sec` (default 60 s) and `startup_timeout_sec` (default 10 s)
+ *   opencode  `timeout` (ms) - covers only fetching the tool list (default 5 s)
+ *   kimi      `toolTimeoutMs` and `startupTimeoutMs`
+ *
+ * Returns whether the file changed.
+ */
+export function applyContextServer(tool: string, dir: string, name: string, server: ContextServer | null): boolean {
+    const file = mcpAccountPath(tool, dir);
+    if (!file) return false;
+    switch (tool) {
+        case "claude": {
+            if (!server) return applyJsonEntry(file, "mcpServers", name, null);
+            return applyJsonEntry(file, "mcpServers", name, {
+                ...currentJsonEntry(file, "mcpServers", name), type: "stdio", command: server.command, args: server.args,
+                ...(server.toolTimeoutMs ? { timeout: server.toolTimeoutMs } : {}),
+            });
+        }
+        case "opencode": {
+            if (!server) return applyJsonEntry(file, "mcp", name, null);
+            return applyJsonEntry(file, "mcp", name, {
+                ...currentJsonEntry(file, "mcp", name), type: "local", command: [server.command, ...server.args], enabled: true,
+                ...(server.startupTimeoutMs ? { timeout: server.startupTimeoutMs } : {}),
+            });
+        }
+        case "kimi": {
+            if (!server) return applyJsonEntry(file, "mcpServers", name, null);
+            return applyJsonEntry(file, "mcpServers", name, {
+                ...currentJsonEntry(file, "mcpServers", name), command: server.command, args: server.args,
+                ...(server.startupTimeoutMs ? { startupTimeoutMs: server.startupTimeoutMs } : {}),
+                ...(server.toolTimeoutMs ? { toolTimeoutMs: server.toolTimeoutMs } : {}),
+            });
+        }
+        case "codex": {
+            if (!server) return applyCodexEntry(file, name, null, []);
+            const extra = [
+                ...(server.startupTimeoutMs ? [`startup_timeout_sec = ${Math.ceil(server.startupTimeoutMs / 1000)}`] : []),
+                ...(server.toolTimeoutMs ? [`tool_timeout_sec = ${Math.ceil(server.toolTimeoutMs / 1000)}`] : []),
+            ];
+            return applyCodexEntry(file, name, server.command, server.args, extra);
+        }
+        default:
+            return false;
+    }
+}
+
+/** Whether `tool`'s config in the context dir `dir` holds an MCP server entry named `name`. */
+export function hasContextServer(tool: string, dir: string, name: string): boolean {
+    const file = mcpAccountPath(tool, dir);
+    if (!file || !existsSync(file)) return false;
+    if (tool === "codex") return readFileSync(file, "utf8").split("\n").some((l) => l.trim() === `[mcp_servers.${name}]`);
+    const parent = readJson<Record<string, unknown>>(file)?.[tool === "opencode" ? "mcp" : "mcpServers"];
+    return Boolean(parent && typeof parent === "object" && name in parent);
 }
 
 /** The agents whose own config can host the enigma MCP server. */

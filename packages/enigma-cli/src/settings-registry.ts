@@ -781,14 +781,14 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "api-client-context",
                 label: "Callers choose the account",
-                hint: "let a request pick its own account, profile or pack (the account/profile/pack fields); off = enigma always decides and refuses a request that names one; enigma default: on",
+                hint: "let a request pick its own account, profile or agent (the account/profile/agent fields); off = enigma always decides and refuses a request that names one; enigma default: on",
                 globalOnly: true,
                 read: () => conf.readConfig().config.apiClientContext,
                 write: (value, scope) => ({ path: conf.setEnigmaToggle("apiClientContext", value, scope), changed: true }),
             },
             apiContextSetting("api-account", "apiAccount", "Default account", "account a request runs under when it names none and rotation is off; blank = the active account", "account name (blank or none = active account)", "(active account)"),
             apiContextSetting("api-profile", "apiProfile", "Default profile", "profile whose account mapping a request uses when it names none and rotation is off", "profile name (blank or none = no profile)", "(none)"),
-            apiContextSetting("api-pack", "apiPack", "Default pack", "pack (e.g. helio) whose isolated context a request runs in when it names none and rotation is off; wins over the default account and profile", "pack id (blank or none = no pack)", "(none)"),
+            apiContextSetting("api-pack", "apiPack", "Default agent", "agent (e.g. helio) whose isolated context a request runs in when it names none and rotation is off; wins over the default account and profile", "agent id (blank or none = no agent)", "(none)"),
         ],
     },
     {

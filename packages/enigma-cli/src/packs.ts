@@ -1,8 +1,11 @@
 /**
- * Packs: optional, isolated harness bundles installed from the marketplace.
+ * Agents (`enigma agent`, formerly "packs"): optional, isolated harness bundles installed from
+ * the marketplace. The code keeps the "pack" name, and so do the stored config keys (`packs`,
+ * `packAccounts`) and the managed root (~/.enigma/packs), so existing installs keep working.
  *
  * A pack (Helio for offensive security / bug bounty, Orion for bugs/speed/scalability/search
- * quality QA) ships skills, slash commands, sub-agents and MCP servers for a focused domain.
+ * quality QA, Vega for reverse engineering) ships skills, slash commands, sub-agents and MCP
+ * servers for a focused domain; Vega also pins an engine (agent-engine.ts) its MCP server runs on.
  * Unlike enigma's policy skills, a pack is NEVER deployed into the user's normal agent: it is
  * fetched on demand as an asset-only npm package (@enigmax/<pack>) into a managed dir, and
  * deployed only into a DEDICATED, isolated agent context dir. Launching `enigma helio` (or
@@ -18,12 +21,13 @@
  */
 
 import { homedir } from "node:os";
-import { isDir, readJson } from "./util";
+import { isDir, readJson, resolveBin } from "./util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { copyIfFresher } from "./claude-oauth";
-import { browserInvocation } from "./mcp-deploy";
+import { applyContextServer, browserInvocation, hasContextServer, type ContextServer } from "./mcp-deploy";
+import { engineBin, engineNodeRange, ensureEngine, ensureEngineAsync, installedEngineVersion, pickNode, readEngineSpec, type EngineSpec } from "./agent-engine";
 import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -47,10 +51,18 @@ export interface PackDef {
     homepage: string;
     /**
      * MCP servers the pack uses. A script it ships (`relArgs`, run with python) is registered
-     * only by `enigma pack setup`; a `builtin` server enigma already knows how to launch is
-     * registered on every deploy, so the pack works on its first launch.
+     * only by `enigma agent setup`; a `builtin` server enigma already knows how to launch is
+     * registered on every deploy, so the pack works on its first launch. An `engine` server is
+     * the pack's engine bin run with `args` (see agent-engine.ts). Timeouts map to each client's
+     * own keys (see applyContextServer).
      */
-    mcp?: { name: string; relArgs?: string[]; builtin?: "browser"; }[];
+    mcp?: { name: string; relArgs?: string[]; builtin?: "browser" | "engine"; args?: string[]; toolTimeoutMs?: number; startupTimeoutMs?: number; }[];
+    /**
+     * The npm runtime behind an `engine` server, pinned by the bundle's assets/engine.json: `bin`
+     * is the package's bin to run; `clients` maps an enigma tool to the engine's own client id
+     * for its `setup` and `doctor` commands, which `enigma agent setup` runs inside the context.
+     */
+    engine?: { bin: string; clients: Record<string, string>; };
 }
 
 /** Built-in pack catalog. Add a pack as one entry here; the rest is generic. */
@@ -79,6 +91,22 @@ export const PACKS: PackDef[] = [
         // The browser is the pack's main instrument, so it is wired on deploy, not behind setup.
         mcp: [
             { name: "chrome-devtools", builtin: "browser" },
+        ],
+    },
+    {
+        id: "vega",
+        label: "Vega",
+        pkg: "@enigmax/vega",
+        description: "Reverse engineering on REA (Reverse Engineer Anything): one MCP server and skill to reverse native binaries, Electron/JavaScript apps, .NET, Android, firmware, websites and captures - every claim backed by the evidence it came from. Runs in an isolated agent context.",
+        tags: ["reverse-engineering", "binaries", "security", "mcp"],
+        homepage: "https://github.com/morluto/rea",
+        engine: { bin: "rea", clients: { claude: "claude_code", codex: "codex", opencode: "opencode", kimi: "kimi" } },
+        // A Ghidra analysis of a large binary runs for many minutes without output, longer than
+        // the clients' defaults allow (Codex: 60 s per call; Claude Code: 30 min idle), and a
+        // cancelled analysis restarts from scratch (morluto/rea#3509). Startup matches REA's own
+        // registration (30 s).
+        mcp: [
+            { name: "rea", builtin: "engine", args: ["mcp"], toolTimeoutMs: 6 * 60 * 60_000, startupTimeoutMs: 30_000 },
         ],
     },
 ];
@@ -189,7 +217,7 @@ export function isPackEnabled(id: string): boolean {
 
 /** Add a pack to the user's marketplace selection (idempotent). */
 export function enablePack(id: string): void {
-    if (!getPack(id)) throw new Error(`Unknown pack '${id}'.`);
+    if (!getPack(id)) throw new Error(`Unknown agent '${id}'.`);
     const next = [...new Set([...enabledPacks(), id])];
     setEnigmaValue("packs", next, "global");
 }
@@ -219,7 +247,7 @@ export function getPackAccount(id: string, tool: string): string | null {
  * makes the pack fall back to the active profile / tool-active account.
  */
 export function setPackDefaultAccount(id: string, tool: string, account: string | null): void {
-    if (!getPack(id)) throw new Error(`Unknown pack '${id}'.`);
+    if (!getPack(id)) throw new Error(`Unknown agent '${id}'.`);
     if (!isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
     if (account !== null && !accountExists(tool, account)) {
         throw new Error(`No such ${tool} account: '${account}'. Create it first: enigma account add ${account}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
@@ -501,53 +529,139 @@ export function packSessionSources(tool: string = DEFAULT_TOOL): { id: string; l
 }
 
 /**
- * Register the pack's MCP servers into the isolated context (Claude Code config). Gated behind
- * `enigma pack setup` because the servers need Python + the pack's tooling; registering them
- * blindly would make the agent fail to start a server whose deps are missing. Returns the names
- * registered, or [] when nothing applies. Claude-only for now.
+ * Register the pack's MCP servers into the isolated context. Script servers are gated behind
+ * `enigma agent setup` because they need Python + the pack's tooling; registering them blindly
+ * would make the agent fail to start a server whose deps are missing. Returns the names
+ * registered, or [] when nothing applies.
  */
 export function setupPackMcp(id: string, tool: string): string[] {
     return registerPackMcp(id, tool, false);
 }
 
 /**
- * Write the pack's MCP servers into its context's `.claude.json`. `builtinOnly` is the deploy
- * path: only servers enigma launches itself, never a shipped script the user has not set up.
+ * How `tool` launches one of the pack's MCP servers: a spec to register, null to remove the
+ * entry, or undefined to leave it alone (a script server on the deploy path, an engine that is
+ * not installed yet). `builtinOnly` is the deploy path.
  */
+function packServerSpec(id: string, assets: string, server: NonNullable<PackDef["mcp"]>[number], tool: string, builtinOnly: boolean): ContextServer | null | undefined {
+    const timeouts = { toolTimeoutMs: server.toolTimeoutMs, startupTimeoutMs: server.startupTimeoutMs };
+    if (server.builtin === "browser") return readConfig().config.browser ? { ...browserInvocation(tool), ...timeouts } : null;
+    if (server.builtin === "engine") {
+        const inv = engineInvocation(id);
+        return inv ? { command: inv.command, args: [...inv.args, ...(server.args ?? [])], ...timeouts } : undefined;
+    }
+    if (builtinOnly || !server.relArgs) return undefined;
+    const script = join(assets, ...server.relArgs);
+    if (!existsSync(script)) return undefined;
+    return { command: process.platform === "win32" ? "python" : "python3", args: [script], ...timeouts };
+}
+
+/** Write the pack's MCP servers into its context, in `tool`'s own config format. */
 function registerPackMcp(id: string, tool: string, builtinOnly: boolean): string[] {
     const pack = getPack(id);
     const assets = packAssetsDir(id);
-    if (!pack?.mcp || !assets || tool !== "claude") return [];
+    if (!pack?.mcp || !assets) return [];
     if (builtinOnly && !pack.mcp.some((server) => server.builtin)) return [];
     const dir = contextDir(id, tool);
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, ".claude.json");
-    const current = existsSync(file) ? readJson<Record<string, unknown>>(file) : {};
-    if (current === null) return [];
-    const servers = { ...(typeof current.mcpServers === "object" && current.mcpServers ? current.mcpServers as Record<string, unknown> : {}) };
     const added: string[] = [];
-    const python = process.platform === "win32" ? "python" : "python3";
     for (const server of pack.mcp) {
-        if (server.builtin === "browser") {
-            if (!readConfig().config.browser) {
-                delete servers[server.name];
-                continue;
-            }
-            const inv = browserInvocation(tool);
-            servers[server.name] = { type: "stdio", command: inv.command, args: inv.args };
-            added.push(server.name);
-            continue;
-        }
-        if (builtinOnly || !server.relArgs) continue;
-        const script = join(assets, ...server.relArgs);
-        if (!existsSync(script)) continue;
-        servers[server.name] = { type: "stdio", command: python, args: [script] };
-        added.push(server.name);
+        const spec = packServerSpec(id, assets, server, tool, builtinOnly);
+        if (spec === undefined) continue;
+        applyContextServer(tool, dir, server.name, spec);
+        if (spec && hasContextServer(tool, dir, server.name)) added.push(server.name);
     }
-    if (JSON.stringify(servers) === JSON.stringify(current.mcpServers ?? {})) return added;
-    current.mcpServers = servers;
-    writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
     return added;
+}
+
+// --- engine ----------------------------------------------------------------------
+
+/**
+ * Install the pack's pinned engine (assets/engine.json) when it declares one. Returns null when
+ * the engine is ready or the pack has none, else why it could not be installed.
+ */
+export function ensurePackEngine(id: string, onInstall?: (spec: EngineSpec) => void): string | null {
+    const spec = packEngineSpec(id);
+    if (spec === null || typeof spec === "string") return spec;
+    if (installedEngineVersion(packRoot(id), spec.package) !== spec.version) onInstall?.(spec);
+    return ensureEngine(packRoot(id), spec);
+}
+
+/** ensurePackEngine without blocking the event loop, for the dashboard server. */
+export async function ensurePackEngineAsync(id: string): Promise<string | null> {
+    const spec = packEngineSpec(id);
+    if (spec === null || typeof spec === "string") return spec;
+    return ensureEngineAsync(packRoot(id), spec);
+}
+
+/** The pack's engine spec, null when it declares no engine, or why its declaration is invalid. */
+function packEngineSpec(id: string): EngineSpec | string | null {
+    const pack = getPack(id);
+    if (!pack?.engine) return null;
+    const assets = packAssetsDir(id);
+    return (assets ? readEngineSpec(assets) : null) ?? `${pack.label} declares no valid engine (assets/engine.json).`;
+}
+
+/** Whether the pack needs no engine or has its pinned one installed, without installing anything. */
+function isPackEngineReady(id: string): boolean {
+    const pack = getPack(id);
+    if (!pack?.engine) return true;
+    const assets = packAssetsDir(id);
+    const spec = assets ? readEngineSpec(assets) : null;
+    return Boolean(spec) && installedEngineVersion(packRoot(id), spec!.package) === spec!.version;
+}
+
+/**
+ * Install the engine for a launch, telling the user what is happening and what is wrong: a
+ * failed install, or a machine without a Node.js the engine accepts, leaves the agent without
+ * its tools, which must not look like a working launch.
+ */
+function preparePackEngine(id: string): void {
+    const pack = getPack(id);
+    if (!pack?.engine) return;
+    const error = ensurePackEngine(id, (spec) => process.stdout.write(`Installing the ${pack.label} engine (${spec.package}@${spec.version}), once per version...\n`));
+    if (error) {
+        process.stderr.write(`Could not install the ${pack.label} engine: ${error}\n  ${pack.label}'s tools will be missing in this session. Retry with: enigma agent setup ${id}\n`);
+        return;
+    }
+    const inv = engineInvocation(id);
+    const spec = readEngineSpec(packAssetsDir(id) ?? "");
+    if (inv && !inv.nodeOk && spec) {
+        process.stderr.write(`No installed Node.js satisfies ${pack.label}'s requirement (${engineNodeRange(packRoot(id), spec.package) ?? "unknown"}), so its tools will fail to start. Install a matching Node.js and relaunch.\n`);
+    }
+}
+
+/**
+ * `<node> <engine bin>` for the pack's installed engine, with a node that satisfies the engine's
+ * `engines.node` range when this machine has one (else the PATH node, so the engine's own
+ * launcher reports the mismatch). Null when the engine is not installed.
+ */
+export function engineInvocation(id: string): { command: string; args: string[]; nodeOk: boolean; } | null {
+    const pack = getPack(id);
+    const assets = packAssetsDir(id);
+    const spec = assets ? readEngineSpec(assets) : null;
+    if (!pack?.engine || !spec) return null;
+    const script = engineBin(packRoot(id), spec.package, pack.engine.bin);
+    if (!script) return null;
+    const node = pickNode(engineNodeRange(packRoot(id), spec.package));
+    return { command: node?.path ?? resolveBin("node") ?? "node", args: [script], nodeOk: Boolean(node) };
+}
+
+/**
+ * Run the engine's own command (`setup`, `doctor`, any CLI call) against the pack's isolated
+ * context for `tool`: its client id is added for setup/doctor, and the tool's config-dir env
+ * points it at the context, never the user's normal agent. Interactive (inherits the terminal).
+ */
+export function runPackEngine(id: string, tool: string, args: string[]): number {
+    const pack = getPack(id);
+    const inv = engineInvocation(id);
+    if (!pack?.engine || !inv) return 1;
+    const client = pack.engine.clients[tool];
+    const withClient = client && (args[0] === "setup" || args[0] === "doctor") && !args.includes("--client") ? [...args, "--client", client] : args;
+    const result = spawnSync(inv.command, [...inv.args, ...withClient], {
+        stdio: "inherit", windowsHide: true,
+        env: { ...process.env, ...getTool(tool).envFor(contextDir(id, tool)) },
+    });
+    return result.status ?? 1;
 }
 
 // --- launch ----------------------------------------------------------------------
@@ -609,13 +723,14 @@ export function listPacks(): PackView[] {
  */
 export function ensurePackContext(id: string, tool: string = DEFAULT_TOOL, account?: string): string {
     const pack = getPack(id);
-    if (!pack) throw new Error(`Unknown pack '${id}'.`);
+    if (!pack) throw new Error(`Unknown agent '${id}'.`);
     if (!isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
     const seedAccount = resolvePackAccount(id, tool, account);
-    if (!ensurePackInstalled(id)) throw new Error(`Could not fetch the ${pack.label} pack (${pack.pkg}). Check your network and npm.`);
+    if (!ensurePackInstalled(id)) throw new Error(`Could not fetch ${pack.label} (${pack.pkg}). Check your network and npm.`);
     if (!isPackEnabled(id)) enablePack(id);
+    if (!isPackEngineReady(id)) throw new Error(`The ${pack.label} engine is not installed. Run: enigma agent setup ${id}`);
     const dir = deployPack(id, tool);
-    if (!dir) throw new Error(`${pack.label} pack assets are missing.`);
+    if (!dir) throw new Error(`${pack.label} assets are missing.`);
     seedCredentials(id, tool, seedAccount);
     reconcilePackSession(id, tool, seedAccount);
     return dir;
@@ -623,18 +738,19 @@ export function ensurePackContext(id: string, tool: string = DEFAULT_TOOL, accou
 
 export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passthrough: string[] = [], account?: string): Promise<number> {
     const pack = getPack(id);
-    if (!pack) { process.stderr.write(`Unknown pack '${id}'.\n`); return 1; }
+    if (!pack) { process.stderr.write(`Unknown agent '${id}'.\n`); return 1; }
     if (!isToolName(tool)) { process.stderr.write(`Unknown tool '${tool}'.\n`); return 1; }
     let seedAccount: string;
     try { seedAccount = resolvePackAccount(id, tool, account); }
     catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 1; }
     if (!ensurePackInstalled(id)) {
-        process.stderr.write(`Could not fetch the ${pack.label} pack (${pack.pkg}). Check your network and npm.\n`);
+        process.stderr.write(`Could not fetch ${pack.label} (${pack.pkg}). Check your network and npm.\n`);
         return 1;
     }
     if (!isPackEnabled(id)) enablePack(id);
+    preparePackEngine(id);
     const dir = deployPack(id, tool);
-    if (!dir) { process.stderr.write(`${pack.label} pack assets are missing.\n`); return 1; }
+    if (!dir) { process.stderr.write(`${pack.label} assets are missing.\n`); return 1; }
     // Note (don't block) when there is no copyable token for the chosen account: the agent may
     // ask to log in once inside the isolated context. This is expected when the account's real
     // token lives in the OS keychain rather than a file (e.g. Claude Code on Windows) - it is NOT
@@ -645,9 +761,9 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
         const valid = listAccounts(tool).find((a) => a.name !== seedAccount && accountTokenState(tool, a.name) === "ok");
         const lines = [
             `Note: no saved token could be copied for '${seedAccount}', so ${pack.label} may ask you to log in once.`,
-            "  If it does, sign in inside the pack (/login) - the isolated context remembers it next time.",
+            "  If it does, sign in inside the agent (/login) - the isolated context remembers it next time.",
         ];
-        if (valid) lines.push(`  Or seed from an account that has a file-based login:  enigma pack use ${id} ${valid.name}`);
+        if (valid) lines.push(`  Or seed from an account that has a file-based login:  enigma agent use ${id} ${valid.name}`);
         lines.push("");
         process.stderr.write(lines.join("\n"));
     }

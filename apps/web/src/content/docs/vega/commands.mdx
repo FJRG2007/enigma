@@ -1,0 +1,29 @@
+---
+title: Commands
+description: Every Vega slash command - which REA workflow it follows and what it reports.
+group: Reference
+order: 3
+space: packs
+pack: vega
+---
+
+Each command follows one of REA's guided workflows and reports the answer first, then the evidence behind it, the inferences labelled as such, and the unknowns that remain.
+
+## Slash commands
+
+| Command | What it does |
+| --- | --- |
+| `/investigate <target> <feature>` | Explains how a feature works: finds the strings, symbols, routes or IPC channels that name it and traces them into the code that implements it. |
+| `/compare <old> <new> [focus]` | Compares two shipped versions and states the behavioral difference of each change that matters, with evidence from both sides. |
+| `/trace-crash <target> <symptom>` | Pins a crash to code and traces the paths that reach it; runs the target only if you approve. |
+| `/reconstruct <target> <behavior>` | Writes the behavior as a specification from the evidence, rebuilds it in your project, and verifies it against the original. |
+| `/unknowns` | Audits what the investigation still does not know, closes what a tool can close, and lists the rest. |
+| `/capture <target> <what to observe>` | Plans a bounded run of the target, shows you the plan, and records its runtime behavior once you approve. |
+
+## Skill
+
+`reverse-engineer-anything` is REA's own skill, shipped unchanged from the pinned release. It routes each target type - ASAR or JavaScript tree, archive, APK, .NET assembly, firmware, browser page, capture - to its first tool, and links a focused guide per domain.
+
+## MCP prompts
+
+REA's server also exposes its six workflows as MCP prompts (`investigate_feature`, `compare_application_versions`, `verify_reconstruction`, `trace_crash`, `audit_residual_unknowns`, `prepare_bounded_process_capture`), which clients that support prompts list alongside the commands above.
