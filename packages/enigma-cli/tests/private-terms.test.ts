@@ -11,7 +11,8 @@ import { privateTermLeak } from "../src/guardrails";
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { readGlobalGuard, setGuardList } from "../src/guard-config";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { privateTermLines, privateTermMatcher, readPrivateTerms, runGuard } from "../src/guard";
+import { runGuard } from "../src/guard";
+import { privateTermLines, privateTermMatcher, readPrivateTerms } from "../src/private-terms";
 
 setDefaultTimeout(60_000);
 
@@ -79,6 +80,38 @@ test("the commit guard blocks a staged line carrying a private term, without ech
             expect(result.ok).toBe(false);
             expect(result.findings.filter((f) => f.rule === "private-term").map((f) => [f.file, f.line])).toEqual([["test/visit.test.ts", 2]]);
             expect(result.blocks.join("\n")).not.toContain("Zephyr");
+        } finally {
+            process.chdir(prev);
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+test("a commit is checked on the lines it adds, so a term already in the file never blocks it", () => {
+    withHome(() => {
+        setGuardList("privateTerms", ["Zephyr Quill"]);
+        const dir = mkdtempSync(join(tmpdir(), "enigma-private-repo-"));
+        const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dir, windowsHide: true, stdio: "ignore" }); };
+        const prev = process.cwd();
+        try {
+            git("init", "-q", ".");
+            git("config", "user.email", "test@example.test");
+            git("config", "user.name", "Test User");
+            writeFileSync(join(dir, "LICENSE"), "Copyright Zephyr Quill\n");
+            writeFileSync(join(dir, "naïve ++.md"), "intro\n");
+            git("add", "-A");
+            git("commit", "-q", "--no-verify", "-m", "init");
+            writeFileSync(join(dir, "LICENSE"), "Copyright Zephyr Quill\nAll rights reserved.\n");
+            writeFileSync(join(dir, "naïve ++.md"), "intro\n++ zephyr_quill\n");
+            git("add", "-A");
+            process.chdir(dir);
+            const staged = runGuard();
+            expect(staged.findings.filter((f) => f.rule === "private-term").map((f) => [f.file, f.line])).toEqual([["naïve ++.md", 2]]);
+            git("commit", "-q", "--no-verify", "-m", "next");
+            const range = runGuard({ range: "HEAD~1..HEAD" });
+            expect(range.findings.filter((f) => f.rule === "private-term").map((f) => [f.file, f.line])).toEqual([["naïve ++.md", 2]]);
+            const all = runGuard({ all: true });
+            expect(all.findings.filter((f) => f.rule === "private-term").map((f) => [f.file, f.line])).toEqual([["LICENSE", 1], ["naïve ++.md", 2]]);
         } finally {
             process.chdir(prev);
             rmSync(dir, { recursive: true, force: true });

@@ -12,8 +12,9 @@
  * Like guard.ts, this file is BOTH (a) bundled into the CLI - cli.ts imports
  * runGuardrailsHook for the hidden `__guardrails-hook` command each agent's post-edit
  * hook invokes - and (b) the built dist/guardrails.js copied into a repo's .githooks/ as
- * a commit/CI backstop. So it stays self-contained (only Node builtins, no imports from
- * other modules) and its standalone footer fires only when this file is the program entry.
+ * a commit/CI backstop. So it stays self-contained (only Node builtins, plus builtins-only
+ * leaf modules tsup inlines, such as private-terms.ts) and its standalone footer fires only
+ * when this file is the program entry.
  *
  * Severity model (consistent across the agent hook and the commit backstop):
  *   - block: enforced. Agent hook exits 2 (stderr fed back to the model); commit fails.
@@ -33,7 +34,7 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./guard";
+import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./private-terms";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "node:fs";
 

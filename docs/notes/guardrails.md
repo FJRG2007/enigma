@@ -81,4 +81,4 @@
 
 ## sec-private-term
 
-Blocks an added line carrying one of the user's private terms (real names, handles, server names). The list and matcher are the commit guard's (`readPrivateTerms` / `privateTermMatcher` / `privateTermLines` in guard.ts, imported here so both stages agree); see secret-protection.md for the matching rules. Without a list it reports nothing. The rule pairs with the testing-policy line "tests use anonymous data" and the security-policy bullet on real people's data: the skills say why and how to replace a capture, the rule stops the known values.
+Blocks an added line carrying one of the user's private terms (real names, handles, server names). The list and matcher are the commit guard's (`readPrivateTerms` / `privateTermMatcher` / `privateTermLines` in private-terms.ts, a builtins-only leaf both bundles inline, so both stages agree); see secret-protection.md for the matching rules. Without a list it reports nothing. The rule pairs with the testing-policy line "tests use anonymous data" and the security-policy bullet on real people's data: the skills say why and how to replace a capture, the rule stops the known values.
