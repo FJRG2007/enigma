@@ -464,6 +464,70 @@ test("a remote-only branch goes only when merged through a PR at its tip", async
     expect(unreadable.note).toContain("left alone");
 }, 120_000);
 
+/**
+ * The gate's own shape: the local branch is pushed, the gate adds a fix commit on top, the PR is
+ * squash-merged, and the base then edits the same file again - so no content proof can ever hold.
+ * The merged PR whose head descends from the local tip is the proof, and only that shape is.
+ */
+test("a branch landed by a merged PR goes even when the base no longer contains it; a rebased, open or unprovable one stays", async () => {
+    const { dir } = repo("pr-landed");
+    const shaOf = (ref: string) => git(dir, "rev-parse", ref).trim();
+    for (const name of ["feat/landed", "feat/rebased", "feat/open"]) {
+        git(dir, "checkout", "-q", "-b", name, "main");
+        commit(dir, "shared.txt", `${name} work`);
+        git(dir, "push", "-q", "origin", name);
+    }
+    // The gate's fix commit on top of feat/landed becomes its PR head.
+    git(dir, "checkout", "-q", "feat/landed");
+    const local = shaOf("feat/landed");
+    commit(dir, "shared.txt", "feat/landed work, fixed by the gate");
+    git(dir, "push", "-q", "origin", "feat/landed");
+    const head = shaOf("feat/landed");
+    git(dir, "reset", "-q", "--hard", local);
+    // feat/rebased merged as a rewritten history its local tip is not part of.
+    git(dir, "checkout", "-q", "-b", "rewritten", "main");
+    commit(dir, "shared.txt", "rebased work, rewritten");
+    const rewritten = shaOf("rewritten");
+    git(dir, "push", "-q", "origin", "rewritten:feat/rebased", "--force");
+    git(dir, "checkout", "-q", "main");
+    git(dir, "branch", "-q", "-D", "rewritten");
+    git(dir, "merge", "-q", "--squash", head);
+    git(dir, "-c", "user.name=t", "-c", "user.email=t@e.test", "commit", "-q", "-m", "squash feat/landed");
+    commit(dir, "shared.txt", "edited again on main");
+    git(dir, "push", "-q", "origin", "main");
+    const prs = { open: new Set(["feat/open"]), merged: new Map([["feat/landed", [head]], ["feat/rebased", [rewritten]], ["feat/open", [shaOf("feat/open")]]]), bases: new Set(["main"]) };
+
+    expect((await tidy(dir, { dryRun: true, listPRs: async () => null })).plan.verdicts.filter((v) => v.tidyable)).toEqual([]);
+    const plan = (await tidy(dir, { dryRun: true, listPRs: async () => prs })).plan;
+    expect(plan.verdicts.filter((v) => v.tidyable).map((v) => [v.branch, v.remote, v.viaPR])).toEqual([["feat/landed", true, true]]);
+
+    const result = await tidy(dir, { listPRs: async () => prs });
+    expect(result.problems).toEqual([]);
+    expect(result.deleted).toEqual(["feat/landed"]);
+    expect(result.deletedRemote).toEqual(["feat/landed"]);
+    expect(git(dir, "branch", "--list", "feat/rebased", "feat/open").split("\n").map((l) => l.trim())).toEqual(["feat/open", "feat/rebased"]);
+    // The landed work is still reachable: the undo ledger records the local tip.
+    expect(readLedger().some((e) => e.branch === "feat/landed" && e.sha === local)).toBe(true);
+}, 120_000);
+
+test("a remote-only branch merged by a PR at its tip goes even when the base edited the same file since", async () => {
+    const { remoteOnlyBranches } = await import("../src/git-tidy");
+    const { dir } = repo("remote-only-squash");
+    git(dir, "checkout", "-q", "-b", "feat/web", "main");
+    commit(dir, "shared.txt", "web work");
+    git(dir, "push", "-q", "origin", "feat/web");
+    const tip = git(dir, "rev-parse", "feat/web").trim();
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--squash", "feat/web");
+    git(dir, "-c", "user.name=t", "-c", "user.email=t@e.test", "commit", "-q", "-m", "squash");
+    commit(dir, "shared.txt", "edited again on main");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "branch", "-q", "-D", "feat/web");
+    const plan = await planTidy(dir);
+    const found = await remoteOnlyBranches(dir, "origin", plan, async () => ({ open: new Set<string>(), merged: new Map([["feat/web", [tip]]]), bases: new Set(["main"]) }));
+    expect(found.verdicts.map((v) => v.branch)).toEqual(["feat/web"]);
+}, 120_000);
+
 // The background run never moves the checkout: a branch just created for the next turn has no
 // commits yet, so it is contained in main, and deleting it would put that turn's work on main.
 test("keepCurrent never switches off or deletes the checked-out branch", async () => {
