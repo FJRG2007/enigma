@@ -285,12 +285,28 @@ export function updateRuntimeInstalls(version: string, installs: RuntimeInstall[
     const lines: string[] = [];
     for (const install of installs) {
         if (!isNewer(version, install.version)) continue;
-        const result = spawnSync(install.node, [install.npmCli, "i", "-g", `enigma-cli@${version}`, "--prefix", install.prefix], { stdio: "ignore", windowsHide: true });
-        lines.push(result.status === 0
-            ? `${install.prefix}: enigma-cli ${install.version} -> ${version}`
-            : `${install.prefix}: still enigma-cli ${install.version}; update it with that Node version active: ${UPDATE_COMMAND}`);
+        const result = spawnSync(install.node, [install.npmCli, "i", "-g", `enigma-cli@${version}`, "--prefix", install.prefix], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", windowsHide: true });
+        if (result.status === 0) { lines.push(`${install.prefix}: enigma-cli ${install.version} -> ${version}`); continue; }
+        const stderr = String(result.stderr || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        const reason = result.error?.message ?? stderr.find((l) => /^npm (error|ERR!)/.test(l)) ?? stderr.find((l) => /Error\b/.test(l)) ?? stderr[0];
+        lines.push(`${install.prefix}: still enigma-cli ${install.version}${reason ? ` (${reason})` : ""}; update it with that Node version active: ${UPDATE_COMMAND}`);
     }
     return lines;
+}
+
+/**
+ * The enigma-cli version installed in the active npm global prefix, read from its package.json
+ * after an update, or null when npm or the package cannot be read.
+ */
+export function installedGlobalVersion(): string | null {
+    try {
+        const root = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: process.platform === "win32", windowsHide: true });
+        if (root.status !== 0) return null;
+        const version = readJson<{ version?: unknown; }>(join(String(root.stdout).trim(), "enigma-cli", "package.json"))?.version;
+        return typeof version === "string" ? version : null;
+    } catch {
+        return null;
+    }
 }
 
 /**

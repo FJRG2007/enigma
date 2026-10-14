@@ -31,8 +31,9 @@ test("nvm-windows: one install per Node version that has enigma-cli", () => {
     mkdirSync(join(home, "not-a-version"), { recursive: true });
     const found = runtimeInstalls({ NVM_HOME: home }, "win32");
     expect(found.map((i) => [i.prefix, i.version]).sort()).toEqual([[join(home, "v20.20.2"), "1.56.1"], [join(home, "v26.2.0"), "1.63.5"]]);
-    expect(found[0]!.node).toBe(join(found[0]!.prefix, "node.exe"));
-    expect(found[0]!.npmCli).toBe(join(found[0]!.prefix, "node_modules", "npm", "bin", "npm-cli.js"));
+    const v20 = found.find((i) => i.prefix === join(home, "v20.20.2"))!;
+    expect(v20.node).toBe(join(v20.prefix, "node.exe"));
+    expect(v20.npmCli).toBe(join(v20.prefix, "node_modules", "npm", "bin", "npm-cli.js"));
 });
 
 test("nvm: versions/node under NVM_DIR, falling back to ~/.nvm", () => {
