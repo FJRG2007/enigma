@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
-const { readEngineSpec, satisfiesRange, pickNode, nodeRuntimes, engineBin, engineNodeRange, installedEngineVersion, ensureEngine } = await import("../src/agent-engine");
+const { readEngineSpec, satisfiesRange, pickNode, nodeRuntimes, engineBin, engineNodeRange, installedEngineVersion, ensureEngine, ensureEngineAsync } = await import("../src/agent-engine");
 
 const TMP = mkdtempSync(join(tmpdir(), "enigma-engine-"));
 afterAll(() => rmSync(TMP, { recursive: true, force: true }));
@@ -143,4 +143,22 @@ test("a second session waits for the install another one holds instead of runnin
     expect(Date.now() - started).toBeLessThan(30_000);
     expect(existsSync(lock)).toBe(false);
     child.kill();
+});
+
+test("the async install reports a lock another process holds instead of blocking on it", async () => {
+    const root = join(TMP, "async-busy");
+    const lock = join(root, "engine", ".install.lock");
+    mkdirSync(lock, { recursive: true });
+    const started = Date.now();
+    expect(await ensureEngineAsync(root, { package: "rea-agents", version: "6.5.0" })).toContain("still installing");
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(existsSync(lock)).toBe(true);
+});
+
+test("the async install is a no-op when the pinned version is already there", async () => {
+    const root = join(TMP, "async-ready");
+    const pkg = join(root, "engine", "node_modules", "rea-agents");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ version: "6.5.0" }));
+    expect(await ensureEngineAsync(root, { package: "rea-agents", version: "6.5.0" })).toBeNull();
 });

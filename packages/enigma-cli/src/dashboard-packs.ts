@@ -43,7 +43,7 @@ export async function applyPackAction(id: string, action: string, value?: string
         case "install": {
             if (!packsMod.ensurePackInstalled(id)) return { ok: false, error: `could not fetch ${pack.label} (network or npm)` };
             packsMod.enablePack(id);
-            const engineError = packsMod.ensurePackEngine(id);
+            const engineError = await packsMod.ensurePackEngineAsync(id);
             if (engineError) return { ok: false, error: `${pack.label} added, but its engine could not be installed: ${engineError}`, packs: list() };
             return { ok: true, note: `${pack.label} added. Launch it with: enigma ${id}`, packs: list() };
         }
@@ -52,7 +52,7 @@ export async function applyPackAction(id: string, action: string, value?: string
             return { ok: true, note: `${pack.label} removed.`, packs: list() };
         case "update": {
             const changed = packsMod.refreshPack(id);
-            const engineError = packsMod.ensurePackEngine(id);
+            const engineError = await packsMod.ensurePackEngineAsync(id);
             if (engineError) return { ok: false, error: `Its engine could not be installed: ${engineError}`, packs: list() };
             return { ok: true, note: changed ? `${pack.label} updated to ${packsMod.installedPackVersion(id)}.` : `${pack.label} is up to date.`, packs: list() };
         }
@@ -60,7 +60,7 @@ export async function applyPackAction(id: string, action: string, value?: string
             // An engine's own setup (REA: provider discovery, Hopper install) asks questions, so
             // the browser only registers the server and points at the terminal for the rest.
             if (pack.engine) {
-                const engineError = packsMod.ensurePackEngine(id);
+                const engineError = await packsMod.ensurePackEngineAsync(id);
                 if (engineError) return { ok: false, error: `Its engine could not be installed: ${engineError}`, packs: list() };
                 packsMod.deployPack(id, DEFAULT_TOOL);
                 const added = packsMod.setupPackMcp(id, DEFAULT_TOOL);

@@ -27,7 +27,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { copyIfFresher } from "./claude-oauth";
 import { applyContextServer, browserInvocation, hasContextServer, type ContextServer } from "./mcp-deploy";
-import { engineBin, engineNodeRange, ensureEngine, installedEngineVersion, pickNode, readEngineSpec, type EngineSpec } from "./agent-engine";
+import { engineBin, engineNodeRange, ensureEngine, ensureEngineAsync, installedEngineVersion, pickNode, readEngineSpec, type EngineSpec } from "./agent-engine";
 import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -580,13 +580,25 @@ function registerPackMcp(id: string, tool: string, builtinOnly: boolean): string
  * the engine is ready or the pack has none, else why it could not be installed.
  */
 export function ensurePackEngine(id: string, onInstall?: (spec: EngineSpec) => void): string | null {
+    const spec = packEngineSpec(id);
+    if (spec === null || typeof spec === "string") return spec;
+    if (installedEngineVersion(packRoot(id), spec.package) !== spec.version) onInstall?.(spec);
+    return ensureEngine(packRoot(id), spec);
+}
+
+/** ensurePackEngine without blocking the event loop, for the dashboard server. */
+export async function ensurePackEngineAsync(id: string): Promise<string | null> {
+    const spec = packEngineSpec(id);
+    if (spec === null || typeof spec === "string") return spec;
+    return ensureEngineAsync(packRoot(id), spec);
+}
+
+/** The pack's engine spec, null when it declares no engine, or why its declaration is invalid. */
+function packEngineSpec(id: string): EngineSpec | string | null {
     const pack = getPack(id);
     if (!pack?.engine) return null;
     const assets = packAssetsDir(id);
-    const spec = assets ? readEngineSpec(assets) : null;
-    if (!spec) return `${pack.label} declares no valid engine (assets/engine.json).`;
-    if (installedEngineVersion(packRoot(id), spec.package) !== spec.version) onInstall?.(spec);
-    return ensureEngine(packRoot(id), spec);
+    return (assets ? readEngineSpec(assets) : null) ?? `${pack.label} declares no valid engine (assets/engine.json).`;
 }
 
 /** Whether the pack needs no engine or has its pinned one installed, without installing anything. */

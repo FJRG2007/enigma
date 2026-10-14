@@ -18,7 +18,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, write
 
 const here = dirname(fileURLToPath(import.meta.url));   // scripts/
 const repoRoot = join(here, "..");
-const pkgDir = join(repoRoot, "packages", "rea");
+const pkgDir = join(repoRoot, "packages", "vega");
 const assetsDir = join(pkgDir, "assets");
 const pinPath = join(pkgDir, ".source.json");
 const PACKAGE = "rea-agents";

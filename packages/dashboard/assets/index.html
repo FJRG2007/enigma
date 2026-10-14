@@ -5403,7 +5403,7 @@ export {
                     ? '<div class="set-hint" style="margin-top:6px;color:var(--warn,#e0a020)">This login is ' + (p.resolvedState === "expired" ? "expired" : "not signed in") + ' - the agent may ask you to log in. Refresh it (launch that account once) or pick another above.</div>'
                     : (p.installed && p.contextReady ? '<div class="set-hint" style="margin-top:6px;color:var(--ok)">Active session ready - launches without asking to log in.</div>' : "");
                 const accountSel = p.installed
-                    ? '<label class="set-hint" style="display:flex;align-items:center;gap:8px;margin-top:10px">Account that seeds this pack:'
+                    ? '<label class="set-hint" style="display:flex;align-items:center;gap:8px;margin-top:10px">Account that seeds this agent:'
                         + '<select data-pack-account data-id="' + esc(p.id) + '">' + opts + "</select></label>" + warn
                     : "";
                 return '<div class="panel"><div class="set-row"><div class="set-meta">'

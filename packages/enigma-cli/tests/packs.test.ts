@@ -328,9 +328,10 @@ test("Vega deploys its skill, commands and memory; its server waits for the engi
     expect(packs.engineInvocation("vega")).toBeNull();
 });
 
-test("Vega's server is registered for every tool, launched by node with long timeouts", () => {
+test("Vega's server is registered for every tool, launched by node with long timeouts", async () => {
     const script = fakeReaEngine();
     expect(packs.ensurePackEngine("vega")).toBeNull(); // pinned version present: no npm run
+    expect(await packs.ensurePackEngineAsync("vega")).toBeNull();
     const root = join(HOME, "packs", "vega", "context");
     for (const tool of ["claude", "codex", "opencode", "kimi"]) packs.deployPack("vega", tool);
 

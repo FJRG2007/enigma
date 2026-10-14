@@ -21,7 +21,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readJson, resolveBin } from "./util";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 /** An agent's pinned engine, as declared by its bundle's `assets/engine.json`. */
@@ -106,26 +106,55 @@ export function ensureEngine(agentRoot: string, spec: EngineSpec): string | null
     // The others wait for it and then find the engine installed.
     const lock = join(dir, ".install.lock");
     if (!acquireLock(lock)) {
-        return installedEngineVersion(agentRoot, spec.package) === spec.version ? null : "another enigma process is still installing it";
+        return installedEngineVersion(agentRoot, spec.package) === spec.version ? null : LOCK_BUSY;
     }
     try {
         if (installedEngineVersion(agentRoot, spec.package) === spec.version) return null;
-        return installEngine(agentRoot, dir, spec);
+        const result = spawnSync("npm", installArgs(dir, spec), { ...npmOptions(dir), encoding: "utf8" });
+        return installFailure(agentRoot, spec, result.error, String(result.stderr || ""), result.status);
     } finally {
         rmSync(lock, { recursive: true, force: true });
     }
 }
 
+/**
+ * ensureEngine for a long-lived process (the dashboard server): npm runs without blocking the
+ * event loop, and an install another process holds is reported instead of waited on.
+ */
+export async function ensureEngineAsync(agentRoot: string, spec: EngineSpec): Promise<string | null> {
+    if (installedEngineVersion(agentRoot, spec.package) === spec.version) return null;
+    const dir = engineDir(agentRoot);
+    mkdirSync(dir, { recursive: true });
+    const lock = join(dir, ".install.lock");
+    if (!tryLock(lock)) return installedEngineVersion(agentRoot, spec.package) === spec.version ? null : LOCK_BUSY;
+    try {
+        if (installedEngineVersion(agentRoot, spec.package) === spec.version) return null;
+        const args = installArgs(dir, spec);
+        const { error, stderr, status } = await new Promise<{ error?: Error; stderr: string; status: number | null; }>((resolve) => {
+            let stderr = "";
+            let error: Error | undefined;
+            const child = spawn("npm", args, npmOptions(dir));
+            const timer = setTimeout(() => child.kill(), NPM_TIMEOUT_MS);
+            child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+            child.on("error", (e) => { error = e; });
+            child.on("close", (code) => { clearTimeout(timer); resolve({ error, stderr, status: code }); });
+        });
+        return installFailure(agentRoot, spec, error, stderr, status);
+    } finally {
+        rmSync(lock, { recursive: true, force: true });
+    }
+}
+
+const LOCK_BUSY = "another enigma process is still installing it";
 const LOCK_STALE_MS = 15 * 60_000;
 const LOCK_WAIT_MS = 10 * 60_000;
+const NPM_TIMEOUT_MS = 600_000;
 
 /**
- * Take an install lock (an exclusive mkdir). When another process holds it, wait until it is
- * released and return false; a lock older than any install could take is a crashed process's
- * leftover and is taken over.
+ * Take an install lock (an exclusive mkdir) without waiting. A lock older than any install could
+ * take is a crashed process's leftover and is taken over.
  */
-function acquireLock(lock: string): boolean {
-    const deadline = Date.now() + LOCK_WAIT_MS;
+function tryLock(lock: string): boolean {
     for (;;) {
         try {
             mkdirSync(lock);
@@ -135,36 +164,46 @@ function acquireLock(lock: string): boolean {
         }
         let age = 0;
         try { age = Date.now() - statSync(lock).mtimeMs; } catch { continue; }
-        if (age > LOCK_STALE_MS) {
-            rmSync(lock, { recursive: true, force: true });
-            continue;
-        }
-        while (existsSync(lock) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
-        return false;
+        if (age <= LOCK_STALE_MS) return false;
+        rmSync(lock, { recursive: true, force: true });
     }
 }
 
-function installEngine(agentRoot: string, dir: string, spec: EngineSpec): string | null {
+/** Take an install lock; when another process holds it, wait until it is released and return false. */
+function acquireLock(lock: string): boolean {
+    if (tryLock(lock)) return true;
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    while (existsSync(lock) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    return false;
+}
+
+/** Write the host manifest (and lockfile) into `dir` and return the npm arguments that install the pin. */
+function installArgs(dir: string, spec: EngineSpec): string[] {
     const manifest = join(dir, "package.json");
-    let args: string[];
     if (spec.lockfile) {
         writeFileSync(manifest, `${JSON.stringify({ name: HOST_NAME, private: true, dependencies: { [spec.package]: spec.version } }, null, 2)}\n`);
         copyFileSync(spec.lockfile, join(dir, "package-lock.json"));
-        args = ["ci", "--no-audit", "--no-fund"];
-    } else {
-        if (!existsSync(manifest)) writeFileSync(manifest, `${JSON.stringify({ name: HOST_NAME, private: true }, null, 2)}\n`);
-        args = ["install", `${spec.package}@${spec.version}`, "--no-audit", "--no-fund", "--save-exact"];
+        return ["ci", "--no-audit", "--no-fund"];
     }
-    // `npm` is a .cmd shim on Windows, so it needs the shell; both arguments were validated by
-    // readEngineSpec and cannot carry shell syntax.
-    const result = spawnSync("npm", args, {
-        cwd: dir, shell: true, stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", timeout: 600_000, windowsHide: true,
-    });
+    if (!existsSync(manifest)) writeFileSync(manifest, `${JSON.stringify({ name: HOST_NAME, private: true }, null, 2)}\n`);
+    return ["install", `${spec.package}@${spec.version}`, "--no-audit", "--no-fund", "--save-exact"];
+}
+
+/**
+ * `npm` is a .cmd shim on Windows, so it needs the shell; both arguments were validated by
+ * readEngineSpec and cannot carry shell syntax.
+ */
+function npmOptions(dir: string): { cwd: string; shell: true; stdio: ["ignore", "ignore", "pipe"]; timeout: number; windowsHide: true; } {
+    return { cwd: dir, shell: true, stdio: ["ignore", "ignore", "pipe"], timeout: NPM_TIMEOUT_MS, windowsHide: true };
+}
+
+/** Null when the pinned engine is installed after npm ran, else why it is not. */
+function installFailure(agentRoot: string, spec: EngineSpec, error: Error | undefined, stderr: string, status: number | null): string | null {
     if (installedEngineVersion(agentRoot, spec.package) === spec.version) return null;
-    const stderr = String(result.stderr || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    return result.error?.message
-        ?? stderr.find((l) => /^npm (error|ERR!)/.test(l))
-        ?? (result.status === null ? "npm timed out" : `npm exited with code ${result.status}`);
+    const lines = stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    return error?.message
+        ?? lines.find((l) => /^npm (error|ERR!)/.test(l))
+        ?? (status === null ? "npm timed out" : `npm exited with code ${status}`);
 }
 
 /** Absolute path of the engine's `bin` script named `name`, or null when it is not installed. */
