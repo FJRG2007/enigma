@@ -555,7 +555,26 @@ function untouchedStatusRow(line: string): string {
  * load-bearing row must not also buy a pass on filler and preamble for the rest of the reply: an
  * escape hatch that does more than it says is how a check gets quietly disabled.
  */
-export function styleFindings(message: string): VerifyGap[] {
+/**
+ * Words of prose a reply may carry at each output-style level before it is padding. Structure
+ * does not count: tables, headings, code and quoted spans are what the style ASKS for, so a long
+ * report built from them passes, and only running prose is measured. The numbers are the size of
+ * an answer that leads with the verdict, carries the evidence that matters and stops - "abrevia"
+ * was the reply users kept having to send, and no filler list can see length.
+ */
+const PROSE_WORD_BUDGET: Record<string, number> = { lite: 400, full: 220, ultra: 120 };
+
+/** Running-prose words in `lines` (already quote-blanked): table rows and headings excluded. */
+function proseWords(lines: string[]): number {
+    return lines
+        .filter((line) => !/^\s*\|/.test(line) && !/^\s*#{1,6}\s/.test(line))
+        .join(" ")
+        .split(/\s+/)
+        .filter((word) => /\p{L}/u.test(word))
+        .length;
+}
+
+export function styleFindings(message: string, level = "full"): VerifyGap[] {
     if (!message || typeof message !== "string") return [];
     const written = message.split("\n");
     // Blanking preserves newlines, so line i here is line i of the reply.
@@ -585,6 +604,12 @@ export function styleFindings(message: string): VerifyGap[] {
     const preamble = marked(openingAt) ? null : STYLE_PREAMBLE_RE.exec(opening);
     if (preamble && !STYLE_NEED_RE.test(opening.slice(preamble[0].length))) {
         hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
+    }
+
+    const budget = PROSE_WORD_BUDGET[level];
+    const words = budget ? proseWords(lines) : 0;
+    if (budget && words > budget) {
+        hits.push({ rule: "length", detail: `the reply runs ${words} words of prose against the ${budget}-word budget of the ${level} style: keep the verdict, the table and what the user must act on, and cut the narration` });
     }
 
     for (const line of lines) {
@@ -630,8 +655,13 @@ export function styleFindings(message: string): VerifyGap[] {
  * reach it, and `sure` went with the other two because rarer false positives are still not a closed
  * surface.
  * Do not promote either back without new evidence; closing one more shape is not evidence.
+ *
+ * `length` blocks although it is not a phrase rule: its surface is closed by construction. It
+ * counts only running prose (tables, headings, code and quotes are excluded), against a budget
+ * per level that a verdict-first answer fits with room to spare, and a line that must stay long
+ * (a security warning, a destructive confirmation) takes the same per-line marker as the rest.
  */
-const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
+const STYLE_BLOCKING_RULES = new Set(["filler", "preamble", "length"]);
 
 /** The rule name behind a style gap (`style:filler` -> `filler`). */
 function styleRuleOf(hit: VerifyGap): string {
@@ -735,6 +765,47 @@ function styleMessage(hits: VerifyGap[], level: string): string {
     ].join("\n");
 }
 
+/**
+ * Phrases that end a turn by handing doable work back to the user instead of doing it: a "next
+ * steps:" list, "you can run/adjust X yourself", "left as a follow-up". Each one is shaped as an
+ * instruction to the user or a deferral, never as a report, which is what closes the surface:
+ * "the next step ran" or "you can see it in the dashboard" do not match.
+ */
+const HANDS_BACK_RE = new RegExp([
+    "^[ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*)?(?:next[ \\t]+steps?|siguientes?[ \\t]+pasos?|pr[oó]ximos?[ \\t]+pasos?)(?:\\*\\*)?[ \\t]*:",
+    "\\byou[ \\t]+(?:can|could|may|should|might[ \\t]+want[ \\t]+to)[ \\t]+(?:now[ \\t]+|then[ \\t]+|also[ \\t]+)?(?:run|execute|re-?run|adjust|refresh|update|fix|add|wire|finish|complete|test|try|do)\\b[^.\\n]*\\b(?:yourself|manually|on[ \\t]+your[ \\t]+own|later)\\b",
+    "\\bpuedes[ \\t]+(?:ahora[ \\t]+|luego[ \\t]+|tambi[eé]n[ \\t]+)?(?:ejecutar|correr|lanzar|ajustar|actualizar|arreglar|a[nñ]adir|completar|terminar|probar|hacer)\\b[^.\\n]*\\b(?:t[uú][ \\t]+mism[oa]|manualmente|por[ \\t]+tu[ \\t]+cuenta|m[aá]s[ \\t]+tarde|luego)\\b",
+    "\\b(?:left|leave|leaving)\\b[^.\\n]{0,40}?\\b(?:as|for)[ \\t]+(?:a[ \\t]+)?follow-?up\\b",
+    "\\bdej(?:o|amos)\\b[^.\\n]{0,40}?\\b(?:para|como)[ \\t]+(?:un[ \\t]+|una[ \\t]+)?(?:siguiente|pr[oó]xim[oa]|follow-?up|m[aá]s[ \\t]+adelante|despu[eé]s|luego)\\b",
+].join("|"), "im");
+
+/**
+ * Whether the final message hands work it could do back to the user. Returns the phrase, quoted
+ * back from the original text, or "" when the message is free to end the turn. A named blocker
+ * (access, a destructive or irreversible step, a decision that is the user's) makes the handoff
+ * legitimate, the same exit asksToContinue honours.
+ */
+export function handsBackWork(message: string): string {
+    if (!message || typeof message !== "string") return "";
+    if (LEGITIMATE_STOP_RE.test(message)) return "";
+    const match = HANDS_BACK_RE.exec(withoutQuoted(message));
+    if (!match) return "";
+    const lineStart = message.lastIndexOf("\n", match.index) + 1;
+    const lineEnd = message.indexOf("\n", match.index);
+    return message.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim().slice(0, 200);
+}
+
+/** The message fed back when a turn hands doable work back to the user. */
+function handBackMessage(phrase: string): string {
+    return [
+        "enigma verify: STOP. You are ending the turn by handing work you can do back to the user:",
+        "",
+        `  "${phrase}"`,
+        "",
+        "Do it now, in this same turn, verify it, and report the outcome. A \"next step\", a \"you can run X yourself\" or a follow-up for work within reach is the deferral the user keeps having to chase.",
+        "Hand something over only when it genuinely needs the user - credentials or access you lack, an irreversible or destructive step, a business decision - and then name that blocker plainly.",
+    ].join("\n");
+}
 /**
  * The message fed back when a turn stops to ask whether to continue. It answers the question
  * (the answer is always yes) and points at the only exit: name a real blocker instead.
@@ -2405,7 +2476,7 @@ export function runVerifyHook(payload?: string): number {
     // over a string is expected to throw, which is precisely why an unexpected one must not be what
     // decides. The other site is the `finally` at the end of this function.
     let styleHits: VerifyGap[] = [];
-    try { styleHits = styleLevel === "off" ? [] : styleFindings(message); }
+    try { styleHits = styleLevel === "off" ? [] : styleFindings(message, styleLevel); }
     catch { /* measured nothing; the checks below still run */ }
     const styleBlocking = blockingStyleFindings(styleHits);
     let styleDenied = false;
@@ -2429,6 +2500,13 @@ export function runVerifyHook(payload?: string): number {
             const asked: VerifyGap = { kind: "stop-short", detail: question };
             if (!mayBlock(issueKey(session, [asked]), session)) return 0;
             hookSink(`${stopShortMessage(question)}\n`);
+            return 2;
+        }
+        const handedBack = raw.permission_mode === "plan" ? "" : handsBackWork(message);
+        if (handedBack) {
+            const handed: VerifyGap = { kind: "stop-short", detail: handedBack };
+            if (!mayBlock(issueKey(session, [handed]), session)) return 0;
+            hookSink(`${handBackMessage(handedBack)}\n`);
             return 2;
         }
         // The same failure aimed at the gate, and the most reported one: the turn ends reporting
