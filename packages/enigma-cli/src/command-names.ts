@@ -19,4 +19,4 @@ export const FIXED_COMMANDS: readonly string[] = [
 ];
 
 /** Agent ids, which launch an agent (`enigma helio`) and are therefore commands too. */
-export const PACK_COMMANDS: readonly string[] = ["helio", "orion", "rea"];
+export const PACK_COMMANDS: readonly string[] = ["helio", "orion", "vega"];

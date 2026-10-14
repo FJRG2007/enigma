@@ -13,7 +13,7 @@
     "dev:bun": "npm run -w enigma-cli dev:bun --",
     "dashboard:preview": "node scripts/dashboard-preview.mjs",
     "sync:helio": "node scripts/sync-helio.mjs",
-    "sync:rea": "node scripts/sync-rea.mjs",
+    "sync:vega": "node scripts/sync-vega.mjs",
     "build": "npm run -w enigma-cli build",
     "check:hooks": "node scripts/check-hook-drift.mjs",
     "check:vendor": "node scripts/sync-primitives.mjs --check",

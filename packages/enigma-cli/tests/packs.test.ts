@@ -19,7 +19,7 @@ process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
 // Resolve the Helio pack from the in-repo vendored assets (no npm fetch).
 process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
 process.env.ENIGMA_ORION_ASSETS = join(__dirname, "..", "..", "orion", "assets");
-process.env.ENIGMA_REA_ASSETS = join(__dirname, "..", "..", "rea", "assets");
+process.env.ENIGMA_VEGA_ASSETS = join(__dirname, "..", "..", "vega", "assets");
 
 const packs = await import("../src/packs");
 const { readConfig, setEnigmaValue } = await import("../src/config");
@@ -306,16 +306,16 @@ test("Orion follows the browser toggle and never rewrites an unparseable context
 
 /** Stand in for an installed REA engine at the version the bundle pins, so nothing is fetched. */
 function fakeReaEngine(): string {
-    const pin = JSON.parse(readFileSync(join(process.env.ENIGMA_REA_ASSETS!, "engine.json"), "utf8")) as { version: string; };
-    const pkg = join(HOME, "packs", "rea", "engine", "node_modules", "rea-agents");
+    const pin = JSON.parse(readFileSync(join(process.env.ENIGMA_VEGA_ASSETS!, "engine.json"), "utf8")) as { version: string; };
+    const pkg = join(HOME, "packs", "vega", "engine", "node_modules", "rea-agents");
     mkdirSync(join(pkg, "scripts"), { recursive: true });
     writeFileSync(join(pkg, "scripts", "rea.mjs"), "");
     writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "rea-agents", version: pin.version, bin: { rea: "scripts/rea.mjs" }, engines: { node: "^22.19.0 || ^24.11.0 || >=26.0.0" } }));
     return join(pkg, "scripts", "rea.mjs");
 }
 
-test("REA deploys its skill, commands and memory; its server waits for the engine", () => {
-    const ctx = packs.deployPack("rea", "claude")!;
+test("Vega deploys its skill, commands and memory; its server waits for the engine", () => {
+    const ctx = packs.deployPack("vega", "claude")!;
     expect(existsSync(join(ctx, "skills", "reverse-engineer-anything", "SKILL.md"))).toBe(true);
     expect(existsSync(join(ctx, "skills", "reverse-engineer-anything", "references", "native-and-artifacts.md"))).toBe(true);
     for (const cmd of ["investigate", "compare", "trace-crash", "reconstruct", "unknowns", "capture"]) {
@@ -325,14 +325,14 @@ test("REA deploys its skill, commands and memory; its server waits for the engin
     // No engine installed yet: no entry that could not start.
     const cfg = join(ctx, ".claude.json");
     expect(existsSync(cfg) ? JSON.parse(readFileSync(cfg, "utf8")).mcpServers?.rea : undefined).toBeUndefined();
-    expect(packs.engineInvocation("rea")).toBeNull();
+    expect(packs.engineInvocation("vega")).toBeNull();
 });
 
-test("REA's server is registered for every tool, launched by node with long timeouts", () => {
+test("Vega's server is registered for every tool, launched by node with long timeouts", () => {
     const script = fakeReaEngine();
-    expect(packs.ensurePackEngine("rea")).toBeNull(); // pinned version present: no npm run
-    const root = join(HOME, "packs", "rea", "context");
-    for (const tool of ["claude", "codex", "opencode", "kimi"]) packs.deployPack("rea", tool);
+    expect(packs.ensurePackEngine("vega")).toBeNull(); // pinned version present: no npm run
+    const root = join(HOME, "packs", "vega", "context");
+    for (const tool of ["claude", "codex", "opencode", "kimi"]) packs.deployPack("vega", tool);
 
     const claude = JSON.parse(readFileSync(join(root, "claude", ".claude.json"), "utf8")).mcpServers.rea;
     expect(claude.type).toBe("stdio");
@@ -358,7 +358,7 @@ test("REA's server is registered for every tool, launched by node with long time
 
 test("re-registration keeps provider settings REA's setup wrote, and restores enigma's launcher", () => {
     const script = fakeReaEngine();
-    const root = join(HOME, "packs", "rea", "context");
+    const root = join(HOME, "packs", "vega", "context");
     // What `rea setup` leaves behind: its own npx launcher plus discovered provider paths.
     const file = join(root, "claude", ".claude.json");
     const cfg = JSON.parse(readFileSync(file, "utf8"));
@@ -370,28 +370,28 @@ test("re-registration keeps provider settings REA's setup wrote, and restores en
 GHIDRA_INSTALL_DIR = "/opt/ghidra"
 `);
 
-    packs.deployPack("rea", "claude");
-    packs.deployPack("rea", "codex");
+    packs.deployPack("vega", "claude");
+    packs.deployPack("vega", "codex");
     const entry = JSON.parse(readFileSync(file, "utf8")).mcpServers.rea;
     expect(entry.args).toEqual([script, "mcp"]);
     expect(entry.env).toEqual({ GHIDRA_INSTALL_DIR: "/opt/ghidra" });
     const after = readFileSync(toml, "utf8");
     expect(after).toContain("[mcp_servers.rea.env]");
     // A fixed point: a second deploy changes nothing.
-    packs.deployPack("rea", "codex");
+    packs.deployPack("vega", "codex");
     expect(readFileSync(toml, "utf8")).toBe(after);
 });
 
 test("an agent's engine.json that is not an exact pin is refused before npm runs", () => {
-    const assets = mkdtempSync(join(tmpdir(), "enigma-rea-assets-"));
-    cpSync(process.env.ENIGMA_REA_ASSETS!, assets, { recursive: true });
+    const assets = mkdtempSync(join(tmpdir(), "enigma-vega-assets-"));
+    cpSync(process.env.ENIGMA_VEGA_ASSETS!, assets, { recursive: true });
     writeFileSync(join(assets, "engine.json"), JSON.stringify({ package: "rea-agents", version: "latest" }));
-    const previous = process.env.ENIGMA_REA_ASSETS;
-    process.env.ENIGMA_REA_ASSETS = assets;
+    const previous = process.env.ENIGMA_VEGA_ASSETS;
+    process.env.ENIGMA_VEGA_ASSETS = assets;
     try {
-        expect(packs.ensurePackEngine("rea")).toContain("no valid engine");
+        expect(packs.ensurePackEngine("vega")).toContain("no valid engine");
     } finally {
-        process.env.ENIGMA_REA_ASSETS = previous;
+        process.env.ENIGMA_VEGA_ASSETS = previous;
         rmSync(assets, { recursive: true, force: true });
     }
 });

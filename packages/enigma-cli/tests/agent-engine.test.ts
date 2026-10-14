@@ -57,8 +57,8 @@ test("a shipped engine-lock.json is used only when it locks the exact pin", () =
     expect(readEngineSpec(withLock("lock-bad", "not a lock"))).toBeNull();
 });
 
-test("the REA bundle ships a lockfile for its pinned engine", () => {
-    const spec = readEngineSpec(join(import.meta.dir, "..", "..", "rea", "assets"));
+test("the Vega bundle ships a lockfile for its pinned engine", () => {
+    const spec = readEngineSpec(join(import.meta.dir, "..", "..", "vega", "assets"));
     expect(spec?.lockfile).toBeTruthy();
 });
 

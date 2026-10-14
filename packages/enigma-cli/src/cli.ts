@@ -467,20 +467,20 @@ Commands:
                          --countries es,fr,us|all --flags-out <dir> (default public/flags)
                        Installs with the project's own package manager (npm, pnpm, yarn, bun),
                        and follows a shadcn components.json where the project has one.
-  agent <subcommand>   Optional, isolated agents (Helio for bug bounty, Orion for QA, REA for
+  agent <subcommand>   Optional, isolated agents (Helio for bug bounty, Orion for QA, Vega for
                        reverse engineering). Each runs in its own agent context, so its
                        skills/commands/MCP servers never load into your normal agent:
                          list                 List agents and their install state
                          install <id>         Fetch and add an agent
                          remove <id>          Delete an agent and its context
                          update <id>          Refresh an agent to the latest version
-                         setup <id>           Register the agent's MCP servers; for REA, run its
+                         setup <id>           Register the agent's MCP servers; for Vega, run REA's
                                               provider setup (Ghidra/Hopper/IDA) and health check
                          cli <id> -- <args>   Run the agent's engine CLI (e.g. REA's 'rea')
                          use <id> <acct|->    Pin which account seeds the agent ('-' clears)
                          run <id> [account]   Launch the isolated agent
                        'enigma pack' still works as a deprecated alias.
-  <agent> [account]    Launch an agent directly (e.g. 'enigma rea', 'enigma helio work') in its
+  <agent> [account]    Launch an agent directly (e.g. 'enigma vega', 'enigma helio work') in its
                        isolated context, seeded with the chosen/pinned/active login (--tool to
                        target codex/opencode/kimi); other flags go straight to the tool
   seal                 Maintenance: (re)compute skill content hashes
@@ -1515,7 +1515,7 @@ async function runAgentCli(args: string[], passthrough: string[], toolOpt?: stri
             return 0;
         }
         case "cli": {
-            // `enigma agent cli rea -- analyze-javascript-application <dir> --json`: the engine's
+            // `enigma agent cli vega -- analyze-javascript-application <dir> --json`: the engine's
             // own CLI, run with the same pinned install and node the agent's MCP server uses.
             if (!pack.engine) { console.error(`${pack.label} has no engine CLI.`); return 1; }
             const cliArgs = [...args.slice(2), ...passthrough];
@@ -1547,7 +1547,7 @@ async function runAgentCli(args: string[], passthrough: string[], toolOpt?: stri
 }
 
 /**
- * `enigma agent setup <id>` for an agent with an engine (REA): install the pinned engine,
+ * `enigma agent setup <id>` for an agent with an engine (Vega): install the pinned engine,
  * register its MCP server in the context, then run the engine's own `setup` there - it discovers
  * providers (Ghidra, Hopper, IDA) and writes their paths into the server entry, asking before it
  * changes anything - and its `doctor`. The entry is re-registered afterwards so it keeps

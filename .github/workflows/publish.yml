@@ -267,21 +267,21 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # @enigmax/rea is the optional REA agent (reverse engineering): asset-only, fetched on demand
+      # @enigmax/vega is the optional Vega agent (reverse engineering): asset-only, fetched on demand
       # when the user enables it; enigma installs the REA engine it pins separately. Same version
       # guard as the agents above.
-      - name: Determine if rea agent version is new
-        id: reaver
+      - name: Determine if vega agent version is new
+        id: vegaver
         run: |
-          RV="$(node -p "require('./packages/rea/package.json').version")"
-          if npm view "@enigmax/rea@$RV" version >/dev/null 2>&1; then
+          RV="$(node -p "require('./packages/vega/package.json').version")"
+          if npm view "@enigmax/vega@$RV" version >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "@enigmax/rea@$RV already published; skipping."
+            echo "@enigmax/vega@$RV already published; skipping."
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Publish rea agent
-        if: steps.reaver.outputs.publish == 'true'
-        run: bash scripts/npm-publish.sh @enigmax/rea packages/rea
+      - name: Publish vega agent
+        if: steps.vegaver.outputs.publish == 'true'
+        run: bash scripts/npm-publish.sh @enigmax/vega packages/vega
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -4,8 +4,8 @@
  * `packAccounts`) and the managed root (~/.enigma/packs), so existing installs keep working.
  *
  * A pack (Helio for offensive security / bug bounty, Orion for bugs/speed/scalability/search
- * quality QA, REA for reverse engineering) ships skills, slash commands, sub-agents and MCP
- * servers for a focused domain; REA also pins an engine (agent-engine.ts) its MCP server runs on.
+ * quality QA, Vega for reverse engineering) ships skills, slash commands, sub-agents and MCP
+ * servers for a focused domain; Vega also pins an engine (agent-engine.ts) its MCP server runs on.
  * Unlike enigma's policy skills, a pack is NEVER deployed into the user's normal agent: it is
  * fetched on demand as an asset-only npm package (@enigmax/<pack>) into a managed dir, and
  * deployed only into a DEDICATED, isolated agent context dir. Launching `enigma helio` (or
@@ -94,10 +94,10 @@ export const PACKS: PackDef[] = [
         ],
     },
     {
-        id: "rea",
-        label: "REA",
-        pkg: "@enigmax/rea",
-        description: "Reverse Engineer Anything: one MCP server and skill to reverse native binaries, Electron/JavaScript apps, .NET, Android, firmware, websites and captures - every claim backed by the evidence it came from. Runs in an isolated agent context.",
+        id: "vega",
+        label: "Vega",
+        pkg: "@enigmax/vega",
+        description: "Reverse engineering on REA (Reverse Engineer Anything): one MCP server and skill to reverse native binaries, Electron/JavaScript apps, .NET, Android, firmware, websites and captures - every claim backed by the evidence it came from. Runs in an isolated agent context.",
         tags: ["reverse-engineering", "binaries", "security", "mcp"],
         homepage: "https://github.com/morluto/rea",
         engine: { bin: "rea", clients: { claude: "claude_code", codex: "codex", opencode: "opencode", kimi: "kimi" } },

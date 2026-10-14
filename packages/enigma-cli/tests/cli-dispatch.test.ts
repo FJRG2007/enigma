@@ -184,7 +184,7 @@ test("`enigma agent` lists the agents; the former `enigma pack` still works and 
     const agent = cliEnv({ ENIGMA_PACKS_DIR: packsDir }, "agent", "list");
     expect(agent.code).toBe(0);
     expect(agent.stdout).toContain("Agents (optional, isolated)");
-    for (const id of ["helio", "orion", "rea"]) expect(agent.stdout).toContain(id);
+    for (const id of ["helio", "orion", "vega"]) expect(agent.stdout).toContain(id);
     expect(agent.stderr).not.toContain("deprecated");
 
     for (const alias of ["pack", "packs"]) {

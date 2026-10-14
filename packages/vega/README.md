@@ -1,7 +1,7 @@
-# @enigmax/rea
+# @enigmax/vega
 
-[REA (Reverse Engineer Anything)](https://github.com/morluto/rea) as an optional **enigma
-agent**: one MCP server for reverse engineering native binaries, Electron/JavaScript apps, .NET
+**Vega** is an optional **enigma agent** built on
+[REA (Reverse Engineer Anything)](https://github.com/morluto/rea): one MCP server for reverse engineering native binaries, Electron/JavaScript apps, .NET
 assemblies, Android APKs, firmware, websites and captures, plus REA's own
 `reverse-engineer-anything` skill and investigation commands.
 
@@ -10,8 +10,8 @@ This package ships only static assets. It is **not** a runtime dependency of eni
 context**, so REA's 200+ tools never load into your normal coding agent.
 
 ```bash
-enigma rea                  # install on first use and launch the REA agent
-enigma agent setup rea      # optional: discover Ghidra/Hopper/IDA and check REA's health
+enigma vega                  # install on first use and launch the Vega agent
+enigma agent setup vega      # optional: discover Ghidra/Hopper/IDA and check REA's health
 ```
 
 What enigma does on top of `npx rea-agents setup`:
@@ -30,10 +30,10 @@ Inside the session: `/investigate`, `/compare`, `/trace-crash`, `/reconstruct`, 
 Needs Node.js 22.19+, 24.11+ or 26+. Deep native analysis needs your own Ghidra, Hopper or IDA;
 static JavaScript and .NET analysis do not.
 
-Use REA only for lawful, authorized analysis - see REA's
+Use Vega only for lawful, authorized analysis - see REA's
 [disclaimer](https://github.com/morluto/rea/blob/main/DISCLAIMER.md).
 
-The bundled skill is refreshed by the maintainer with `npm run sync:rea -- --version <x.y.z>`
+The bundled skill is refreshed by the maintainer with `npm run sync:vega -- --version <x.y.z>`
 from the enigma monorepo root.
 
 ## License

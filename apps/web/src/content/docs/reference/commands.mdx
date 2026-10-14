@@ -116,10 +116,10 @@ Shared flags: `--in <path>` narrows to a subtree, `--limit N` caps results, `--p
 
 ## agent
 
-Optional, isolated agents: Helio for bug bounty, Orion for broken flows, speed and scale, REA for reverse engineering. Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Agents</a> for detail.
+Optional, isolated agents: Helio for bug bounty, Orion for broken flows, speed and scale, Vega for reverse engineering. Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Agents</a> for detail.
 
-<Cmd name="enigma agent <list|install|remove|update|setup|cli|use|run>" ex={["enigma agent list", "enigma agent install rea", "enigma rea", "enigma helio work", "enigma agent use helio work", "enigma agent setup rea", "enigma agent cli rea -- --help"]}>
-`install <id>` fetches an agent; `enigma <id> [account]` (e.g. `enigma helio`, `enigma rea`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the agent; `setup <id>` registers an agent's script MCP servers (Helio's need Python; Orion's browser and REA's server are wired on launch) and, for REA, runs its provider setup and health check; `cli <id> -- <args>` runs REA's own CLI; `update`/`remove` keep or delete it. `enigma pack` still works as a deprecated alias.
+<Cmd name="enigma agent <list|install|remove|update|setup|cli|use|run>" ex={["enigma agent list", "enigma agent install vega", "enigma vega", "enigma helio work", "enigma agent use helio work", "enigma agent setup vega", "enigma agent cli vega -- --help"]}>
+`install <id>` fetches an agent; `enigma <id> [account]` (e.g. `enigma helio`, `enigma vega`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the agent; `setup <id>` registers an agent's script MCP servers (Helio's need Python; Orion's browser and Vega's server are wired on launch) and, for REA, runs its provider setup and health check; `cli <id> -- <args>` runs REA's own CLI; `update`/`remove` keep or delete it. `enigma pack` still works as a deprecated alias.
 </Cmd>
 
 ## ssh

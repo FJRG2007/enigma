@@ -1,4 +1,4 @@
-// Vendor REA's agent skill into packages/rea/assets so it ships in the asset-only @enigmax/rea
+// Vendor REA's agent skill into packages/vega/assets so it ships in the asset-only @enigmax/vega
 // agent. REA (morluto/rea) is published to npm as `rea-agents`; its tarball carries the exact
 // `skills/` tree that matches that release's MCP tool catalog, so the skill is taken from the
 // published tarball of the pinned version, never from the repo's main branch (main describes
@@ -6,7 +6,7 @@
 // assets/engine.json: enigma installs that same `rea-agents` version as the agent's engine, so
 // skill and engine can never drift apart.
 //
-// Pin lives in packages/rea/.source.json. Refresh with `node scripts/sync-rea.mjs --version <x.y.z>`
+// Pin lives in packages/vega/.source.json. Refresh with `node scripts/sync-vega.mjs --version <x.y.z>`
 // (or `--version latest`, which resolves and re-pins to the current release).
 //
 // Node builtins + the npm and tar CLIs only (no deps). Run by the maintainer, not at user install.
@@ -65,7 +65,7 @@ function main() {
     const version = meta.version;
     if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) throw new Error(`Could not resolve ${PACKAGE}@${requested} to a release version.`);
 
-    const work = join(tmpdir(), `enigma-rea-sync-${process.pid}`);
+    const work = join(tmpdir(), `enigma-vega-sync-${process.pid}`);
     rmSync(work, { recursive: true, force: true });
     mkdirSync(work, { recursive: true });
     try {
@@ -93,7 +93,7 @@ function main() {
             repo: "morluto/rea",
             syncedAt: new Date().toISOString().slice(0, 10)
         }, null, 2)}\n`);
-        console.log(`Vendored ${readdirSync(skills).length} skill(s) from ${PACKAGE}@${version} into packages/rea/assets`);
+        console.log(`Vendored ${readdirSync(skills).length} skill(s) from ${PACKAGE}@${version} into packages/vega/assets`);
     } finally {
         rmSync(work, { recursive: true, force: true });
     }

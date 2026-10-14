@@ -1,0 +1,51 @@
+---
+title: Getting started
+description: Install the Vega agent, connect a native analysis engine, and launch it in its isolated context.
+group: Guide
+order: 2
+space: packs
+pack: vega
+---
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
+
+Vega installs on demand and launches into its own agent context with its MCP server already registered. It reuses one of your existing logins.
+
+## Requirements
+
+- Node.js 22.19+, 24.11+ or 26+ on the machine (any installed version that qualifies; it does not need to be the default).
+- For native pseudocode: your own Ghidra 12.1, Hopper or IDA. Static JavaScript/Electron and .NET analysis need none of them.
+
+## Install and launch
+
+<Cmd name="enigma agent install vega" ex={["enigma agent install vega", "enigma agent list"]}>
+Fetch the agent (`@enigmax/vega`) and install the REA engine it pins into `~/.enigma/packs/vega`. You can skip this - launching also installs on demand.
+</Cmd>
+
+<Cmd name="enigma vega [account]" ex={["enigma vega", "enigma vega work", "enigma vega --tool codex"]}>
+Launch a coding agent inside Vega's isolated context with only REA's server, skill and commands. With no account it uses the pinned agent account, else your active profile's account, else the tool's active account. Defaults to Claude Code; target Codex, OpenCode or Kimi Code with `--tool`.
+</Cmd>
+
+Inside the session, give it a target and a question - for example `/investigate /path/to/app.asar "offline search"`. See <a href={docHref("vega/commands")}>Commands</a>.
+
+## Connect Ghidra, Hopper or IDA
+
+<Cmd name="enigma agent setup vega" ex={["enigma agent setup vega", "enigma agent setup vega --tool codex", "enigma agent setup vega -- --install-hopper"]}>
+Runs REA's own setup inside the agent's context: it finds your analysis engines, shows what it would change and asks before writing, then runs REA's health check. Arguments after `--` go to REA's setup. Restart the agent afterwards.
+</Cmd>
+
+Settings REA's setup writes (such as your Ghidra path) are kept on every later launch and update.
+
+## Use REA's CLI from the terminal
+
+<Cmd name="enigma agent cli vega -- <args>" ex={["enigma agent cli vega -- analyze-javascript-application /absolute/path/to/app --json", "enigma agent cli vega -- doctor --json"]}>
+Runs REA's own CLI on the same pinned install and Node.js as the agent's server.
+</Cmd>
+
+## Which account Vega uses
+
+<Cmd name="enigma agent use vega <account|->" ex={["enigma agent use vega work", "enigma agent use vega -"]}>
+Pin which login seeds Vega by default (`-` clears the pin). `enigma vega <account>` overrides it for a single launch.
+</Cmd>
+
+You can also manage Vega from the dashboard's **Agents** tab. `enigma update` keeps the agent and its engine current.
