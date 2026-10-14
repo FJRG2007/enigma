@@ -1,6 +1,6 @@
 ---
 name: backend-policy
-description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, bounded state (everything stored or held open has a designed end), and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
+description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, bounded state (store only what is needed, remove what is no longer used, give everything stored a designed end), and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
 ---
 
 # Backend & API Architecture Policy
@@ -120,8 +120,10 @@ Cache expensive or hot reads on the server to reduce database load, complementin
 
 ## Bounded State
 
-Storage is a cost that compounds: every row, key, file, process and open connection that outlives its use slows the queries, indexes, backups and scans that touch it, and grows without limit at scale. Keeping what is no longer needed is a scalability defect, not a safe default.
+Storage is a cost that compounds: every row, column, key, file, process and open connection that is not strictly needed slows the queries, indexes, backups and scans that touch it, and grows without limit at scale. Keeping what nothing needs is a scalability defect, not a safe default.
 
+- Store only what something reads and needs: never a value derivable from what is already stored, a copy of data another store owns, a field or table no code path reads, or a log, history or snapshot nobody consumes. When unsure whether it is needed, it is not stored until a reader exists.
+- What stops being used goes in the same change that stops using it: a column, table, index, flag, cache key, queue, file, bucket, job, env var or config key whose last reader or writer you removed. Remove it safely, never losing data a user still owns: stop writing and reading first, then drop it in a reversible migration with a backup or export taken first.
 - Whatever you create - persisted, cached or held open - is designed with its end in the same change: what ends it, when, and what goes with it. If nothing ever ends it, it is a leak.
 - End it on the event that makes it useless (the owner revokes, disconnects, finishes or is deleted), and on time for whatever simply expires: a native TTL where the store has one, otherwise an idempotent, batched purge on an indexed expiry column. Never rely on an unrelated later write to clean up.
 - Removing a thing removes or detaches what depends on it and releases what it holds open; nothing is left orphaned or running.
