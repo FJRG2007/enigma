@@ -1411,6 +1411,35 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-raw-img-over-component",
+    label: "A project with an image component uses it",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.stories.*",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "**/emails/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**",
+      "emails/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-raw-img-over-component",
+    message: "A raw <img> in a project that already has an image component. Every content image goes through ONE component, so loading, sizing, alt text, lazy decoding and the lightbox stay the same everywhere and a fix lands once; an <img> per page is a second, drifting copy of it. Use the component named here. Mark the line `enigma:allow-raw-img` where the element must stay raw - an email template, a tracking pixel, or markup the component cannot render (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-toast-hand-rolled",
     label: "Toasts come from the primitive",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
@@ -2735,6 +2764,7 @@ var FILE_CHECKS = {
   "sec-2fa-reauth-prompt": (content) => twoFactorPasswordPrompt(content),
   "fe-select-hand-rolled": (content) => handRolledSelect(content),
   "fe-native-select-over-primitive": (content) => nativeSelectOverPrimitive(content),
+  "fe-raw-img-over-component": (content, file) => rawImgOverComponent(content, file),
   "fe-toast-hand-rolled": (content) => handRolledToast(content),
   "fe-palette-hand-rolled": (content) => handRolledPalette(content),
   "sec-sql-built-from-values": (content, file) => sqlBuiltFromValues(content, file),
@@ -3202,6 +3232,70 @@ function nativeSelectOverPrimitive(content) {
     return [{ line: i + 1, detail: "a native <select> in a file that already imports the primitives package" }];
   }
   return [];
+}
+var RAW_IMG = /<img\b/;
+var ALLOW_RAW_IMG = /enigma:allow-raw-img/;
+var DECORATIVE_IMG = /alt=(?:""|''|\{["']{2}\})|\.svg\b|\b(?:logo|icon|flag|favicon|sprite)/i;
+var IMAGE_COMPONENT_FILE = /(?:^|\/)(?:image|img|picture)\.(?:tsx|jsx|vue|svelte|astro)$/i;
+var DEFINES_IMAGE = /\b(?:function|const|class)\s+(?:Image|Img|Picture)\b/;
+var LOCAL_IMAGE_COMPONENTS = ["src/components", "components", "src/components/ui", "components/ui", "src/lib/components", "app/components"];
+var imageComponentCache = /* @__PURE__ */ new Map();
+function projectImageComponent(root) {
+  const cached = imageComponentCache.get(root);
+  if (cached !== void 0) return cached;
+  let deps = {};
+  try {
+    deps = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).dependencies ?? {};
+  } catch {
+  }
+  let found = null;
+  if ("@enigmax/primitives" in deps) found = "`Image` from @enigmax/primitives (`enigma add image`)";
+  else if ("next" in deps) found = "`Image` from next/image";
+  else if ("astro" in deps) found = "`Image` from astro:assets";
+  else if ("@nuxt/image" in deps) found = "`NuxtImg` from @nuxt/image";
+  else {
+    for (const dir of LOCAL_IMAGE_COMPONENTS) {
+      let names = [];
+      try {
+        names = readdirSync(join(root, dir));
+      } catch {
+        continue;
+      }
+      const hit = names.find((n) => /^(?:image|img|picture)\.(?:tsx|jsx|vue|svelte|astro)$/i.test(n));
+      if (hit) {
+        found = `the project's own \`${dir}/${hit}\``;
+        break;
+      }
+    }
+  }
+  imageComponentCache.set(root, found);
+  return found;
+}
+function imgElementAt(lines, start) {
+  const parts = [];
+  for (let i = start; i < lines.length && i < start + 30; i++) {
+    const text = i === start ? lines[i].slice(lines[i].search(RAW_IMG)) : lines[i];
+    parts.push(text);
+    if (/(?<!=)>/.test(text)) break;
+  }
+  return parts.join("\n");
+}
+function rawImgOverComponent(content, file) {
+  const norm = file.replace(/\\/g, "/");
+  if (!RAW_IMG.test(content) || IMAGE_COMPONENT_FILE.test(norm) || DEFINES_IMAGE.test(content)) return [];
+  const root = findProjectRoot(file);
+  const component = root ? projectImageComponent(root) : null;
+  if (!component) return [];
+  const lines = content.split("\n");
+  const hits = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!RAW_IMG.test(line) || COMMENT_LINE.test(line) || allowedAt(lines, i, ALLOW_RAW_IMG)) continue;
+    const element = imgElementAt(lines, i);
+    if (DECORATIVE_IMG.test(element) || ALLOW_RAW_IMG.test(element)) continue;
+    hits.push({ line: i + 1, detail: `this project already has ${component}` });
+  }
+  return hits;
 }
 var TOAST_QUEUE = /\bset(?:Toasts?|Snackbars?)\b|\btoasts\.(?:map|filter|slice)\b|\btoastQueue\b/;
 var TOAST_TIMER = /setTimeout\(/;
@@ -4950,6 +5044,7 @@ export {
   purpleGradient,
   queryInLoop,
   radixContentWithoutPortal,
+  rawImgOverComponent,
   readLedger,
   readReplyLedger,
   recordFindings,
