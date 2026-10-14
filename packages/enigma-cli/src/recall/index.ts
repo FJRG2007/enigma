@@ -319,6 +319,18 @@ export function currentProject(cwd: string = process.cwd()): string {
 }
 
 /**
+ * Which project a recall search targets. A session must not recall ANOTHER project's work as its
+ * own context, so an unset filter means the current project, not every project. "*"/"all" is the
+ * explicit opt-in to search across all projects; any other value names a project directly.
+ * Returns undefined when the store should not be filtered (search everywhere).
+ */
+export function resolveRecallProject(asked: string | undefined, cwd: string = process.cwd()): string | undefined {
+    const a = (asked ?? "").trim();
+    if (a === "*" || a.toLowerCase() === "all") return undefined;
+    return a || currentProject(cwd);
+}
+
+/**
  * A remembered fact's title: its first sentence. Unlike a prompt title it only breaks on a
  * terminator FOLLOWED by whitespace, so "src/auth.ts" is not cut at the dot - titles drive
  * supersession, and "Use src/auth" would make unrelated facts about that file look identical.

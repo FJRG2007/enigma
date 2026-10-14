@@ -8,7 +8,7 @@
  * this file as leaking a real secret.
  */
 
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -128,7 +128,9 @@ test("MCP recall tools are gated by the recall setting", () => {
     expect(onNames).toContain("enigma_recall");
     expect(onNames).toContain("enigma_recall_get");
 
-    const call = handleMcpRequest({ id: 3, method: "tools/call", params: { name: "enigma_recall", arguments: { query: "auth" } } }, "1.0")!;
+    // The seeded observation lives under project "proj"; this test runs from the "enigma-cli" cwd,
+    // so "*" is needed to reach it now that recall scopes to the current project by default.
+    const call = handleMcpRequest({ id: 3, method: "tools/call", params: { name: "enigma_recall", arguments: { query: "auth", project: "*" } } }, "1.0")!;
     const text = (call.result as { content: { text: string; }[]; }).content[0]!.text;
     expect(text).toContain("auth"); // returns the matching index, not the "off" notice
 });
@@ -200,4 +202,36 @@ test("recall provider is configurable and the API key never reaches the view", a
     expect(r.view!.provider.hasKey).toBe(true);
     expect(JSON.stringify(r.view)).not.toContain(fakeKey); // the key value is never serialized back
     expect((await applyRecallAction("set-provider", { provider: "nope" })).ok).toBe(false); // unknown provider rejected
+});
+
+test("resolveRecallProject scopes to the current project unless widened", async () => {
+    const { resolveRecallProject } = await import("../src/recall");
+    expect(resolveRecallProject(undefined, "/home/me/alpha")).toBe("alpha"); // unset -> current project
+    expect(resolveRecallProject("", "/home/me/alpha")).toBe("alpha"); // blank -> current project
+    expect(resolveRecallProject("beta", "/home/me/alpha")).toBe("beta"); // named -> that project
+    expect(resolveRecallProject("*", "/home/me/alpha")).toBeUndefined(); // "*" -> every project
+    expect(resolveRecallProject("ALL", "/home/me/alpha")).toBeUndefined(); // "all" (any case) -> every project
+});
+
+test("enigma_recall defaults to the current project and does not bleed another project's work", async () => {
+    setEnigmaValue("recall", true, "global");
+    const db = openDb();
+    store.clearRecall(db);
+    const here = basename(process.cwd()); // what currentProject() resolves to in this test
+    const base = { sessionId: "x", source: "claude" as const, narrative: "n", facts: [], concepts: [], filesRead: [], filesModified: [], createdAt: 2000 };
+    store.insertObservation({ ...base, project: here, type: "feature", title: "Widget here in this project", contentHash: "p-here" }, db);
+    store.insertObservation({ ...base, project: "otherproj", type: "feature", title: "Widget there in another project", contentHash: "p-other" }, db);
+
+    const callRecall = (args: Record<string, unknown>) => {
+        const res = handleMcpRequest({ id: 1, method: "tools/call", params: { name: "enigma_recall", arguments: args } }, "1.0")!;
+        return (res.result as { content: { text: string; }[]; }).content[0]!.text;
+    };
+
+    const scoped = callRecall({ query: "widget" });
+    expect(scoped).toContain("Widget here in this project");
+    expect(scoped).not.toContain("Widget there in another project"); // the other project must not bleed in
+
+    const wide = callRecall({ query: "widget", project: "*" });
+    expect(wide).toContain("Widget here in this project");
+    expect(wide).toContain("Widget there in another project"); // "*" opts into every project
 });

@@ -90,13 +90,13 @@ const TOOLS = [
 const RECALL_TOOLS = [
     {
         name: "enigma_recall",
-        description: "Search durable memory of past coding sessions (what was done, which files changed, decisions made). Returns a compact index of observations with ids; pass interesting ids to enigma_recall_get for full details. Use this at the start of a task to recall prior context about this project.",
+        description: "Search durable memory of past coding sessions (what was done, which files changed, decisions made). Returns a compact index of observations with ids; pass interesting ids to enigma_recall_get for full details. Use this at the start of a task to recall prior context about this project. Scoped to the current project by default; pass another project name to target it, or \"*\" to search every project.",
         inputSchema: {
             type: "object",
             properties: {
                 query: { type: "string", description: "Free-text search; empty returns the most recent observations." },
                 queries: { type: "array", items: { type: "string" }, maxItems: recall.MAX_QUERIES, description: "Optional: extra phrasings of the same need (synonyms, the likely file or symbol names); results are fused with the query's." },
-                project: { type: "string", description: "Optional: limit to a project name." },
+                project: { type: "string", description: "Optional: a project name to target, or \"*\" for every project. Defaults to the current project." },
                 type: { type: "string", description: "Optional: filter by type (bugfix, feature, refactor, change, discovery, decision, security)." },
                 limit: { type: "number", description: "Max results (default 15)." },
             },
@@ -349,7 +349,9 @@ function recallTool(name: string, args: Record<string, unknown>): unknown {
             }
             const extra = (args.queries as string[] | undefined) ?? [];
             if (extra.length > recall.MAX_QUERIES) return textResult(`enigma_recall: 'queries' takes at most ${recall.MAX_QUERIES} phrasings.`, true);
-            const project = typeof args.project === "string" ? args.project : undefined;
+            // Default to the current project: a session must not recall another project's work as
+            // its own context. An explicit "*"/"all" widens to every project on purpose.
+            const project = recall.resolveRecallProject(typeof args.project === "string" ? args.project : undefined);
             const type = typeof args.type === "string" ? args.type : undefined;
             const limit = typeof args.limit === "number" ? args.limit : 15;
             // The original query leads so it wins the MAX_QUERIES cap; an empty one still
