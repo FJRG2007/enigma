@@ -77,6 +77,56 @@ test("stale slots expire, so a crashed session does not block the next launch fo
     expect(admitLaunch(pre(s, "t3"), 1)).toBe("");
 });
 
+test("a subagent that stopped without a SubagentStop frees its slot once its transcript goes idle", () => {
+    // Claude Code fires no SubagentStop for a subagent cut at its maxTurns or stopped by TaskStop.
+    const s = session();
+    const projects = join(HOME, "projects", "p");
+    const transcriptPath = join(projects, `${s}.jsonl`);
+    const agentLog = (id: string): string => join(projects, s, "subagents", `agent-${id}.jsonl`);
+    mkdirSync(join(projects, s, "subagents"), { recursive: true });
+    const at = (sessionId: string, toolUseId: string) => ({ ...pre(sessionId, toolUseId), transcriptPath });
+    expect(admitLaunch(at(s, "t1"), 2)).toBe("");
+    recordStart({ ...life(s, "cut"), transcriptPath });
+    expect(admitLaunch(at(s, "t2"), 2)).toBe("");
+    recordStart({ ...life(s, "busy"), transcriptPath });
+    writeFileSync(agentLog("cut"), "{}\n");
+    writeFileSync(agentLog("busy"), "{}\n");
+    expect(admitLaunch(at(s, "t3"), 2)).toContain("limit is 2");
+    // "cut" last wrote 31 minutes ago; "busy" is still writing.
+    const old = (Date.now() - 31 * 60_000) / 1000;
+    utimesSync(join(dir(s), "run-cut"), old, old);
+    utimesSync(agentLog("cut"), old, old);
+    expect(admitLaunch(at(s, "t4"), 2)).toBe("");
+    expect(existsSync(join(dir(s), "run-cut"))).toBe(false);
+    expect(existsSync(join(dir(s), "run-busy"))).toBe(true);
+});
+
+test("an idle transcript does not free a slot that was started again since (a resumed subagent)", () => {
+    const s = session();
+    const projects = join(HOME, "projects", "q");
+    const transcriptPath = join(projects, `${s}.jsonl`);
+    mkdirSync(join(projects, s, "subagents"), { recursive: true });
+    const log = join(projects, s, "subagents", "agent-a1.jsonl");
+    writeFileSync(log, "{}\n");
+    const old = (Date.now() - 2 * 60 * 60_000) / 1000;
+    utimesSync(log, old, old);
+    admitLaunch({ ...pre(s, "t1"), transcriptPath }, 1);
+    recordStart({ ...life(s, "a1"), transcriptPath });
+    expect(admitLaunch({ ...pre(s, "t2"), transcriptPath }, 1)).toContain("limit is 1");
+});
+
+test("without a transcript to check, a running slot keeps the long expiry", () => {
+    const s = session();
+    const transcriptPath = join(HOME, "projects", "none", `${s}.jsonl`);
+    admitLaunch({ ...pre(s, "t1"), transcriptPath }, 1);
+    recordStart({ ...life(s, "a1"), transcriptPath });
+    const old = (Date.now() - 2 * 60 * 60_000) / 1000;
+    utimesSync(join(dir(s), "run-a1"), old, old);
+    expect(admitLaunch({ ...pre(s, "t2"), transcriptPath }, 1)).toContain("limit is 1");
+    // A transcript_path of another session is ignored rather than trusted.
+    expect(admitLaunch({ ...pre(s, "t3"), transcriptPath: join(HOME, "other.jsonl") }, 1)).toContain("limit is 1");
+});
+
 test("the last stop removes the session directory", () => {
     const s = session();
     admitLaunch(pre(s, "t1"), 3);
