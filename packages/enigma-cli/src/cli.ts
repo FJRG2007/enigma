@@ -10,7 +10,7 @@ import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
 import { RELAY_HELP } from "./relay";
 import * as skillsMod from "./skills";
-import { isDir, readJson } from "./util";
+import { isDir, isNewer, readJson } from "./util";
 import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
@@ -39,11 +39,11 @@ import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
-import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { BUILTIN_RULES, checkPath, formatFindings, readLedger, readReplyLedger, summarizeLedger } from "./guardrails";
 import { API_ROTATIONS, DASHBOARD_BINDS, apiRotationOf, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
+import { checkLatestNow, getAvailableUpdate, installedGlobalVersion, notifyUpdate, performUpdateCheck, runUpdate, runtimeInstalls, updateRuntimeInstalls } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -1109,6 +1109,17 @@ async function runUpdateCli(version: string, ref?: string | null): Promise<void>
         const lines = String(sync.stdout || "").split("\n").filter((l) => l.trim());
         if (sync.status === 0) s2.stop(lines.length ? lines.join("; ") : "Skills and memory are up to date.");
         else s2.stop("Skills and memory will sync on the next enigma run.");
+        // nvm keeps one global prefix per Node version: an enigma left behind under another
+        // version runs whenever that version leads PATH, and rewrites the agents' config with
+        // its older defaults on every hook.
+        const target = installedGlobalVersion() ?? latest;
+        if (target) {
+            for (const install of runtimeInstalls().filter((i) => isNewer(target, i.version))) {
+                const rs = p.spinner();
+                rs.start(`Updating enigma-cli ${install.version} under ${install.prefix}...`);
+                rs.stop(`Other Node version: ${updateRuntimeInstalls(target, [install]).join("; ")}`);
+            }
+        }
     }
     // An always-on dashboard daemon is still running the pre-update binary (version baked in at
     // spawn), so restart it on the new binary - otherwise the running dashboard keeps showing the
