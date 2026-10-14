@@ -575,10 +575,17 @@ test("a squash-landed run branch leaves the mirror on its merged PR, even when t
         age(bare, b, 24);
     }
     const reviewTip = git(bare, "rev-parse", "feat/review").trim();
+    // A run branch this clone never fetched: it has no tracking ref here, and keeping it must not add one.
+    git(bare, "branch", "feat/parked", git(bare, "rev-parse", "feat/aborted").trim());
+    age(bare, "feat/parked", 24);
     const listPRs = async () => ({ open: new Set(["feat/review"]), merged: new Map([["release/1", [tip]], ["feat/review", [reviewTip]]]), bases: new Set(["main"]) });
 
+    // A dry run reports and writes no ref, not even a lagging tracking ref.
+    const trackingBefore = git(dir, "for-each-ref", "refs/remotes/gate");
     // Without the PR list there is no proof, and the superseded content proves nothing.
     expect((await tidy(dir, { dryRun: true, listPRs: async () => null })).mirror).toEqual([]);
+    expect((await tidy(dir, { dryRun: true, listPRs })).mirror.map((m) => m.branch)).toEqual(["release/1"]);
+    expect(git(dir, "for-each-ref", "refs/remotes/gate")).toBe(trackingBefore);
 
     const result = await tidy(dir, { listPRs });
     expect(result.problems).toEqual([]);
@@ -588,6 +595,7 @@ test("a squash-landed run branch leaves the mirror on its merged PR, even when t
     // Under review again, and never merged: both stay.
     expect(git(bare, "branch", "--list", "feat/review")).not.toBe("");
     expect(git(bare, "branch", "--list", "feat/aborted")).not.toBe("");
+    expect(git(dir, "for-each-ref", "refs/remotes/gate/feat/parked")).toBe("");
 }, 120_000);
 
 test("a remote called gate that is not enigma's mirror is never touched", async () => {

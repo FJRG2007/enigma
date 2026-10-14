@@ -3267,31 +3267,35 @@ function projectImageComponent(root: string): string | null {
     return found;
 }
 
-/** The nearest directory above `file` holding a package.json, or null. */
-function packageRootOf(file: string): string | null {
-    let dir = dirname(resolve(file));
-    for (;;) {
-        if (existsSync(join(dir, "package.json"))) return dir;
-        const parent = dirname(dir);
-        if (parent === dir) return null;
-        dir = parent;
+/** The `<img` element starting on line `start`, through its closing `>` (bounded), joined into one string. */
+function imgElementAt(lines: string[], start: number): string {
+    const parts: string[] = [];
+    for (let i = start; i < lines.length && i < start + 30; i++) {
+        const text = i === start ? lines[i]!.slice(lines[i]!.search(RAW_IMG)) : lines[i]!;
+        parts.push(text);
+        if (/(?<!=)>/.test(text)) break;
     }
+    return parts.join("\n");
 }
 
 export function rawImgOverComponent(content: string, file: string): LineHit[] {
     const norm = file.replace(/\\/g, "/");
     if (!RAW_IMG.test(content) || IMAGE_COMPONENT_FILE.test(norm) || DEFINES_IMAGE.test(content)) return [];
-    const root = packageRootOf(file);
+    const root = findProjectRoot(file);
     const component = root ? projectImageComponent(root) : null;
     if (!component) return [];
     const lines = content.split("\n");
+    const hits: LineHit[] = [];
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;
-        if (COMMENT_LINE.test(line) || allowedAt(lines, i, ALLOW_RAW_IMG)) continue;
-        if (RAW_IMG.test(line) && !DECORATIVE_IMG.test(line)) return [{ line: i + 1, detail: `this project already has ${component}` }];
+        if (!RAW_IMG.test(line) || COMMENT_LINE.test(line) || allowedAt(lines, i, ALLOW_RAW_IMG)) continue;
+        const element = imgElementAt(lines, i);
+        if (DECORATIVE_IMG.test(element) || ALLOW_RAW_IMG.test(element)) continue;
+        hits.push({ line: i + 1, detail: `this project already has ${component}` });
     }
-    return [];
+    return hits;
 }
+
 /**
  * A toast stack built by hand: a queue of messages and a timer that removes them.
  *

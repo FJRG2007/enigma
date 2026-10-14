@@ -1329,4 +1329,11 @@ test("fe-raw-img-over-component flags a content <img> only where the project alr
     expect(hits(lib, `<img src="/brand/mark.svg" alt="Acme" />`)).toEqual([]);
     expect(hits(lib, `<img src={pixel} alt="x" /> {/* enigma:allow-raw-img */}`)).toEqual([]);
     expect(hits(lib, `<Image src={hero.url} alt="The team" />`)).toEqual([]);
+    // Every raw <img> is reported, so a new one below a legacy one still lands on its changed line.
+    expect(hits(lib, `<img src={a.url} alt="First" />\n<p>text</p>\n<img src={b.url} alt="Second" />`).map((h) => h.line)).toEqual([1, 3]);
+    // Attributes on their own lines: decoration and the escape hatch are read from the whole element.
+    expect(hits(lib, `<img\n  src="/brand/mark.svg"\n  alt="Acme"\n/>`)).toEqual([]);
+    expect(hits(lib, `<img\n  src={hero.url}\n  alt=""\n/>`)).toEqual([]);
+    expect(hits(lib, `<img\n  src={hero.url}\n  alt="Hero" // enigma:allow-raw-img\n/>`)).toEqual([]);
+    expect(hits(lib, `<img\n  src={hero.url}\n  alt="The team"\n/>\n<span>logo</span>`).map((h) => h.line)).toEqual([1]);
 });

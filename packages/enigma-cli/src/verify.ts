@@ -543,6 +543,25 @@ function untouchedStatusRow(line: string): string {
 }
 
 /**
+ * Words of prose a reply may carry at each output-style level before it is padding. Structure
+ * does not count: tables, lists, headings, code and quoted spans are what the style ASKS for, so a long
+ * report built from them passes, and only running prose is measured. The numbers are the size of
+ * an answer that leads with the verdict, carries the evidence that matters and stops - "abrevia"
+ * was the reply users kept having to send, and no filler list can see length.
+ */
+const PROSE_WORD_BUDGET: Record<string, number> = { lite: 400, full: 220, ultra: 120 };
+
+/** Running-prose words in `lines` (already quote-blanked): table rows, list items and headings excluded. */
+function proseWords(lines: string[]): number {
+    return lines
+        .filter((line) => !/^\s*\|/.test(line) && !/^\s*#{1,6}\s/.test(line) && !/^\s*(?:[-*+]|\d+[.)])\s/.test(line))
+        .join(" ")
+        .split(/\s+/)
+        .filter((word) => /\p{L}/u.test(word))
+        .length;
+}
+
+/**
  * Deterministic output-style violations in the final message. Pure text, no model call and no
  * git: a clean turn costs one regex sweep over one string.
  *
@@ -555,25 +574,6 @@ function untouchedStatusRow(line: string): string {
  * load-bearing row must not also buy a pass on filler and preamble for the rest of the reply: an
  * escape hatch that does more than it says is how a check gets quietly disabled.
  */
-/**
- * Words of prose a reply may carry at each output-style level before it is padding. Structure
- * does not count: tables, headings, code and quoted spans are what the style ASKS for, so a long
- * report built from them passes, and only running prose is measured. The numbers are the size of
- * an answer that leads with the verdict, carries the evidence that matters and stops - "abrevia"
- * was the reply users kept having to send, and no filler list can see length.
- */
-const PROSE_WORD_BUDGET: Record<string, number> = { lite: 400, full: 220, ultra: 120 };
-
-/** Running-prose words in `lines` (already quote-blanked): table rows and headings excluded. */
-function proseWords(lines: string[]): number {
-    return lines
-        .filter((line) => !/^\s*\|/.test(line) && !/^\s*#{1,6}\s/.test(line))
-        .join(" ")
-        .split(/\s+/)
-        .filter((word) => /\p{L}/u.test(word))
-        .length;
-}
-
 export function styleFindings(message: string, level = "full"): VerifyGap[] {
     if (!message || typeof message !== "string") return [];
     const written = message.split("\n");
@@ -657,7 +657,7 @@ export function styleFindings(message: string, level = "full"): VerifyGap[] {
  * Do not promote either back without new evidence; closing one more shape is not evidence.
  *
  * `length` blocks although it is not a phrase rule: its surface is closed by construction. It
- * counts only running prose (tables, headings, code and quotes are excluded), against a budget
+ * counts only running prose (tables, lists, headings, code and quotes are excluded), against a budget
  * per level that a verdict-first answer fits with room to spare, and a line that must stay long
  * (a security warning, a destructive confirmation) takes the same per-line marker as the rest.
  */

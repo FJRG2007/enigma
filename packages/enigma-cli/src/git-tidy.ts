@@ -582,15 +582,17 @@ async function refTouched(bare: string, branch: string): Promise<number> {
 }
 
 /**
- * Make `remote`'s `branch` at `sha` available here, refreshing a tracking ref that lags behind
- * it. Nothing fetches these refs on its own, so a check that required them to be current
- * skipped every branch that moved after the last fetch - for good.
+ * Make `remote`'s `branch` at `sha` available here, fetching it when the commit is missing.
+ * Nothing fetches these refs on its own, so a check that required a current tracking ref
+ * skipped every branch that moved after the last fetch - for good. The fetch writes no ref
+ * (an empty refmap), so a dry run changes nothing and a branch that is kept leaves no
+ * tracking ref behind.
  */
 async function fetchTip(dir: string, remote: string, branch: string, sha: string): Promise<boolean> {
-    const ref = `refs/remotes/${remote}/${branch}`;
-    if ((await git.resolveRef(dir, ref).catch(() => "")) === sha) return true;
-    await git.run(dir, ["fetch", "--quiet", "--no-tags", remote, `+refs/heads/${branch}:${ref}`]).catch(() => "");
-    return (await git.resolveRef(dir, ref).catch(() => "")) === sha;
+    const present = async () => (await git.runRaw(dir, ["cat-file", "-e", `${sha}^{commit}`]).catch(() => ({ code: 1 }))).code === 0;
+    if (await present()) return true;
+    await git.run(dir, ["fetch", "--quiet", "--no-tags", "--refmap=", remote, `refs/heads/${branch}`]).catch(() => "");
+    return present();
 }
 
 /**
@@ -614,10 +616,10 @@ async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, d
     for (const [branch, sha] of heads) {
         if (PROTECTED.has(branch) || branch === plan.defaultBranch) continue;
         if (now - await refTouched(bare, branch) < MIRROR_IDLE_MS) continue;
-        if (!await fetchTip(dir, GATE_REMOTE, branch, sha)) continue;
         const prs = await listPRs(dir);
         if (prs?.open.has(branch)) continue;
         const mergedAtTip = (prs?.merged.get(branch) ?? []).includes(sha);
+        if (!await fetchTip(dir, GATE_REMOTE, branch, sha)) continue;
         if (!mergedAtTip && !await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
         if (dryRun) { result.mirror.push({ branch, sha, bare }); continue; }
         try {
@@ -719,7 +721,7 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
  * pull request - the dead branches a PR workflow leaves on the remote after a squash merge from
  * the web, which no local branch ever represented. A remote branch is someone's work until proved
  * otherwise, so each condition must be SHOWN, never assumed:
- * - the tip the remote reports is fetched when the tracking ref lags behind it, and the delete
+ * - the tip the remote reports is fetched when it is missing here, and the delete
  *   is leased to that tip, so a push made after the proof keeps the branch;
  * - the PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not logged
  *   in - every remote-only branch is kept;

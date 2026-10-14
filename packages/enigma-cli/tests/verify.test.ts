@@ -2151,6 +2151,9 @@ test("a reply over its prose budget is blocked; tables, code and the marker do n
     const table = Array.from({ length: 60 }, (_, i) => `| item ${i} | done | verified by the suite and a real run |`).join("\n");
     expect(keys(`${prose(2)}\n\n${table}`)).toEqual([]);
     expect(keys(`${prose(2)}\n\n\`\`\`\n${prose(40)}\n\`\`\``)).toEqual([]);
+    // A checklist is structure too: one item per line, however many items the report has.
+    expect(keys(`${prose(2)}\n\n${Array.from({ length: 20 }, () => `- ${sentence}`).join("\n")}`)).toEqual([]);
+    expect(keys(`${prose(2)}\n\n${Array.from({ length: 20 }, (_, i) => `${i + 1}. ${sentence}`).join("\n")}`)).toEqual([]);
     // A line that must stay long carries the marker and leaves the count.
     expect(keys(`${prose(2)}\n${prose(20)} enigma:style-ignore`)).toEqual([]);
     expect(styleFindings(prose(15))[0]?.detail).toContain("words of prose against the 220-word budget");
