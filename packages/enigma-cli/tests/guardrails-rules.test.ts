@@ -1297,3 +1297,36 @@ matrix("val-email-regex-hand-rolled", false, [
     { name: "marked shared validator", file: "src/validators.ts", code: "export const NIP05_RE = /^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]{2,}$/i; // enigma:allow-email-regex" },
     { name: "test file is excluded", file: "src/form.test.ts", code: "expect(/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(\"a@b.co\")).toBe(true);" },
 ]);
+
+// --- fe-raw-img-over-component -----------------------------------------------------
+
+test("fe-raw-img-over-component flags a content <img> only where the project already has an image component", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { rawImgOverComponent } = await import("../src/guardrails");
+    const project = (deps: Record<string, string>, extra: Record<string, string> = {}): string => {
+        const root = mkdtempSync(join(tmpdir(), "enigma-raw-img-"));
+        writeFileSync(join(root, "package.json"), JSON.stringify({ name: "app", dependencies: deps, devDependencies: { next: "15.0.0" } }));
+        for (const [file, body] of Object.entries(extra)) {
+            mkdirSync(join(root, file, ".."), { recursive: true });
+            writeFileSync(join(root, file), body);
+        }
+        return root;
+    };
+    const page = `export function Hero() {\n  return <img src={hero.url} alt="The team at the launch" />;\n}`;
+    const hits = (root: string, code = page, file = "src/pages/Hero.tsx") => rawImgOverComponent(code, join(root, file));
+
+    expect(hits(project({ "@enigmax/primitives": "1.0.0" }))[0]?.detail).toContain("@enigmax/primitives");
+    expect(hits(project({ next: "15.0.0" }))[0]?.detail).toContain("next/image");
+    expect(hits(project({ astro: "5.0.0" }))[0]?.detail).toContain("astro:assets");
+    expect(hits(project({}, { "src/components/Image.tsx": "export function Image() {}" }))[0]?.detail).toContain("src/components/Image.tsx");
+    // No component anywhere, and a framework only as a dev dependency (a library): nothing to point at.
+    expect(hits(project({ react: "19.0.0" }))).toEqual([]);
+    const lib = project({ "@enigmax/primitives": "1.0.0" });
+    // The component's own file, decoration, the escape hatch and the answer itself stay quiet.
+    expect(hits(lib, page, "src/components/image.tsx")).toEqual([]);
+    expect(hits(lib, "export function Image() { return <img src={p.src} alt={p.alt} />; }")).toEqual([]);
+    expect(hits(lib, `<img src={logo.src} alt="" />`)).toEqual([]);
+    expect(hits(lib, `<img src="/brand/mark.svg" alt="Acme" />`)).toEqual([]);
+    expect(hits(lib, `<img src={pixel} alt="x" /> {/* enigma:allow-raw-img */}`)).toEqual([]);
+    expect(hits(lib, `<Image src={hero.url} alt="The team" />`)).toEqual([]);
+});
