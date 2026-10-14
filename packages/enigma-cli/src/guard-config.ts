@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { enigmaHome } from "./util";
 import { readFileSync, writeFileSync } from "node:fs";
 
-export type GuardKey = "secrets" | "envFiles" | "depDirs" | "generatedDirs" | "junkFiles" | "largeFiles";
+export type GuardKey = "secrets" | "envFiles" | "depDirs" | "generatedDirs" | "junkFiles" | "largeFiles" | "homePaths";
 
 export interface GuardProtection { value: GuardKey; label: string; hint: string; }
 
@@ -25,6 +25,7 @@ export const GUARD_PROTECTIONS: GuardProtection[] = [
     { value: "generatedDirs", label: "Warn on generated dirs", hint: "dist, build, .next, coverage" },
     { value: "junkFiles", label: "Warn on log / OS junk files", hint: ".log, .DS_Store, Thumbs.db" },
     { value: "largeFiles", label: "Warn on files over 5 MB", hint: "oversized blobs" },
+    { value: "homePaths", label: "Block paths with your OS account name", hint: "C:\\Users\\<you>, /home/<you>" },
 ];
 
 /** User-supplied lists that refine the guard beyond the built-in protections. */
@@ -52,7 +53,7 @@ export interface GuardConfig extends Record<GuardKey, boolean>, GuardLists {}
 
 /** Defaults: every protection on (matches the standalone guard's missing-key behavior); lists empty. */
 function defaults(): GuardConfig {
-    return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true, blockPaths: [], allowPaths: [], secretPatterns: [] };
+    return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true, homePaths: true, blockPaths: [], allowPaths: [], secretPatterns: [] };
 }
 
 /**

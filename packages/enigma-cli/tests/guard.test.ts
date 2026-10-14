@@ -5,7 +5,7 @@
  * git-independent part: glob translation, secret matching/redaction, and the
  * block/allow/secret-pattern lists written to ~/.enigma-guard.json.
  */
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { execFileSync } from "node:child_process";
@@ -19,6 +19,7 @@ import {
     globToRegExp,
     parseGuardArgv,
     redactSecrets,
+    homePathMatchers,
     buildSecretMatchers
 } from "../src/guard";
 
@@ -104,6 +105,39 @@ function inRepo<T>(dir: string, fn: () => T): T {
     process.chdir(dir);
     try { return fn(); } finally { process.chdir(prev); }
 }
+
+// Built at runtime, never written literally, for the same reason as the keys above.
+const WIN_HOME = ["C:", "Users", "jdoe", "projects", "app"].join("\\");
+
+test("homePathMatchers finds the account's home path and nothing that merely ends in users/<name>", () => {
+    const hits = (line: string) => homePathMatchers("jdoe").some((re) => re.test(line));
+    expect(hits(`const root = "${WIN_HOME}";`)).toBe(true);
+    expect(hits(`cd ${WIN_HOME.toLowerCase()}`)).toBe(true); // Windows paths ignore case
+    expect(hits(["", "home", "jdoe", ".config"].join("/"))).toBe(true);
+    expect(hits(["", "Users", "jdoe"].join("/"))).toBe(true);
+    expect(hits("GET api/users/jdoe")).toBe(false); // a route, not a home directory
+    expect(hits(["", "home", "jdoe2"].join("/"))).toBe(false); // another account
+    expect(hits(["", "Home", "jdoe"].join("/"))).toBe(false); // POSIX paths are exact
+    expect(homePathMatchers("a")).toEqual([]); // too short to mean anything
+});
+
+test("a committed path with this machine's account name blocks the commit", () => {
+    const account = userInfo().username;
+    if (account.length < 2) return;
+    const dir = mkdtempSync(join(tmpdir(), "enigma-guard-home-"));
+    const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dir, windowsHide: true, stdio: "ignore" }); };
+    try {
+        git("init", "-q", ".");
+        writeFileSync(join(dir, "config.js"), `export const out = "${["", "home", account, "out"].join("/")}";\n`);
+        writeFileSync(join(dir, "ok.js"), "export const out = \"~/out\";\n");
+        git("add", "-A");
+        const result = inRepo(dir, () => runGuard());
+        expect(result.ok).toBe(false);
+        expect(result.findings).toEqual([{ severity: "block", rule: "home-path", file: "config.js", line: 1, detail: "path with your OS account name - make it relative or use ~" }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
 
 test("parseRange normalizes both ends and rejects a value that is not a ref expression", () => {
     expect(parseRange("main..HEAD")).toEqual({ range: "main..HEAD", head: "HEAD" });
