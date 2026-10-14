@@ -31,7 +31,7 @@ description: Application and AI-agent security - secrets management, authenticat
 - Never echo an absolute path from the developer machine into anything the product emits - logs, user-facing error messages, generated docs, or committed snapshots and fixtures. Log a project-relative path.
 - Publish a real value only when the user explicitly asks for that value to be published. If one is genuinely required and you were not given it, ask.
 - Real people's data is the same class, and the one leaked most: the names, handles, emails, servers and communities of the user and of their users, met in chat, a log, a database row, a screenshot or a crash report. None of it goes into a tracked file. Reproduce the shape with invented values; credit a third party only where a license requires it.
-- The user's own list of such terms lives in `~/.enigma-guard.json` (`enigma config private-terms add <term>`), never in the repository. The commit guard and the `sec-private-term` guardrail block any line carrying one. When the user names a real person or handle as private, add it there.
+- The user's own list of such terms lives in `~/.enigma-guard.json` (`enigma config guard-private-terms add <term>`), never in the repository. The commit guard and the `sec-private-term` guardrail block any line carrying one. When the user names a real person or handle as private, add it there.
 
 ---
 
