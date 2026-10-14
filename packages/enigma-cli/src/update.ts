@@ -8,13 +8,13 @@
  */
 
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
 import * as p from "@clack/prompts";
-import { isNewer, readJson, isOffline, enigmaHome } from "./util";
 import { readConfig } from "./config";
 import { refreshSkillsFromGitHub } from "./skills";
+import { basename, dirname, join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { isNewer, readJson, isOffline, enigmaHome } from "./util";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
 const UPDATE_COMMAND = "npm i -g enigma-cli@latest";
@@ -230,6 +230,67 @@ export function runUpdate(): boolean {
         console.log(`Could not run the update. Run '${UPDATE_COMMAND}' manually.`);
     }
     return false;
+}
+
+/** An enigma-cli installed globally under one Node version, with the node and npm that own it. */
+export interface RuntimeInstall {
+    /** The npm global prefix of that Node version. */
+    prefix: string;
+    node: string;
+    npmCli: string;
+    version: string;
+}
+
+/**
+ * Every enigma-cli installed globally under a Node version manager, one per Node version.
+ *
+ * WHY: nvm keeps a separate global prefix per Node version, so `npm i -g` updates only the
+ * version active in this shell. A terminal or IDE that puts another version first on PATH then
+ * runs that version's old enigma - and an old enigma is not inert: every hook it runs (sync,
+ * guard, relay) rewrites the agents' config with its own older defaults. Measured 2026-10: a
+ * leftover 1.56.1 under nvm v20 kept dropping `--headless` from the browser MCP entry (so agents
+ * opened visible Chrome windows) and answered `enigma handoff` with "Unknown command".
+ *
+ * Covers nvm-windows (NVM_HOME, `<home>/v<x>/node_modules`) and nvm (NVM_DIR or ~/.nvm,
+ * `<dir>/versions/node/v<x>/lib/node_modules`). An install whose node or npm is missing is skipped.
+ */
+export function runtimeInstalls(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): RuntimeInstall[] {
+    const layouts = platform === "win32"
+        ? [{ root: env.NVM_HOME ?? "", modules: "node_modules", node: "node.exe" }]
+        : [{ root: join(env.NVM_DIR || join(env.HOME ?? "", ".nvm"), "versions", "node"), modules: join("lib", "node_modules"), node: join("bin", "node") }];
+    const found: RuntimeInstall[] = [];
+    for (const layout of layouts) {
+        if (!layout.root) continue;
+        let versions: string[];
+        try { versions = readdirSync(layout.root).filter((name) => /^v\d+\.\d+\.\d+$/.test(name)); } catch { continue; }
+        for (const name of versions) {
+            const prefix = join(layout.root, name);
+            const version = readJson<{ version?: unknown; }>(join(prefix, layout.modules, "enigma-cli", "package.json"))?.version;
+            const node = join(prefix, layout.node);
+            const npmCli = join(prefix, layout.modules, "npm", "bin", "npm-cli.js");
+            if (typeof version !== "string" || !existsSync(node) || !existsSync(npmCli)) continue;
+            found.push({ prefix, node, npmCli, version });
+        }
+    }
+    return found;
+}
+
+/**
+ * Bring every other Node version's enigma-cli to `version`, so no runtime on this machine keeps
+ * running an older enigma than the one just installed. Each install is updated by its own node
+ * and npm (argument array, no shell), pinned to the exact version rather than `@latest` so all
+ * runtimes land on the same build. Returns one line per install it touched.
+ */
+export function updateRuntimeInstalls(version: string, installs: RuntimeInstall[] = runtimeInstalls()): string[] {
+    const lines: string[] = [];
+    for (const install of installs) {
+        if (!isNewer(version, install.version)) continue;
+        const result = spawnSync(install.node, [install.npmCli, "i", "-g", `enigma-cli@${version}`, "--prefix", install.prefix], { stdio: "ignore", windowsHide: true });
+        lines.push(result.status === 0
+            ? `${install.prefix}: enigma-cli ${install.version} -> ${version}`
+            : `${install.prefix}: still enigma-cli ${install.version}; update it with that Node version active: ${UPDATE_COMMAND}`);
+    }
+    return lines;
 }
 
 /**
