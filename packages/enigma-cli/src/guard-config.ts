@@ -35,6 +35,11 @@ export interface GuardLists {
     allowPaths: string[];
     /** Extra regular-expression sources treated as secrets (JS regex source, no slashes). */
     secretPatterns: string[];
+    /**
+     * Real names, handles and server names that must never reach a tracked file (tests use
+     * anonymous data). Global only: the per-repo layer is committed and would publish them.
+     */
+    privateTerms: string[];
 }
 
 export type GuardListKey = keyof GuardLists;
@@ -46,13 +51,14 @@ export const GUARD_LISTS: GuardListMeta[] = [
     { field: "blockPaths", value: "block-paths", label: "Extra blocked paths", hint: "additional glob patterns to block from commits (e.g. secrets/*.json, *.local.env)", placeholder: "e.g. secrets/*.json" },
     { field: "allowPaths", value: "allow-paths", label: "Excluded paths (allowlist)", hint: "glob patterns the guard never flags, even if risky (e.g. tests/fixtures/**)", placeholder: "e.g. tests/fixtures/**" },
     { field: "secretPatterns", value: "secret-patterns", label: "Custom secret patterns", hint: "extra regex sources treated as secrets (e.g. mycorp_[a-z0-9]{32})", placeholder: "e.g. mycorp_[a-z0-9]{32}" },
+    { field: "privateTerms", value: "private-terms", label: "Private terms", hint: "real names, handles and server names blocked from every commit and edit; tests use anonymous data", placeholder: "e.g. a player's handle" },
 ];
 
 export interface GuardConfig extends Record<GuardKey, boolean>, GuardLists {}
 
 /** Defaults: every protection on (matches the standalone guard's missing-key behavior); lists empty. */
 function defaults(): GuardConfig {
-    return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true, blockPaths: [], allowPaths: [], secretPatterns: [] };
+    return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true, blockPaths: [], allowPaths: [], secretPatterns: [], privateTerms: [] };
 }
 
 /**

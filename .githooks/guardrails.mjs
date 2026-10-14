@@ -1,11 +1,46 @@
 #!/usr/bin/env node
 
 // src/guardrails.ts
-import { homedir } from "os";
+import { homedir as homedir2 } from "os";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { dirname, join, resolve, sep } from "path";
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "fs";
+
+// src/private-terms.ts
+import { join } from "path";
+import { homedir } from "os";
+import { readFileSync } from "fs";
+function readPrivateTerms() {
+  try {
+    const raw = JSON.parse(readFileSync(join(process.env.ENIGMA_CONFIG_HOME || homedir(), ".enigma-guard.json"), "utf8"));
+    if (!Array.isArray(raw.privateTerms)) return [];
+    return raw.privateTerms.filter((t) => typeof t === "string" && t.trim().length >= 3);
+  } catch {
+    return [];
+  }
+}
+function privateTermMatcher(terms) {
+  const anyCase = (ch) => {
+    const lo = ch.toLowerCase(), up = ch.toUpperCase();
+    return lo === up ? ch.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") : `[${lo}${up}]`;
+  };
+  const parts = terms.map((t) => t.trim().split(/[\s_-]+/).filter(Boolean).map((w) => [...w].map(anyCase).join("")).join("[\\s_-]*")).filter(Boolean);
+  if (!parts.length) return null;
+  return new RegExp(`(?:(?<![\\p{L}\\p{N}])|(?<=\\p{Ll})(?=\\p{Lu}))(?:${parts.join("|")})(?!\\p{Ll})`, "u");
+}
+function hasPrivateTerm(line, re) {
+  return re.test(line.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " "));
+}
+function privateTermLines(text, re) {
+  const out = [];
+  text.split("\n").forEach((line, i) => {
+    if (hasPrivateTerm(line, re)) out.push(i + 1);
+  });
+  return out;
+}
+
+// src/guardrails.ts
+import { dirname, join as join2, resolve, sep } from "path";
+import { appendFileSync, mkdirSync, readFileSync as readFileSync2, readdirSync, writeFileSync, statSync, existsSync } from "fs";
 var COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
 var SKELETON_GUARD_SRC = "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)";
 var SKELETON_SIGNAL_SRC = "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder";
@@ -2249,6 +2284,35 @@ var BUILTIN_RULES = [
     severity: "block",
     skill: "security-policy"
   },
+  {
+    id: "sec-private-term",
+    label: "Real people's data stays out of the repository",
+    files: ["**"],
+    excludeFiles: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/vendor/**",
+      "**/.next/**",
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      "vendor/**",
+      "*.lock",
+      "*.lockb",
+      "package-lock.json",
+      "*.min.js",
+      "*.map"
+    ],
+    scope: "file",
+    // DIFF stage like sec-operator-env-leak: it fires on the line being added, the moment
+    // before the value reaches the history for good, and never on an old file it did not write.
+    stage: "diff",
+    fileCheck: "sec-private-term",
+    message: "This line carries one of your private terms - the real name, handle, server or community name of you or of the people you serve (the list in ~/.enigma-guard.json, `enigma config private-terms`). Real data never goes into a tracked file, and tests, fixtures, examples and docs use ANONYMOUS data: invent the values (`Player One`, `alice@example.test`, `Test Server`) and, when a real log or payload shape matters, reproduce the shape with invented values instead of pasting the capture. Being shown a real value to work with is permission to use it, never to publish it (security-policy, testing-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
   // The injection class. Every one but sec-unsafe-deserialization is DIFF stage for the reason the
   // stage exists: each has a measured backlog in real repositories (the counts are in guardrails.md),
   // so at the edit stage it would block unrelated edits to a file that already carried the shape.
@@ -2718,7 +2782,7 @@ var PROJECT_CHECKS = {
   "ts-relational-no-prisma": (root) => {
     const pkg = readPkgDeps(root);
     if (!pkg) return false;
-    const hasTs = "typescript" in pkg || existsSync(join(root, "tsconfig.json"));
+    const hasTs = "typescript" in pkg || existsSync(join2(root, "tsconfig.json"));
     if (!hasTs) return false;
     const relational = ["typeorm", "sequelize", "knex", "drizzle-orm", "pg", "mysql", "mysql2", "better-sqlite3", "@mikro-orm/core"];
     if (!relational.some((d) => d in pkg)) return false;
@@ -2755,6 +2819,7 @@ var FILE_CHECKS = {
   "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
   "ts-alias-paths": (content, file) => missingPathAlias(content, file),
   "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
+  "sec-private-term": (content) => privateTermLeak(content),
   "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content),
   "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
   "fe-selection-hand-rolled": (content) => handRolledSelection(content),
@@ -2826,7 +2891,7 @@ function applyFixes(file, findings, stage = "edit") {
   if (!fixable.length) return { fixed: [], remaining: findings };
   let content;
   try {
-    content = readFileSync(file, "utf8");
+    content = readFileSync2(file, "utf8");
   } catch {
     return { fixed: [], remaining: findings };
   }
@@ -3245,7 +3310,7 @@ function projectImageComponent(root) {
   if (cached !== void 0) return cached;
   let deps = {};
   try {
-    deps = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).dependencies ?? {};
+    deps = JSON.parse(readFileSync2(join2(root, "package.json"), "utf8")).dependencies ?? {};
   } catch {
   }
   let found = null;
@@ -3257,7 +3322,7 @@ function projectImageComponent(root) {
     for (const dir of LOCAL_IMAGE_COMPONENTS) {
       let names = [];
       try {
-        names = readdirSync(join(root, dir));
+        names = readdirSync(join2(root, dir));
       } catch {
         continue;
       }
@@ -3401,11 +3466,11 @@ function nearestTsconfig(file) {
       return cached;
     }
     seen.push(dir);
-    const candidate = join(dir, "tsconfig.json");
+    const candidate = join2(dir, "tsconfig.json");
     if (existsSync(candidate)) {
       let found = null;
       try {
-        found = { dir, text: readFileSync(candidate, "utf8") };
+        found = { dir, text: readFileSync2(candidate, "utf8") };
       } catch {
         found = null;
       }
@@ -3468,7 +3533,7 @@ function deepRelativeImports(content, file) {
 function missingPathAlias(content, file) {
   if (/["'](?:paths|extends)["']\s*:/.test(content)) return [];
   const dir = dirname(resolve(file));
-  const src = ["src", "app", "lib"].find((d) => existsSync(join(dir, d)));
+  const src = ["src", "app", "lib"].find((d) => existsSync(join2(dir, d)));
   if (!src) return [];
   const anchor = content.split("\n").findIndex((l) => /["']compilerOptions["']/.test(l));
   return [{ line: anchor === -1 ? 1 : anchor + 1, detail: `no alias for ./${src}` }];
@@ -3477,7 +3542,7 @@ var NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*
 var GENERIC_ACCOUNTS = /* @__PURE__ */ new Set(["runner", "root", "ubuntu", "debian", "vagrant", "node", "user", "users", "developer", "ec2-user", "codespace", "gitpod", "jenkins", "circleci", "travis", "docker", "app"]);
 function operatorHome() {
   const env = process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME;
-  return env?.trim() || homedir();
+  return env?.trim() || homedir2();
 }
 function operatorHomePathLeak(content) {
   const re = operatorHomeRegex("i");
@@ -3488,6 +3553,15 @@ function operatorHomePathLeak(content) {
     if (re.test(lines[i])) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
   }
   return out;
+}
+var privateTermCache;
+function privateTermLeak(content) {
+  const terms = readPrivateTerms();
+  const key = terms.join("\n");
+  if (privateTermCache?.key !== key) privateTermCache = { key, re: privateTermMatcher(terms) };
+  const re = privateTermCache.re;
+  if (re === null) return [];
+  return privateTermLines(content, re).map((line) => ({ line, detail: "a private term from your list" }));
 }
 function redactOperatorHome(text) {
   const re = operatorHomeRegex("gi");
@@ -3892,7 +3966,7 @@ function wideNamedImports(content, max) {
 }
 function readPkgDeps(root) {
   try {
-    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    const pkg = JSON.parse(readFileSync2(join2(root, "package.json"), "utf8"));
     return { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies };
   } catch {
     return null;
@@ -3914,7 +3988,7 @@ function globRe(glob, ignoreCase = false) {
   return re;
 }
 function guardrailsConfigPath() {
-  return process.env.ENIGMA_GUARDRAILS_CONFIG || join(homedir(), ".enigma-guardrails.json");
+  return process.env.ENIGMA_GUARDRAILS_CONFIG || join2(homedir2(), ".enigma-guardrails.json");
 }
 function isValidRule(r) {
   const x = r;
@@ -3928,7 +4002,7 @@ function loadRules() {
   let disabled = [];
   let custom = [];
   try {
-    const raw = JSON.parse(readFileSync(guardrailsConfigPath(), "utf8"));
+    const raw = JSON.parse(readFileSync2(guardrailsConfigPath(), "utf8"));
     if (Array.isArray(raw.disabled)) disabled = raw.disabled.filter((s) => typeof s === "string");
     if (Array.isArray(raw.rules)) custom = raw.rules.filter(isValidRule);
   } catch {
@@ -3939,10 +4013,10 @@ function loadRules() {
 function findProjectRoot(file) {
   let dir = dirname(resolve(file));
   for (let i = 0; i < 40; i++) {
-    const isProj = existsSync(join(dir, "package.json")) || existsSync(join(dir, ".enigma.json"));
+    const isProj = existsSync(join2(dir, "package.json")) || existsSync(join2(dir, ".enigma.json"));
     let hasGit = false;
     try {
-      hasGit = statSync(join(dir, ".git")).isDirectory();
+      hasGit = statSync(join2(dir, ".git")).isDirectory();
     } catch {
     }
     if (isProj || hasGit) return dir;
@@ -4008,7 +4082,7 @@ function formatFindings(findings) {
 function checkPath(file, stage = "edit") {
   let content;
   try {
-    content = readFileSync(file, "utf8");
+    content = readFileSync2(file, "utf8");
   } catch {
     return [];
   }
@@ -4047,7 +4121,7 @@ function repairableDiffFindings(file) {
   if (!changed) return [];
   let content;
   try {
-    content = readFileSync(file, "utf8");
+    content = readFileSync2(file, "utf8");
   } catch {
     return [];
   }
@@ -4061,7 +4135,7 @@ function repairableDiffFindings(file) {
 function runGuardrailsHook(payload) {
   let file;
   try {
-    file = JSON.parse(payload ?? readFileSync(0, "utf8"))?.tool_input?.file_path;
+    file = JSON.parse(payload ?? readFileSync2(0, "utf8"))?.tool_input?.file_path;
   } catch {
   }
   if (!file || typeof file !== "string") return 0;
@@ -4448,16 +4522,16 @@ function pathJoinedFromInput(content, file) {
   if (!python && /^\s*["']use client["']/m.test(content)) return [];
   if (PATH_CONTAINED.test(content)) return [];
   const input = python ? REQUEST_INPUT_PY : REQUEST_INPUT_JS;
-  const join2 = python ? PATH_JOIN_PY : PATH_JOIN_JS;
+  const join3 = python ? PATH_JOIN_PY : PATH_JOIN_JS;
   const lines = content.split("\n");
   const names = namesFromInput(lines, input);
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i];
     if (auditSkipLine(text)) continue;
-    join2.lastIndex = 0;
+    join3.lastIndex = 0;
     let m;
-    while (m = join2.exec(text)) {
+    while (m = join3.exec(text)) {
       const parts = (m[1] ?? m[2] ?? "").split(",").slice(1).map((s) => s.trim());
       if (parts.some((p) => input.test(p) || names.has(p) || names.has(p.replace(/^`\$\{(\w+)\}.*`$/, "$1")))) {
         out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
@@ -4824,7 +4898,7 @@ var LEDGER_MAX_BYTES = 512 * 1024;
 var LEDGER_KEEP = 2e3;
 var LEDGER_KEEP_REPLY = 200;
 function ledgerPath() {
-  return process.env.ENIGMA_GUARDRAILS_LOG || join(homedir(), ".enigma", "guardrail-log.jsonl");
+  return process.env.ENIGMA_GUARDRAILS_LOG || join2(homedir2(), ".enigma", "guardrail-log.jsonl");
 }
 function ledgerKey(rule, outcome, file, line) {
   return JSON.stringify([rule, outcome, file, line ?? null]);
@@ -4860,7 +4934,7 @@ function recordFindings(findings, outcome, stage = "edit") {
     } catch {
     }
     if (size > LEDGER_MAX_BYTES) {
-      const kept = rotateLedger(readFileSync(path, "utf8"));
+      const kept = rotateLedger(readFileSync2(path, "utf8"));
       writeFileSync(path, kept.length ? `${kept.join("\n")}
 ` : "");
     }
@@ -4895,7 +4969,7 @@ function rotateLedger(text) {
 function eachLedgerEntry(sinceDays, visit) {
   let text;
   try {
-    text = readFileSync(ledgerPath(), "utf8");
+    text = readFileSync2(ledgerPath(), "utf8");
   } catch {
     return;
   }
@@ -4965,7 +5039,7 @@ function runGuardrailsScan(all) {
   for (const file of files) {
     let content;
     try {
-      content = readFileSync(file, "utf8");
+      content = readFileSync2(file, "utf8");
     } catch {
       continue;
     }
@@ -5041,6 +5115,7 @@ export {
   pageAwaitWithoutBoundary,
   pathJoinedFromInput,
   poweredByBuzzword,
+  privateTermLeak,
   purpleGradient,
   queryInLoop,
   radixContentWithoutPortal,

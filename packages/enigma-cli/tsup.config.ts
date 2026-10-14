@@ -5,7 +5,8 @@ import { defineConfig } from "tsup";
 // under a Node that is not the binary.
 //
 // The standalone engines enigma copies into a repo's .githooks and runs under that
-// repo's Node (these MUST stay Node-builtins-only, no cross-module imports):
+// repo's Node (these MUST stay Node-builtins-only; the one exception is a builtins-only,
+// side-effect-free leaf such as src/private-terms.ts, which splitting:false inlines):
 //   src/guard.ts      -> dist/guard.js       (commit secret/junk guard)
 //   src/guardrails.ts -> dist/guardrails.js  (convention-rule commit/CI backstop)
 //   src/trim.ts       -> dist/trim.js        (end-of-file blank-line trimmer)
