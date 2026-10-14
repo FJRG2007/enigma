@@ -152,7 +152,7 @@ test("context and MCP output are wrapped in a readonly block that stored text ca
     expect(ctx).toContain("&lt;/enigma-recall>");
 
     setEnigmaValue("recall", true, "global");
-    const out = mcp("enigma_recall", { query: "deploy notes" });
+    const out = mcp("enigma_recall", { query: "deploy notes", project: "p" });
     expect(out.isError).toBe(false);
     expect(out.text.startsWith(recall.RECALL_BLOCK_START)).toBe(true);
     expect(out.text.split(recall.RECALL_BLOCK_END).length).toBe(2);
@@ -164,12 +164,12 @@ test("context and MCP output are wrapped in a readonly block that stored text ca
 test("enigma_recall accepts queries[] and validates it", () => {
     setEnigmaValue("recall", true, "global");
     store.storeObservation(obs({ title: "Pin the bun version in CI" }), openDb());
-    const ok = mcp("enigma_recall", { query: "zzzz", queries: ["bun version"] });
+    const ok = mcp("enigma_recall", { query: "zzzz", queries: ["bun version"], project: "p" });
     expect((recall.unwrapRecallJson(ok.text) as unknown[]).length).toBe(1);
     expect(mcp("enigma_recall", { query: "bun", queries: "bun" }).isError).toBe(true);
     expect(mcp("enigma_recall", { queries: ["a", "b", "c", "d", "e", "f"] }).isError).toBe(true);
     // Backward compatible: query alone still works.
-    expect((recall.unwrapRecallJson(mcp("enigma_recall", { query: "bun version" }).text) as unknown[]).length).toBe(1);
+    expect((recall.unwrapRecallJson(mcp("enigma_recall", { query: "bun version", project: "p" }).text) as unknown[]).length).toBe(1);
 });
 
 test("enigma_recall_remember stores a redacted fact in the current project, reinforces and supersedes", () => {
