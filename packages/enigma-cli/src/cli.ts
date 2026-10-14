@@ -124,7 +124,7 @@ interface CliOptions extends skillsMod.InstallOptions {
     port: number | null;
     /** `api`: optional bearer key required by the local API server. */
     apiKey: string | null;
-    /** `api`: default account / profile / pack context every request runs under. */
+    /** `api`: default account / profile / agent context every request runs under. */
     apiAccount: string | null;
     apiProfile: string | null;
     apiPack: string | null;
@@ -138,12 +138,12 @@ interface CliOptions extends skillsMod.InstallOptions {
     json: boolean;
 }
 
-/** A command that launches an agent: a tool name (`claude`, `codex`, ...) or a pack id. */
+/** A command that launches an agent: a tool name (`claude`, `codex`, ...) or an agent id. */
 function isLaunchCommand(command: string): boolean {
     return acct.isToolName(command) || !!packs.getPack(command);
 }
 
-/** The only flags a launch line keeps for enigma: its own help, and a pack's target tool. */
+/** The only flags a launch line keeps for enigma: its own help, and an agent's target tool. */
 function launchOwnsFlag(command: string, flag: string): boolean {
     if (flag === "-h" || flag === "--help") return true;
     return !!packs.getPack(command) && (flag === "-t" || flag === "--tool");
@@ -197,7 +197,7 @@ function parseArgs(argv: string[]): CliOptions {
         }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
         if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
-        // A launch line (a tool name or a pack id) owns no flags of its own beyond the two
+        // A launch line (a tool name or an agent id) owns no flags of its own beyond the two
         // above, so from its FIRST flag on the rest of the line belongs to the agent and is
         // forwarded verbatim. `--` is the documented spelling and it is not enough: Windows
         // PowerShell drops a bare `--` before the process is even spawned, so
@@ -400,9 +400,9 @@ Commands:
                        (Claude Code, and Codex/OpenCode/Kimi Code where installed) - all of their
                        tools/skills/MCP/sessions via the local CLI. One server, many backends:
                        pick per request via the model field (claude-sonnet-5 | codex | opencode | kimi).
-                       Run requests under an account, profile or pack (e.g. Helio): --account,
-                       --profile, --pack set the default; a request body can override with
-                       account/profile/pack. --rotation <off|round-robin|least-used|fill-first|
+                       Run requests under an account, profile or agent (e.g. Helio): --account,
+                       --profile, --pack <agent> set the default; a request body can override
+                       with account/profile/agent. --rotation <off|round-robin|least-used|fill-first|
                        random> spreads requests across accounts and fails over on a usage
                        limit (config api-rotation, api-account-pool). Endpoints under /v1 (chat/completions, messages,
                        models, sessions). --port <n> (else config apiPort, default 8000),
@@ -467,19 +467,22 @@ Commands:
                          --countries es,fr,us|all --flags-out <dir> (default public/flags)
                        Installs with the project's own package manager (npm, pnpm, yarn, bun),
                        and follows a shadcn components.json where the project has one.
-  pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
-                       bounty). Each runs in its own agent context, so its skills/commands
-                       never load into your normal agent:
-                         list                 List packs and their install state
-                         install <id>         Fetch and add a pack
-                         remove <id>          Delete a pack and its context
-                         update <id>          Refresh a pack to the latest version
-                         setup <id>           Register the pack's MCP servers (needs Python)
-                         use <id> <acct|->    Pin which account seeds the pack ('-' clears)
-                         run <id> [account]   Launch the pack's isolated agent
-  <pack> [account]     Launch a pack directly (e.g. 'enigma helio', 'enigma helio work') in its
+  agent <subcommand>   Optional, isolated agents (Helio for bug bounty, Orion for QA, REA for
+                       reverse engineering). Each runs in its own agent context, so its
+                       skills/commands/MCP servers never load into your normal agent:
+                         list                 List agents and their install state
+                         install <id>         Fetch and add an agent
+                         remove <id>          Delete an agent and its context
+                         update <id>          Refresh an agent to the latest version
+                         setup <id>           Register the agent's MCP servers; for REA, run its
+                                              provider setup (Ghidra/Hopper/IDA) and health check
+                         cli <id> -- <args>   Run the agent's engine CLI (e.g. REA's 'rea')
+                         use <id> <acct|->    Pin which account seeds the agent ('-' clears)
+                         run <id> [account]   Launch the isolated agent
+                       'enigma pack' still works as a deprecated alias.
+  <agent> [account]    Launch an agent directly (e.g. 'enigma rea', 'enigma helio work') in its
                        isolated context, seeded with the chosen/pinned/active login (--tool to
-                       target codex/opencode); other flags go straight to the tool
+                       target codex/opencode/kimi); other flags go straight to the tool
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Render the agent status bar (badge, model, context, cost, live gate progress)
@@ -725,7 +728,8 @@ request with the model field (claude-sonnet-5 | codex | opencode).
       --port <n>       Default: config apiPort, else 8000
       --api-key <k>    Required bearer key (or ENIGMA_API_KEY)
       --tool <t>       Default backend
-      --account|--profile|--pack <name>   Context every request runs under (turns rotation off for the run)
+      --account|--profile|--pack <name>   Context every request runs under: an account, a profile, or an
+                                          agent (e.g. helio); turns rotation off for the run
       --rotation <s>   off | round-robin | least-used | fill-first | random. Default: config api-rotation.
                        Requests that name no account rotate across api-account-pool (empty = all
                        accounts) and move to the next account when one hits a usage limit.
@@ -773,11 +777,16 @@ Shared flags: --in <path>  --limit N  --project <name>  --json  --no-refresh`,
 Detect the project's tech stack and install the matching community stack skills.
 Separate from the policy skills, which 'enigma install' owns.`,
 
-    pack: `usage: enigma pack <subcommand>
-Optional, isolated harness bundles. Each runs in its own agent context, so its skills
-and commands never load into your normal agent.
+    agent: `usage: enigma agent <subcommand>
+Optional, isolated agents. Each runs in its own agent context, so its skills, commands
+and MCP servers never load into your normal agent.
 
-  list | install <id> | remove <id> | update <id> | setup <id> | use <id> <acct|-> | run <id> [account]`,
+  list | install <id> | remove <id> | update <id> | setup <id> | cli <id> -- <args> | use <id> <acct|-> | run <id> [account]`,
+
+    pack: `usage: enigma pack <subcommand>   (deprecated: use 'enigma agent')
+Same subcommands as 'enigma agent':
+
+  list | install <id> | remove <id> | update <id> | setup <id> | cli <id> -- <args> | use <id> <acct|-> | run <id> [account]`,
 
     design: DESIGN_HELP,
     handoff: HANDOFF_HELP,
@@ -1076,12 +1085,14 @@ async function runUpdateCli(version: string, ref?: string | null): Promise<void>
         refreshLinterPkg();
         ls.stop("Linter updated to latest.");
     }
-    // Marketplace packs the user has actually installed (never fetch one they don't use).
+    // Isolated agents the user has actually installed (never fetch one they don't use), and the
+    // engine each pins - a new bundle can pin a new engine version.
     for (const pack of packs.listPacks().filter((pk) => packs.isPackInstalled(pk.id))) {
         const ps = p.spinner();
-        ps.start(`Updating the ${pack.label} pack (@enigmax/${pack.id})...`);
+        ps.start(`Updating the ${pack.label} agent (@enigmax/${pack.id})...`);
         const changed = packs.refreshPack(pack.id);
-        ps.stop(changed ? `${pack.label} pack updated to ${packs.installedPackVersion(pack.id)}.` : `${pack.label} pack is up to date.`);
+        const engineError = packs.ensurePackEngine(pack.id);
+        ps.stop(`${changed ? `${pack.label} agent updated to ${packs.installedPackVersion(pack.id)}.` : `${pack.label} agent is up to date.`}${engineError ? ` Its engine could not be installed: ${engineError}` : ""}`);
     }
     // Self-update: ALWAYS reinstall enigma-cli@latest on an explicit `enigma update`, rather
     // than gating on a cached "is newer" check that a stale registry cache could get wrong.
@@ -1448,16 +1459,17 @@ async function connectSsh(ssh: typeof import("./ssh"), alias: string, opts: impo
 }
 
 /**
- * `enigma pack <list|install|remove|update|setup|use|run> [id] [account]`: the marketplace of
- * optional, isolated harness packs. Installing fetches the pack's asset-only npm bundle; launching
- * it (`enigma <pack>` or `enigma pack run <id>`) spawns an agent in a dedicated context that holds
- * only the pack's skills/commands. `use <id> <account|->` pins which account seeds the context.
+ * `enigma agent <list|install|remove|update|setup|cli|use|run> [id] [account]`: the marketplace
+ * of optional, isolated agents (formerly "packs"; `enigma pack` stays as a deprecated alias).
+ * Installing fetches the agent's asset-only npm bundle; launching it (`enigma <id>` or `enigma
+ * agent run <id>`) spawns an agent in a dedicated context that holds only that agent's
+ * skills/commands/MCP servers. `use <id> <account|->` pins which account seeds the context.
  */
-async function runPackCli(args: string[], passthrough: string[], toolOpt?: string): Promise<number> {
+async function runAgentCli(args: string[], passthrough: string[], toolOpt?: string): Promise<number> {
     const [sub, id, value] = args;
     const tool = toolOpt && acct.isToolName(toolOpt) ? toolOpt : acct.DEFAULT_TOOL;
     if (!sub || sub === "list") {
-        console.log("Packs (optional isolated harnesses):\n");
+        console.log("Agents (optional, isolated):\n");
         for (const p of packs.listPacks()) {
             const state = p.installed ? (p.version ? `installed ${p.version}` : "installed") : "not installed";
             const acct = p.defaultAccount ? `account ${p.defaultAccount}` : `account ${p.resolvedAccount} (follows active)`;
@@ -1466,17 +1478,19 @@ async function runPackCli(args: string[], passthrough: string[], toolOpt?: strin
             console.log(`             ${p.tags.join(", ")}  -  ${p.homepage}`);
             console.log(`             seeds with: ${acct}`);
         }
-        console.log("\nUse: enigma pack <install|remove|update|setup|use|run> <id>   (or just `enigma <id>` to launch)");
+        console.log("\nUse: enigma agent <install|remove|update|setup|cli|use|run> <id>   (or just `enigma <id>` to launch)");
         return 0;
     }
-    if (!id || !packs.getPack(id)) { console.error(`Unknown pack '${id ?? ""}'. Known: ${packs.PACKS.map((p) => p.id).join(", ")}.`); return 1; }
+    if (!id || !packs.getPack(id)) { console.error(`Unknown agent '${id ?? ""}'. Known: ${packs.PACKS.map((p) => p.id).join(", ")}.`); return 1; }
     const pack = packs.getPack(id)!;
+    const onEngineInstall = (spec: { package: string; version: string; }) => process.stderr.write(`Installing the ${pack.label} engine (${spec.package}@${spec.version})...\n`);
     switch (sub) {
         case "install": {
-            process.stdout.write(`Fetching the ${pack.label} pack (${pack.pkg})...\n`);
-            const { ensurePackInstalled } = await import("./packs");
-            if (!ensurePackInstalled(id)) { console.error("Could not fetch the pack. Check your network and npm."); return 1; }
+            process.stdout.write(`Fetching ${pack.label} (${pack.pkg})...\n`);
+            if (!packs.ensurePackInstalled(id)) { console.error(`Could not fetch ${pack.label}. Check your network and npm.`); return 1; }
             packs.enablePack(id);
+            const engineError = packs.ensurePackEngine(id, onEngineInstall);
+            if (engineError) { console.error(`Could not install the ${pack.label} engine: ${engineError}`); return 1; }
             console.log(`${pack.label} added. Launch it with: enigma ${id}`);
             return 0;
         }
@@ -1485,28 +1499,41 @@ async function runPackCli(args: string[], passthrough: string[], toolOpt?: strin
             console.log(`${pack.label} removed (managed files and context deleted).`);
             return 0;
         case "update": {
-            if (!packs.isPackInstalled(id)) { console.error(`${pack.label} is not installed. Run: enigma pack install ${id}.`); return 1; }
+            if (!packs.isPackInstalled(id)) { console.error(`${pack.label} is not installed. Run: enigma agent install ${id}.`); return 1; }
             const changed = packs.refreshPack(id);
+            const engineError = packs.ensurePackEngine(id, onEngineInstall);
+            if (engineError) { console.error(`Could not install the ${pack.label} engine: ${engineError}`); return 1; }
             console.log(changed ? `${pack.label} updated to ${packs.installedPackVersion(id)}.` : `${pack.label} is already up to date.`);
             return 0;
         }
         case "setup": {
-            const added = packs.setupPackMcp(id, acct.DEFAULT_TOOL);
+            if (pack.engine) return setupAgentEngine(id, tool, passthrough);
+            const added = packs.setupPackMcp(id, tool);
             console.log(added.length
-                ? `Registered MCP server(s) in the ${pack.label} context: ${added.join(", ")}. They need Python 3 and the pack's tooling on PATH.`
-                : `No MCP servers were registered for ${pack.label} (none available, or not supported for ${acct.DEFAULT_TOOL}).`);
+                ? `Registered MCP server(s) in the ${pack.label} context: ${added.join(", ")}. They need Python 3 and the agent's tooling on PATH.`
+                : `No MCP servers were registered for ${pack.label} (none available for ${tool}).`);
             return 0;
         }
+        case "cli": {
+            // `enigma agent cli rea -- analyze-javascript-application <dir> --json`: the engine's
+            // own CLI, run with the same pinned install and node the agent's MCP server uses.
+            if (!pack.engine) { console.error(`${pack.label} has no engine CLI.`); return 1; }
+            const cliArgs = [...args.slice(2), ...passthrough];
+            if (!cliArgs.length) { console.error(`usage: enigma agent cli ${id} -- <${pack.engine.bin} arguments>`); return 1; }
+            if (!packs.ensurePackInstalled(id)) { console.error(`Could not fetch ${pack.label}. Check your network and npm.`); return 1; }
+            const engineError = packs.ensurePackEngine(id, onEngineInstall);
+            if (engineError) { console.error(`Could not install the ${pack.label} engine: ${engineError}`); return 1; }
+            return packs.runPackEngine(id, tool, cliArgs);
+        }
         case "use": {
-            // `enigma pack use <id> <account>` pins the seeding account; `-`/`none`/`default-follow` clears.
-            const { setPackDefaultAccount, getPackAccount } = await import("./packs");
+            // `enigma agent use <id> <account>` pins the seeding account; `-`/`none` clears.
             if (!value) {
-                const cur = getPackAccount(id, tool);
-                console.log(cur ? `${pack.label} (${tool}) seeds with account '${cur}'.` : `${pack.label} (${tool}) follows the active profile/account. Set one: enigma pack use ${id} <account>.`);
+                const cur = packs.getPackAccount(id, tool);
+                console.log(cur ? `${pack.label} (${tool}) seeds with account '${cur}'.` : `${pack.label} (${tool}) follows the active profile/account. Set one: enigma agent use ${id} <account>.`);
                 return 0;
             }
             const clear = value === "-" || value === "none";
-            try { setPackDefaultAccount(id, tool, clear ? null : value); }
+            try { packs.setPackDefaultAccount(id, tool, clear ? null : value); }
             catch (e) { console.error((e as Error).message); return 1; }
             console.log(clear ? `${pack.label} (${tool}) now follows the active profile/account.` : `${pack.label} (${tool}) will seed with account '${value}'.`);
             return 0;
@@ -1514,11 +1541,33 @@ async function runPackCli(args: string[], passthrough: string[], toolOpt?: strin
         case "run":
             return packs.launchPack(id, tool, passthrough, value);
         default:
-            console.error(`Unknown subcommand '${sub}'. Use: enigma pack <list|install|remove|update|setup|use|run> <id>.`);
+            console.error(`Unknown subcommand '${sub}'. Use: enigma agent <list|install|remove|update|setup|cli|use|run> <id>.`);
             return 1;
     }
 }
 
+/**
+ * `enigma agent setup <id>` for an agent with an engine (REA): install the pinned engine,
+ * register its MCP server in the context, then run the engine's own `setup` there - it discovers
+ * providers (Ghidra, Hopper, IDA) and writes their paths into the server entry, asking before it
+ * changes anything - and its `doctor`. The entry is re-registered afterwards so it keeps
+ * enigma's pinned launcher while carrying whatever settings setup added. Arguments after `--`
+ * go to the engine's setup (e.g. `-- --install-hopper`).
+ */
+function setupAgentEngine(id: string, tool: string, passthrough: string[]): number {
+    const pack = packs.getPack(id)!;
+    if (!pack.engine!.clients[tool]) { console.error(`${pack.label} setup does not support ${tool}.`); return 1; }
+    if (!packs.ensurePackInstalled(id)) { console.error(`Could not fetch ${pack.label}. Check your network and npm.`); return 1; }
+    packs.enablePack(id);
+    const engineError = packs.ensurePackEngine(id, (spec) => process.stdout.write(`Installing the ${pack.label} engine (${spec.package}@${spec.version})...\n`));
+    if (engineError) { console.error(`Could not install the ${pack.label} engine: ${engineError}`); return 1; }
+    if (!packs.deployPack(id, tool)) { console.error(`${pack.label} assets are missing.`); return 1; }
+    const setupCode = packs.runPackEngine(id, tool, ["setup", ...passthrough]);
+    packs.setupPackMcp(id, tool);
+    console.log(`\n${pack.label} health check:`);
+    const doctorCode = packs.runPackEngine(id, tool, ["doctor"]);
+    return setupCode || doctorCode;
+}
 /**
  * `enigma recall [status|sync|search|list|show|context|clear]`: the local session-memory
  * store built from coding-agent transcripts. `sync` reads transcripts into the store; the
@@ -2173,12 +2222,12 @@ async function runAutoskillsCli(opts: CliOptions, interactive: boolean): Promise
  * `enigma account <subcommand>` surface. Wraps the accounts data layer with
  * prompting/printing (the data layer stays UI-free). Returns a process exit code.
  */
-/** A reusable Claude login (an account dir or a pack context), for `account sessions`/`transfer`. */
+/** A reusable Claude login (an account dir or an agent context), for `account sessions`/`transfer`. */
 interface ClaudeSessionSource { id: string; label: string; dir: string; email?: string; state: SessionState; usable: boolean; }
 
 /**
  * Every Claude session that can seed another account without a re-login: each Claude account dir
- * plus every pack context holding a credentials file. Ordered healthiest-first (usable before
+ * plus every agent context holding a credentials file. Ordered healthiest-first (usable before
  * unusable, `ok` before `refreshable`) so an auto-picked transfer source is the best available.
  */
 function claudeSessionSources(): ClaudeSessionSource[] {
@@ -2188,7 +2237,7 @@ function claudeSessionSources(): ClaudeSessionSource[] {
     });
     for (const s of packs.packSessionSources("claude")) {
         const state = sessionState(s.dir);
-        rows.push({ id: `pack:${s.id}`, label: `pack ${s.label}`, dir: s.dir, email: sessionEmail(s.dir), state, usable: isUsableSession(state) });
+        rows.push({ id: `pack:${s.id}`, label: `agent ${s.label}`, dir: s.dir, email: sessionEmail(s.dir), state, usable: isUsableSession(state) });
     }
     const rank = (s: ClaudeSessionSource): number => (s.usable ? (s.state === "ok" ? 0 : 1) : 2);
     return rows.sort((a, b) => rank(a) - rank(b));
@@ -2331,7 +2380,7 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             return 0;
         }
         case "transfer": {
-            // Reuse a live login: copy a session (another account or a pack context) into a
+            // Reuse a live login: copy a session (another account or an agent context) into a
             // signed-out account so it works again without /login. Claude-only.
             if (tool !== "claude") { console.error("Session transfer is Claude-only."); return 1; }
             if (!name) { console.error("Usage: enigma account transfer <target-account> [source-id]"); return 1; }
@@ -2341,12 +2390,12 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             const explicit = opts.positionals[2];
             let src: ClaudeSessionSource | undefined;
             if (explicit) {
-                src = sources.find((s) => s.id === explicit || s.id === `account:${explicit}` || s.id === `pack:${explicit}` || s.label === explicit);
+                src = sources.find((s) => s.id === explicit || s.id === `account:${explicit}` || s.id === `pack:${explicit}` || s.id === `agent:${explicit}` || s.label === explicit);
                 if (!src) { console.error(`Unknown session source '${explicit}'. List them with: enigma account sessions.`); return 1; }
                 if (!src.usable) { console.error(`Source '${src.id}' has no usable session (${src.state}).`); return 1; }
             } else {
                 src = sources.find((s) => s.usable);
-                if (!src) { console.error("No other logged-in Claude session to reuse. Log in once (or run a pack), then retry."); return 1; }
+                if (!src) { console.error("No other logged-in Claude session to reuse. Log in once (or run an agent), then retry."); return 1; }
             }
             const res = transferSession(src.dir, targetDir);
             if (!res.ok) { console.error(`Transfer failed: ${res.error}`); return 1; }
@@ -3013,8 +3062,8 @@ async function runApiCli(opts: CliOptions): Promise<number> {
     console.log(`enigma api (default ${tool}) -> ${server.url}`);
     console.log(`OpenAI base URL: ${server.url}/v1${apiKey ? "  (Authorization: Bearer <key> required)" : "  (no auth - loopback only)"}`);
     console.log(`Backends available: ${agents.length ? agents.join(", ") : "(none installed)"} - pick one per request via the model field (e.g. "claude-sonnet-5", "codex", "opencode").`);
-    const ctx = [pack && `pack ${pack}`, account && `account ${account}`, profile && `profile ${profile}`].filter(Boolean).join(", ");
-    const perRequest = cfg.apiClientContext !== false ? " (override per request with account/profile/pack in the body)" : " (callers cannot pick an account: api-client-context is off)";
+    const ctx = [pack && `agent ${pack}`, account && `account ${account}`, profile && `profile ${profile}`].filter(Boolean).join(", ");
+    const perRequest = cfg.apiClientContext !== false ? " (override per request with account/profile/agent in the body)" : " (callers cannot pick an account: api-client-context is off)";
     if (rotation !== "off") console.log(`Accounts: ${rotation} rotation across ${pool.length ? pool.join(", ") : "every account"}, failing over on usage limits${perRequest}.`);
     else console.log(ctx ? `Default context: ${ctx}${perRequest}.` : `Context: active account${perRequest}.`);
     console.log("Press Ctrl+C to stop.");
@@ -3259,14 +3308,18 @@ export async function run(argv: string[]): Promise<void> {
         syncForLaunch(opts.command, account);
         process.exit(await acct.launchTool(opts.command, account, opts.passthrough));
     }
-    // Pack shortcut: `enigma helio [account] [--tool <t>] [-- args]` launches the pack's
-    // isolated agent, seeding the chosen account's login (default: the pack's pinned account,
+    // Agent shortcut: `enigma helio [account] [--tool <t>] [-- args]` launches the agent in its
+    // isolated context, seeding the chosen account's login (default: the agent's pinned account,
     // else the active profile / tool-active account).
     if (opts.command && packs.getPack(opts.command)) {
         const tool = opts.tool && acct.isToolName(opts.tool) ? opts.tool : acct.DEFAULT_TOOL;
         process.exit(await packs.launchPack(opts.command, tool, opts.passthrough, opts.positionals[0]));
     }
-    if (opts.command === "pack" || opts.command === "packs") { process.exit(await runPackCli(opts.positionals, opts.passthrough, opts.tool)); }
+    if (opts.command === "agent" || opts.command === "agents") { process.exit(await runAgentCli(opts.positionals, opts.passthrough, opts.tool)); }
+    if (opts.command === "pack" || opts.command === "packs") {
+        process.stderr.write(`'enigma ${opts.command}' is deprecated and will be removed in a future major release; use 'enigma agent' instead.\n`);
+        process.exit(await runAgentCli(opts.positionals, opts.passthrough, opts.tool));
+    }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }

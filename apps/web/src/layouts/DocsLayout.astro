@@ -36,14 +36,17 @@ const records = index.map((record) => ({
     href: docHref(record.page, record.id)
 }));
 
-// The active page decides which section (and which pack) the sidebar shows.
+// The active page decides which section (and which agent) the sidebar shows. The "packs"
+// space and `pack` frontmatter key keep their old names; readers see "Agents".
 const current = docs.find((d) => d.id === slug);
 const space = current?.data.space ?? "core";
 const pack = current?.data.pack;
-const label = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+// An agent whose name is an acronym spells itself; the rest are capitalized ids.
+const LABELS: Record<string, string> = { rea: "REA" };
+const label = (id: string) => LABELS[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 const packLabel = pack ? label(pack) : "";
 
-// Distinct packs in the Packs space, each linking to its landing (lowest-order) page.
+// Distinct agents in the Agents space, each linking to its landing (lowest-order) page.
 const packList: { id: string; label: string; landing: string }[] = [];
 for (const d of docs) {
     if (d.data.space === "packs" && d.data.pack && !packList.find((p) => p.id === d.data.pack)) {
@@ -85,7 +88,7 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
             <div class="tabs">
                 <a href={docHref("getting-started/introduction")} class={space === "core" ? "active" : ""} aria-current={space === "core" ? "page" : undefined}>Docs</a>
                 <a href={docHref("components/overview")} class={space === "components" ? "active" : ""} aria-current={space === "components" ? "page" : undefined}>Components</a>
-                <a href={docHref("packs")} class={space === "packs" ? "active" : ""} aria-current={space === "packs" ? "page" : undefined}>Packs</a>
+                <a href={docHref("packs")} class={space === "packs" ? "active" : ""} aria-current={space === "packs" ? "page" : undefined}>Agents</a>
             </div>
             <a class="gh" href={REPO} target="_blank" rel="noopener noreferrer" aria-label="GitHub repository" title="GitHub">
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"></path></svg>
@@ -107,13 +110,13 @@ const componentSource = source ? `${REPO}/blob/main/${source}` : null;
             <div class="side-list" id="sideList">
             {space === "packs" && pack && (
                 <>
-                    <a class="backlink" href={docHref("packs")}>&larr; All packs</a>
+                    <a class="backlink" href={docHref("packs")}>&larr; All agents</a>
                     <div class="packhdr">{packLabel}</div>
                 </>
             )}
             {onPacksHub ? (
                 <>
-                    <div class="grp">Packs</div>
+                    <div class="grp">Agents</div>
                     {packList.map((p) => (
                         <a href={docHref(p.landing)} class={p.landing === slug ? "active" : ""}>{p.label}</a>
                     ))}

@@ -23,8 +23,8 @@ installs shared **Dynamic Skills** - security, testing, git, style, debugging - 
 Claude Code, OpenAI Codex, opencode and Kimi Code; each one adapts to the agent, re-renders from
 your config, and loads only when a task needs it. Portable **git hooks** keep secrets
 and `.env` files out of every commit, a local **dashboard** manages and measures the
-whole setup, and optional **packs** add focused harnesses - like the Helio bug-bounty
-toolkit - in their own isolated context. Fewer wrong turns, fewer re-prompts, cleaner
+whole setup, and optional isolated **agents** add focused harnesses - like the Helio
+bug-bounty toolkit or REA for reverse engineering - in their own context. Fewer wrong turns, fewer re-prompts, cleaner
 output.
 
 ![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/assets/images/dashboard.png)

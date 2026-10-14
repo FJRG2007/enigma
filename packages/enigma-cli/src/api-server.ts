@@ -449,9 +449,9 @@ function bodyString(body: Record<string, unknown>, key: string): string | null {
  * context on a server that does not allow it is refused rather than silently rerouted.
  */
 function contextOf(body: Record<string, unknown>, defaults: ServerDefaults, tool: string): { ctx: ContextFields; rotated: string | null; } {
-    const asked = { account: bodyString(body, "account"), profile: bodyString(body, "profile"), pack: bodyString(body, "pack") };
+    const asked = { account: bodyString(body, "account"), profile: bodyString(body, "profile"), pack: bodyString(body, "agent") || bodyString(body, "pack") };
     if (asked.account || asked.profile || asked.pack) {
-        if (!defaults.clientContext) throw new RequestError(403, "This server picks the account itself: remove account/profile/pack from the request, or allow it with 'enigma config api-client-context on'.", "permission_error");
+        if (!defaults.clientContext) throw new RequestError(403, "This server picks the account itself: remove account/profile/agent from the request, or allow it with 'enigma config api-client-context on'.", "permission_error");
         return { ctx: asked, rotated: null };
     }
     return pickContext(tool, typeof body.session_id === "string" ? body.session_id : null, defaults);

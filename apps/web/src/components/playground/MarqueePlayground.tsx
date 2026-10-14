@@ -8,7 +8,7 @@ import { useMarquee, type MarqueeHover } from "@enigmax/primitives/react";
  * so the control is a speed, and adding items never changes it. Grab the row and throw it.
  */
 
-const ITEMS = ["guardrails", "quality gate", "code graph", "recall", "autoskills", "compress", "packs", "marquee"];
+const ITEMS = ["guardrails", "quality gate", "code graph", "recall", "autoskills", "compress", "agents", "marquee"];
 
 interface Values extends Record<string, string | boolean> {
     speed: string;

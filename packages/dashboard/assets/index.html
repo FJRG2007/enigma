@@ -841,7 +841,7 @@
                 </a>
                 <a href="#/packs" data-view="packs" class="tab">
                     <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-                    <span>Packs</span>
+                    <span>Agents</span>
                 </a>
                 <a href="#/playground" data-view="playground" class="tab">
                     <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
@@ -1266,8 +1266,8 @@
     <section id="view-packs" style="display:none">
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
-                <h1>Packs</h1>
-                <p>Optional harness packs you can add on demand. Each runs in its own <strong>isolated agent context</strong>, so its skills and commands never load into your normal coding agent. Launch a pack from a terminal with <code>enigma &lt;pack&gt;</code>.</p>
+                <h1>Agents</h1>
+                <p>Optional agents you can add on demand. Each runs in its own <strong>isolated agent context</strong>, so its skills, commands and MCP servers never load into your normal coding agent. Launch one from a terminal with <code>enigma &lt;agent&gt;</code>.</p>
             </div>
             <button id="packsRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>
@@ -1452,7 +1452,7 @@
                 <label class="pg-field ad-fixed"><span>Default profile</span>
                     <select id="adProfile"><option value="">(none)</option></select>
                 </label>
-                <label class="pg-field ad-fixed"><span>Default pack</span>
+                <label class="pg-field ad-fixed"><span>Default agent</span>
                     <select id="adPack"><option value="">(none)</option></select>
                 </label>
                 <label class="pg-field"><span>Port</span>
@@ -1503,7 +1503,7 @@
                 <label class="pg-field"><span>Profile <small>(optional)</small></span>
                     <select id="pgProfile"><option value="">(server default)</option></select>
                 </label>
-                <label class="pg-field"><span>Pack <small>(optional)</small></span>
+                <label class="pg-field"><span>Agent <small>(optional)</small></span>
                     <select id="pgPack"><option value="">(server default)</option></select>
                 </label>
                 <div class="pg-field pg-tools"><span>Agent tools <small>(Read/Write/Bash...)</small></span>
@@ -5382,17 +5382,17 @@ export {
             });
         }
 
-        // --- packs subpage (optional isolated harness packs; marketplace) ---
+        // --- agents subpage (optional isolated agents, formerly packs; marketplace) ---
         function renderPacks(list) {
             list = list || [];
-            if (!list.length) { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">No packs available.</div>'; return; }
+            if (!list.length) { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">No agents available.</div>'; return; }
             $("packsBody").innerHTML = list.map((p) => {
                 const tags = (p.tags || []).map((t) => '<span class="tag">' + esc(t) + '</span>').join(" ");
                 const state = p.installed ? '<span class="tag">' + (p.version ? "installed " + esc(p.version) : "installed") + '</span>' : '<span class="tag">not installed</span>';
                 const added = p.enabled ? '<span class="tag" style="color:var(--ok)">added</span>' : "";
                 const actions = p.installed
                     ? '<button type="button" class="toggle on" data-pack="launch" data-id="' + esc(p.id) + '">Launch command</button>'
-                        + '<button type="button" class="toggle" data-pack="setup" data-id="' + esc(p.id) + '" title="Register the pack MCP servers (needs Python 3)">Setup MCP</button>'
+                        + '<button type="button" class="toggle" data-pack="setup" data-id="' + esc(p.id) + '" title="Register the agent's MCP servers">Setup MCP</button>'
                         + '<button type="button" class="iconbtn" data-pack="update" data-id="' + esc(p.id) + '" title="Update" aria-label="Update ' + esc(p.label) + '">' + REFRESH_ICON + "</button>"
                         + '<button type="button" class="btn-danger icon" data-pack="remove" data-id="' + esc(p.id) + '" title="Remove" aria-label="Remove ' + esc(p.label) + '">' + TRASH_ICON + "</button>"
                     : '<button type="button" class="toggle on" data-pack="install" data-id="' + esc(p.id) + '">Install</button>';
@@ -5400,7 +5400,7 @@ export {
                 const opts = '<option value="">follow active (' + esc(p.resolvedAccount || "default") + ")" + stTag(p.resolvedState) + "</option>"
                     + (p.accounts || []).map((a) => '<option value="' + esc(a.name) + '"' + (p.defaultAccount === a.name ? " selected" : "") + ">" + esc(a.name) + (a.label && a.label !== a.name ? " - " + esc(a.label) : "") + stTag(a.state) + "</option>").join("");
                 const warn = (p.installed && !p.contextReady && (p.resolvedState === "expired" || p.resolvedState === "empty"))
-                    ? '<div class="set-hint" style="margin-top:6px;color:var(--warn,#e0a020)">This login is ' + (p.resolvedState === "expired" ? "expired" : "not signed in") + ' - the pack may ask you to log in. Refresh it (launch that account once) or pick another above.</div>'
+                    ? '<div class="set-hint" style="margin-top:6px;color:var(--warn,#e0a020)">This login is ' + (p.resolvedState === "expired" ? "expired" : "not signed in") + ' - the agent may ask you to log in. Refresh it (launch that account once) or pick another above.</div>'
                     : (p.installed && p.contextReady ? '<div class="set-hint" style="margin-top:6px;color:var(--ok)">Active session ready - launches without asking to log in.</div>' : "");
                 const accountSel = p.installed
                     ? '<label class="set-hint" style="display:flex;align-items:center;gap:8px;margin-top:10px">Account that seeds this pack:'
@@ -5417,10 +5417,10 @@ export {
         async function loadPacks() {
             $("packsNote").textContent = "";
             try { renderPacks((await (await fetch("/api/packs", { cache: "no-store" })).json()).packs); }
-            catch { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">Packs unavailable.</div>'; }
+            catch { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">Agents unavailable.</div>'; }
         }
         async function packAction(id, action, value) {
-            const confirmMsg = action === "remove" ? "Remove this pack and its isolated context?" : null;
+            const confirmMsg = action === "remove" ? "Remove this agent and its isolated context?" : null;
             if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
             setNote("packsNote", action === "install" || action === "update" ? "Working..." : "Saving...");
             try {

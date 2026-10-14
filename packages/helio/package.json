@@ -1,7 +1,7 @@
 {
   "name": "@enigmax/helio",
-  "version": "0.1.2",
-  "description": "Helio bug-bounty harness packaged as an optional enigma pack: skills, slash commands, sub-agents, MCP servers and tooling for offensive security and bug bounty work. Installed on demand into an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
+  "version": "0.1.3",
+  "description": "Helio bug-bounty harness packaged as an optional enigma agent: skills, slash commands, sub-agents, MCP servers and tooling for offensive security and bug bounty work. Installed on demand into an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
   "type": "module",
   "files": [
     "assets",
@@ -13,7 +13,7 @@
   },
   "keywords": [
     "enigma",
-    "enigma-pack",
+    "enigma-agent",
     "helio",
     "bug-bounty",
     "security",

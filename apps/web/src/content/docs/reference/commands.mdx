@@ -37,15 +37,15 @@ Manage tool accounts. Defaults to Claude Code; target another with `--tool <name
 
 ### Reuse a session (no re-login)
 
-The same Anthropic login stored in two config dirs (a managed account and a pack context, say) can drift apart: Claude rotates the OAuth refresh token on every refresh and invalidates the previous one, so whichever dir refreshes last keeps working and the other is silently signed out. Instead of re-running `/login`, **reuse** the live session - copy it into the signed-out account (its refresh token is all Claude Code needs). Claude only.
+The same Anthropic login stored in two config dirs (a managed account and an agent context, say) can drift apart: Claude rotates the OAuth refresh token on every refresh and invalidates the previous one, so whichever dir refreshes last keeps working and the other is silently signed out. Instead of re-running `/login`, **reuse** the live session - copy it into the signed-out account (its refresh token is all Claude Code needs). Claude only.
 
 ```bash
-enigma account sessions                     # list reusable logins (accounts + pack contexts)
+enigma account sessions                     # list reusable logins (accounts + agent contexts)
 enigma account transfer work                # pull the freshest live session into 'work'
 enigma account transfer work pack:helio     # or from a specific source
 ```
 
-Packs do this automatically: `enigma helio` keeps its context and the managed account it seeds from on one shared session (freshest token wins on launch, and any refresh is copied back on exit), so `enigma claude` and the pack never fight. It is also available in the dashboard Accounts tab ("Reuse session" on a signed-out Claude account).
+Agents do this automatically: `enigma helio` keeps its context and the managed account it seeds from on one shared session (freshest token wins on launch, and any refresh is copied back on exit), so `enigma claude` and the agent never fight. It is also available in the dashboard Accounts tab ("Reuse session" on a signed-out Claude account).
 
 `provider` points a Claude Code account at another Anthropic-compatible backend (e.g. MiniMax) instead of the default - the `default` account always stays on Anthropic. Configurable here, in the dashboard Accounts tab, and the TUI (`p` on an account). The API key is stored encrypted.
 
@@ -114,12 +114,12 @@ Read the graph to answer a question. `ask` ranks the symbols and files a task co
 Shared flags: `--in <path>` narrows to a subtree, `--limit N` caps results, `--project <name>` picks a graph, `--json` prints the raw result, `--no-refresh` skips the pre-query re-index. A flag with a missing or invalid value is a usage error rather than a silent fallback; pass a pattern that starts with a dash after `--`.
 </Cmd>
 
-## pack
+## agent
 
-Marketplace of optional, isolated harness packs: Helio for bug bounty, Orion for broken flows, speed and scale. Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Packs</a> for detail.
+Optional, isolated agents: Helio for bug bounty, Orion for broken flows, speed and scale, REA for reverse engineering. Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Agents</a> for detail.
 
-<Cmd name="enigma pack <list|install|remove|update|setup|use|run>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma orion", "enigma helio work", "enigma pack use helio work", "enigma pack setup helio"]}>
-`install <id>` fetches a pack; `enigma <id> [account]` (e.g. `enigma helio`, `enigma orion`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the pack; `setup <id>` registers a pack's script MCP servers (Helio's need Python; Orion's browser is wired on launch); `update`/`remove` keep or delete it.
+<Cmd name="enigma agent <list|install|remove|update|setup|cli|use|run>" ex={["enigma agent list", "enigma agent install rea", "enigma rea", "enigma helio work", "enigma agent use helio work", "enigma agent setup rea", "enigma agent cli rea -- --help"]}>
+`install <id>` fetches an agent; `enigma <id> [account]` (e.g. `enigma helio`, `enigma rea`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the agent; `setup <id>` registers an agent's script MCP servers (Helio's need Python; Orion's browser and REA's server are wired on launch) and, for REA, runs its provider setup and health check; `cli <id> -- <args>` runs REA's own CLI; `update`/`remove` keep or delete it. `enigma pack` still works as a deprecated alias.
 </Cmd>
 
 ## ssh

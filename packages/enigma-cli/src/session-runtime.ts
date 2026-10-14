@@ -238,7 +238,7 @@ export function runSessionTurn(
 ): Promise<SessionTurnResult> {
     const owner = KNOWN.get(sessionId);
     if (owner !== undefined && owner !== spec.contextKey) {
-        return Promise.reject(new SessionError("context-mismatch", `session ${sessionId} belongs to a different account/profile/pack context; start a new session_id for this context.`));
+        return Promise.reject(new SessionError("context-mismatch", `session ${sessionId} belongs to a different account/profile/agent context; start a new session_id for this context.`));
     }
     let s = SESSIONS.get(sessionId);
     if (s && s.busy) return Promise.reject(new SessionError("busy", "session busy: a turn is already in progress for this session"));

@@ -12,7 +12,8 @@ const docs = defineCollection({
         order: z.number().default(99),
         // Top-level docs section the page belongs to (a navbar tab + its own sidebar).
         space: z.enum(["core", "packs", "components"]).default("core"),
-        // Pack id for pages inside a specific pack's sub-section (e.g. "helio").
+        // Agent id for pages inside a specific agent's sub-section (e.g. "helio"). The key keeps
+        // its former "pack" name, as does the "packs" space.
         pack: z.string().optional(),
     }),
 });

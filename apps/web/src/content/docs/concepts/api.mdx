@@ -70,12 +70,12 @@ Both a `data:` URL (base64) and an `https://` URL work. The Anthropic shape's na
 - `GET /v1/sessions`, `DELETE /v1/sessions/{id}` - list and drop tracked sessions.
 - `GET /health`, `GET /` - service status and endpoint index.
 
-## Accounts, profiles and packs
+## Accounts, profiles and agents
 
-Every request can run under a specific **account**, **profile**, or **pack** - the same contexts you use elsewhere in enigma. Set a default for the whole server with a flag, or override it per request in the body:
+Every request can run under a specific **account**, **profile**, or **agent** - the same contexts you use elsewhere in enigma. Set a default for the whole server with a flag, or override it per request in the body:
 
 <Cmd name="enigma api --account work" ex={["enigma api --account work", "enigma api --profile team", "enigma api --pack helio"]}>
-`--account <name>` runs under that account's login, `--profile <name>` uses the profile's account mapping for the backend, and `--pack <id>` runs inside a pack's isolated context (e.g. **Helio** - its skills, commands, sub-agents and MCP, seeded with the pack's account).
+`--account <name>` runs under that account's login, `--profile <name>` uses the profile's account mapping for the backend, and `--pack <id>` runs inside an agent's isolated context (e.g. **Helio** - its skills, commands, sub-agents and MCP, seeded with the agent's account).
 </Cmd>
 
 Per request, add `"account"`, `"profile"`, or `"pack"` to the JSON body (they are ignored by standard OpenAI clients, so they are safe extensions):
@@ -88,12 +88,12 @@ Per request, add `"account"`, `"profile"`, or `"pack"` to the JSON body (they ar
 }
 ```
 
-A request's context wins over the server default, so one server can serve several accounts or packs at once. `GET /health` reports the server's default context.
+A request's context wins over the server default, so one server can serve several accounts or agents at once. `GET /health` reports the server's default context.
 
 You can also set a **persisted default** that `enigma api` uses when no flag is given - from the dashboard **Local API** page (Server defaults) or the CLI:
 
 <Cmd name="enigma config api-account work" ex={["enigma config api-account work", "enigma config api-pack helio", "enigma config api-account none"]}>
-Persist the default account / profile / pack for the API server (`none` clears it). A per-run flag or a per-request field still overrides it.
+Persist the default account / profile / agent for the API server (`none` clears it). A per-run flag or a per-request field still overrides it.
 </Cmd>
 
 ## Account rotation
@@ -102,7 +102,7 @@ Instead of one fixed account, enigma can spread requests across several. Rotatio
 
 | Strategy | Picks |
 | --- | --- |
-| `off` (default) | the default account / profile / pack above, else the active account |
+| `off` (default) | the default account / profile / agent above, else the active account |
 | `round-robin` | the next account in turn |
 | `least-used` | the account with the least token use in its current 5-hour window (from your transcripts when real usage stats are on, plus what the server sent since) |
 | `fill-first` | the first account until it hits a usage limit, then the next |
@@ -116,10 +116,10 @@ With any strategy on, a request that hits a usage limit or a failed login is **r
 
 A rotated response carries an `x-enigma-account` header naming the account that answered, and `GET /health` (with the API key, when one is set) shows the strategy, the pool, which accounts are cooling down and until when.
 
-**Who chooses.** By default a caller may still pick its own account per request. To let enigma decide alone, turn that off - a request that names an account, profile or pack is then refused with `403`:
+**Who chooses.** By default a caller may still pick its own account per request. To let enigma decide alone, turn that off - a request that names an account, profile or agent is then refused with `403`:
 
 <Cmd name="enigma config api-client-context off" ex={["enigma config api-client-context off", "enigma config api-client-context on"]}>
-Whether requests may choose their own account, profile or pack.
+Whether requests may choose their own account, profile or agent.
 </Cmd>
 
 ## Tools
@@ -161,7 +161,7 @@ The contract:
 - Turns of one session are **serialized**: a second concurrent turn on the same id gets `409`. Different sessions run in parallel.
 - A turn that produces no result within the turn timeout (10 minutes) gets `504`; the session is reset and the next turn resumes it.
 - The response echoes `session_id` - reuse it. Streaming (`stream=true`) works in both modes.
-- A `session_id` is bound to the **context** (account / profile / pack) that first ran it; reusing it under a different context is refused, so start a fresh UUID per context.
+- A `session_id` is bound to the **context** (account / profile / agent) that first ran it; reusing it under a different context is refused, so start a fresh UUID per context.
 - Sessions idle past a TTL, or beyond a live-process cap, are evicted to free memory. The transcript survives on disk, so a later turn on that id transparently resumes it.
 
 Live sessions are listed under `GET /v1/sessions` and can be dropped with `DELETE /v1/sessions/{id}`.

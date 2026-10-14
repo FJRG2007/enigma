@@ -44,8 +44,8 @@ Subsystems (read the one you are touching):
 - `dashboard-exposure.md` - bind modes, token auth, the fragment bootstrap, the single auth gate.
 - `usage-accounts-config-io.md` - Claude usage engine (transcripts, cost, 5h/weekly windows, live rate-limit headers), dashboard account/profile management, config import/export, skill catalog, agent-memory editor. (Largest note - skim by heading.)
 - `kimi.md` - Kimi Code support: its data root, trust documents and `[[hooks]]` config, what enigma wires into it and what it deliberately does not (guardrails feedback, the completion gate, a gate backend).
-- `multi-account.md` - accounts, profiles, config-dir injection, session reuse/transfer between accounts and packs.
-- `packs.md` - isolated harness bundles (`enigma helio`, `enigma orion`), credential seeding, the three layers of seeding a Claude login, built-in pack MCP servers.
+- `multi-account.md` - accounts, profiles, config-dir injection, session reuse/transfer between accounts and agents.
+- `packs.md` - isolated agents, formerly packs (`enigma agent`, `enigma helio|orion|rea`; `enigma pack` deprecated): credential seeding, the three layers of seeding a Claude login, the REA engine and multi-tool agent MCP registration.
 - `recall.md` - local session memory (SQLite + FTS, hybrid search, MCP tools).
 - `code-graph.md` - native code-intelligence engine (`enigma codegraph`): the four modules, the retrieval surfaces (ask/callers/skeleton/map/grep/graph/check), the drawable slice (`codegraph-subgraph.ts`) behind `graph` and the dashboard's Code graph canvas, and the precision fixes in both that must not regress.
 - `local-api-server.md` - OpenAI-compatible local API over the installed agents (`enigma api`), adapters, playground.

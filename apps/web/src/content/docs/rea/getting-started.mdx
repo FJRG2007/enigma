@@ -1,0 +1,51 @@
+---
+title: Getting started
+description: Install the REA agent, connect a native analysis engine, and launch it in its isolated context.
+group: Guide
+order: 2
+space: packs
+pack: rea
+---
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
+
+REA installs on demand and launches into its own agent context with its MCP server already registered. It reuses one of your existing logins.
+
+## Requirements
+
+- Node.js 22.19+, 24.11+ or 26+ on the machine (any installed version that qualifies; it does not need to be the default).
+- For native pseudocode: your own Ghidra 12.1, Hopper or IDA. Static JavaScript/Electron and .NET analysis need none of them.
+
+## Install and launch
+
+<Cmd name="enigma agent install rea" ex={["enigma agent install rea", "enigma agent list"]}>
+Fetch the agent (`@enigmax/rea`) and install the REA engine it pins into `~/.enigma/packs/rea`. You can skip this - launching also installs on demand.
+</Cmd>
+
+<Cmd name="enigma rea [account]" ex={["enigma rea", "enigma rea work", "enigma rea --tool codex"]}>
+Launch a coding agent inside REA's isolated context with only REA's server, skill and commands. With no account it uses the pinned agent account, else your active profile's account, else the tool's active account. Defaults to Claude Code; target Codex, OpenCode or Kimi Code with `--tool`.
+</Cmd>
+
+Inside the session, give it a target and a question - for example `/investigate /path/to/app.asar "offline search"`. See <a href={docHref("rea/commands")}>Commands</a>.
+
+## Connect Ghidra, Hopper or IDA
+
+<Cmd name="enigma agent setup rea" ex={["enigma agent setup rea", "enigma agent setup rea --tool codex", "enigma agent setup rea -- --install-hopper"]}>
+Runs REA's own setup inside the agent's context: it finds your analysis engines, shows what it would change and asks before writing, then runs REA's health check. Arguments after `--` go to REA's setup. Restart the agent afterwards.
+</Cmd>
+
+Settings REA's setup writes (such as your Ghidra path) are kept on every later launch and update.
+
+## Use REA from the terminal
+
+<Cmd name="enigma agent cli rea -- <args>" ex={["enigma agent cli rea -- analyze-javascript-application /absolute/path/to/app --json", "enigma agent cli rea -- doctor --json"]}>
+Runs REA's own CLI on the same pinned install and Node.js as the agent's server.
+</Cmd>
+
+## Which account REA uses
+
+<Cmd name="enigma agent use rea <account|->" ex={["enigma agent use rea work", "enigma agent use rea -"]}>
+Pin which login seeds REA by default (`-` clears the pin). `enigma rea <account>` overrides it for a single launch.
+</Cmd>
+
+You can also manage REA from the dashboard's **Agents** tab. `enigma update` keeps the agent and its engine current.

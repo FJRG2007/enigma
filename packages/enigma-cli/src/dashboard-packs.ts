@@ -1,5 +1,5 @@
 /**
- * Bridge exposing the marketplace packs to the dashboard Packs subpage and dispatching its
+ * Bridge exposing the marketplace agents (packs) to the dashboard Agents subpage and dispatching its
  * actions. The pack lifecycle (fetch, enable, deploy, MCP setup) lives in packs.ts; this is the
  * thin shaping + action layer the loopback server calls.
  *
@@ -37,21 +37,35 @@ export interface PackActionResult {
  */
 export async function applyPackAction(id: string, action: string, value?: string): Promise<PackActionResult> {
     const pack = packsMod.getPack(id);
-    if (!pack) return { ok: false, error: `unknown pack: ${id}` };
+    if (!pack) return { ok: false, error: `unknown agent: ${id}` };
     const list = (): packsMod.PackView[] => packsMod.listPacks();
     switch (action) {
-        case "install":
-            if (!packsMod.ensurePackInstalled(id)) return { ok: false, error: "could not fetch the pack (network or npm)" };
+        case "install": {
+            if (!packsMod.ensurePackInstalled(id)) return { ok: false, error: `could not fetch ${pack.label} (network or npm)` };
             packsMod.enablePack(id);
+            const engineError = packsMod.ensurePackEngine(id);
+            if (engineError) return { ok: false, error: `${pack.label} added, but its engine could not be installed: ${engineError}`, packs: list() };
             return { ok: true, note: `${pack.label} added. Launch it with: enigma ${id}`, packs: list() };
+        }
         case "remove":
             packsMod.disablePack(id);
             return { ok: true, note: `${pack.label} removed.`, packs: list() };
         case "update": {
             const changed = packsMod.refreshPack(id);
+            const engineError = packsMod.ensurePackEngine(id);
+            if (engineError) return { ok: false, error: `Its engine could not be installed: ${engineError}`, packs: list() };
             return { ok: true, note: changed ? `${pack.label} updated to ${packsMod.installedPackVersion(id)}.` : `${pack.label} is up to date.`, packs: list() };
         }
         case "setup": {
+            // An engine's own setup (REA: provider discovery, Hopper install) asks questions, so
+            // the browser only registers the server and points at the terminal for the rest.
+            if (pack.engine) {
+                const engineError = packsMod.ensurePackEngine(id);
+                if (engineError) return { ok: false, error: `Its engine could not be installed: ${engineError}`, packs: list() };
+                packsMod.deployPack(id, DEFAULT_TOOL);
+                const added = packsMod.setupPackMcp(id, DEFAULT_TOOL);
+                return { ok: true, command: `enigma agent setup ${id}`, note: `Registered MCP: ${added.join(", ") || "none"}. For Ghidra/Hopper/IDA discovery and a health check, run "enigma agent setup ${id}" in a terminal.`, packs: list() };
+            }
             const added = packsMod.setupPackMcp(id, DEFAULT_TOOL);
             return { ok: true, note: added.length ? `Registered MCP: ${added.join(", ")} (needs Python 3).` : "No MCP servers registered.", packs: list() };
         }

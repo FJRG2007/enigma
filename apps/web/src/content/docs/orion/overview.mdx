@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Orion is enigma's QA pack - it hunts broken flows, slow loads, scaling limits and searches that never say "no results", in a real browser, with evidence for every finding.
+description: Orion is enigma's QA agent - it hunts broken flows, slow loads, scaling limits and searches that never say "no results", in a real browser, with evidence for every finding.
 group: Guide
 order: 1
 space: packs
@@ -8,7 +8,7 @@ pack: orion
 ---
 import { docHref } from "../../../lib/url";
 
-**Orion** is an enigma <a href={docHref("packs")}>pack</a> that hunts what looks finished but is not: flows that break on the second step, pages that load slowly, queries that grow with the table, limits that only show up at scale, and searches that never say "no results". Like every pack it runs in a **dedicated, isolated agent context**, so its skills never load into the agent you code with.
+**Orion** is an enigma <a href={docHref("packs")}>agent</a> that hunts what looks finished but is not: flows that break on the second step, pages that load slowly, queries that grow with the table, limits that only show up at scale, and searches that never say "no results". Like every agent it runs in a **dedicated, isolated agent context**, so its skills never load into the agent you code with.
 
 ## The rule every finding obeys
 
@@ -19,7 +19,7 @@ A finding exists only with evidence produced in the session:
 
 "This might be slow" is not a finding. Orion measures it or drops it, and says what it could not verify.
 
-## What's in the pack
+## What's in the agent
 
 - **4 skills** - `bug-hunt`, `perf-audit`, `scale-audit`, `search-quality`.
 - **4 slash commands** - `/sweep` (everything), `/flow` (one user flow end to end), `/perf` (load and runtime speed), `/scale` (what breaks as data and traffic grow).
