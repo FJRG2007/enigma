@@ -32,13 +32,13 @@
 
 import { homedir } from "node:os";
 import { readConfig } from "./config";
-import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
 import { randomUUID } from "node:crypto";
 import { startMeasuringProxy } from "./proxy";
 import { readGlobalGuard } from "./guard-config";
 import { basename, join, resolve, sep } from "node:path";
 import { decryptSecret, encryptSecret } from "./secret-box";
 import { spawn, type SpawnOptions } from "node:child_process";
+import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
 import { enterSharedStore, leaveSharedStore } from "./session-store";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -518,6 +518,16 @@ function findAccount(toolName: string, name: string): Account | null {
 /** True when an account with this name exists for the tool. */
 export function accountExists(toolName: string, name: string): boolean {
     return findAccount(toolName, name) !== null;
+}
+
+/**
+ * The tool that owns a managed account with this name, or null when none does. Backs the
+ * `enigma <account>` launch shortcut, which maps the bare name to `enigma <tool> <account>`.
+ * When more than one tool has an account by this name, the first tool in `TOOL_NAMES` wins.
+ */
+export function toolOfAccount(name: string): string | null {
+    const reg = readRegistry();
+    return TOOL_NAMES.find((tool) => bucketOf(reg, tool).accounts.some((a) => a.name === name)) ?? null;
 }
 
 /**
