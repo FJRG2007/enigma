@@ -32,13 +32,13 @@
 
 import { homedir } from "node:os";
 import { readConfig } from "./config";
-import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
 import { randomUUID } from "node:crypto";
 import { startMeasuringProxy } from "./proxy";
 import { readGlobalGuard } from "./guard-config";
 import { basename, join, resolve, sep } from "node:path";
 import { decryptSecret, encryptSecret } from "./secret-box";
 import { spawn, type SpawnOptions } from "node:child_process";
+import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
 import { enterSharedStore, leaveSharedStore } from "./session-store";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
