@@ -18,6 +18,13 @@
  * session leaves files behind, so stale entries expire: a pending one after PENDING_TTL_MS (a launch
  * starts within seconds), a running one after RUNNING_TTL_MS.
  *
+ * SUBAGENTSTOP IS NOT RELIABLE. Claude Code skips it when a subagent ends without a final answer: cut
+ * at its maxTurns (the `subagent-turns` cap), stopped by TaskStop, or orphaned by a closed session.
+ * Measured 2026-10: 51 leftover markers, every one a background subagent whose transcript ended on a
+ * tool call or tool result, and six of them held a whole session's limit for hours. So a running
+ * marker also expires once the subagent's own transcript has gone IDLE_TTL_MS without a write: a
+ * live subagent appends on every model turn and tool result.
+ *
  * A SUBAGENT NEVER LAUNCHES SUBAGENTS while a limit is set: every hook payload fired from inside a
  * subagent carries `agent_id`, and nesting is how one task became a tree of full-context workers.
  *
@@ -26,9 +33,9 @@
  * the waste measured was inside the subagents: 87% of one project's model calls.
  */
 
-import { join } from "node:path";
 import { enigmaHome } from "./util";
 import { readConfigAt } from "./config";
+import { dirname, join } from "node:path";
 import { mkdirSync, readdirSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 /** A launch that never started (the call was refused later, or the session died) frees its slot. */
@@ -36,6 +43,9 @@ const PENDING_TTL_MS = 2 * 60_000;
 
 /** A subagent whose SubagentStop never arrived (crash, killed terminal) frees its slot. */
 const RUNNING_TTL_MS = 6 * 60 * 60_000;
+
+/** A subagent whose transcript has not been written for this long has stopped, SubagentStop or not. */
+const IDLE_TTL_MS = 30 * 60_000;
 
 /** Highest limit accepted: past this the setting no longer limits anything a plan can afford. */
 export const MAX_SUBAGENT_LIMIT = 20;
@@ -60,6 +70,8 @@ export interface SubagentPayload {
     toolName: string;
     toolUseId: string;
     agentId: string;
+    /** The main session's transcript; subagent transcripts live beside it. Absent in older payloads. */
+    transcriptPath?: string;
 }
 
 /** Validates a hook payload; null when it lacks what the event needs. */
@@ -79,6 +91,7 @@ export function parseSubagentPayload(raw: string): SubagentPayload | null {
         toolName: str(r.tool_name),
         toolUseId: str(r.tool_use_id).replace(/[^\w-]/g, "").slice(0, 128),
         agentId: str(r.agent_id).replace(/[^\w-]/g, "").slice(0, 128),
+        transcriptPath: str(r.transcript_path),
     };
 }
 
@@ -103,8 +116,27 @@ function sessionDir(sessionId: string): string {
 
 interface Marker { name: string; mtime: number; }
 
+/**
+ * Where Claude Code writes a subagent's transcript: `<session>/subagents/agent-<id>.jsonl` beside the
+ * session's own `<session>.jsonl`. "" when the payload names no transcript of this session.
+ */
+function agentTranscript(payload: SubagentPayload, agentId: string): string {
+    const parent = payload.transcriptPath ?? "";
+    if (!parent.endsWith(`${payload.sessionId}.jsonl`)) return "";
+    return join(dirname(parent), payload.sessionId, "subagents", `agent-${agentId}.jsonl`);
+}
+
+/** Whether a running marker's subagent went IDLE_TTL_MS without a start or a transcript write. */
+function idle(payload: SubagentPayload, name: string, mtime: number, now: number): boolean {
+    const transcript = agentTranscript(payload, name.slice("run-".length));
+    if (!transcript) return false;
+    let written: number;
+    try { written = statSync(transcript).mtimeMs; } catch { return false; }
+    return now - Math.max(mtime, written) > IDLE_TTL_MS;
+}
+
 /** The live markers of a session, oldest first; expired ones are deleted on the way. */
-function liveMarkers(dir: string, now: number): Marker[] {
+function liveMarkers(dir: string, now: number, payload: SubagentPayload): Marker[] {
     let names: string[];
     try { names = readdirSync(dir); } catch { return []; }
     const live: Marker[] = [];
@@ -113,7 +145,7 @@ function liveMarkers(dir: string, now: number): Marker[] {
         if (!ttl) continue;
         let mtime: number;
         try { mtime = statSync(join(dir, name)).mtimeMs; } catch { continue; }
-        if (now - mtime > ttl) { rmSync(join(dir, name), { force: true }); continue; }
+        if (now - mtime > ttl || (ttl === RUNNING_TTL_MS && idle(payload, name, mtime, now))) { rmSync(join(dir, name), { force: true }); continue; }
         live.push({ name, mtime });
     }
     return live.sort((a, b) => a.mtime - b.mtime || a.name.localeCompare(b.name));
@@ -136,7 +168,7 @@ export function admitLaunch(payload: SubagentPayload, limit: number, now = Date.
         // No state means no count; refusing every launch over a full disk would be worse.
         return "";
     }
-    const live = liveMarkers(dir, now);
+    const live = liveMarkers(dir, now, payload);
     const running = live.filter((m) => m.name.startsWith("run-")).length;
     const queue = live.filter((m) => m.name.startsWith("pend-")).map((m) => m.name);
     const position = queue.indexOf(own);
@@ -152,7 +184,7 @@ export function recordStart(payload: SubagentPayload, now = Date.now()): void {
     const dir = sessionDir(payload.sessionId);
     try {
         mkdirSync(dir, { recursive: true });
-        const oldest = liveMarkers(dir, now).find((m) => m.name.startsWith("pend-"));
+        const oldest = liveMarkers(dir, now, payload).find((m) => m.name.startsWith("pend-"));
         if (oldest) rmSync(join(dir, oldest.name), { force: true });
         writeFileSync(join(dir, `run-${payload.agentId}`), "");
     } catch { /* the count is best effort; the launch already happened */ }
@@ -167,7 +199,7 @@ export function recordStop(payload: SubagentPayload, now = Date.now()): void {
     const dir = sessionDir(payload.sessionId);
     try {
         rmSync(join(dir, `run-${payload.agentId}`), { force: true });
-        if (!liveMarkers(dir, now).length) rmdirSync(dir);
+        if (!liveMarkers(dir, now, payload).length) rmdirSync(dir);
     } catch { /* the count is best effort; a busy or non-empty directory stays */ }
 }
 
