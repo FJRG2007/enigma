@@ -39,6 +39,29 @@ test("engine.json accepts only a plain package name and an exact version", () =>
     expect(readEngineSpec(join(TMP, "missing"))).toBeNull();
 });
 
+test("a shipped engine-lock.json is used only when it locks the exact pin", () => {
+    const lockFor = (version: string, integrity: unknown = "sha512-fixture") => ({
+        lockfileVersion: 3,
+        packages: { "": { dependencies: { "rea-agents": version } }, "node_modules/rea-agents": { version, integrity } },
+    });
+    const withLock = (name: string, lock: unknown) => {
+        const dir = specIn(join(TMP, name), { package: "rea-agents", version: "6.5.0" });
+        writeFileSync(join(dir, "engine-lock.json"), JSON.stringify(lock));
+        return dir;
+    };
+    const good = withLock("lock-ok", lockFor("6.5.0"));
+    expect(readEngineSpec(good)).toEqual({ package: "rea-agents", version: "6.5.0", lockfile: join(good, "engine-lock.json") });
+    // A lock for another version, without an integrity hash, or unreadable would not pin what engine.json names.
+    expect(readEngineSpec(withLock("lock-other", lockFor("6.4.0")))).toBeNull();
+    expect(readEngineSpec(withLock("lock-nohash", lockFor("6.5.0", null)))).toBeNull();
+    expect(readEngineSpec(withLock("lock-bad", "not a lock"))).toBeNull();
+});
+
+test("the REA bundle ships a lockfile for its pinned engine", () => {
+    const spec = readEngineSpec(join(import.meta.dir, "..", "..", "rea", "assets"));
+    expect(spec?.lockfile).toBeTruthy();
+});
+
 test("satisfiesRange reads the engines ranges REA declares", () => {
     const rea = "^22.19.0 || ^24.11.0 || >=26.0.0";
     expect(satisfiesRange("26.2.0", rea)).toBe(true);
@@ -60,16 +83,20 @@ test("satisfiesRange reads the engines ranges REA declares", () => {
 
 test("pickNode keeps the PATH node when it qualifies, else the newest that does", () => {
     const range = "^22.19.0 || ^24.11.0 || >=26.0.0";
-    const path = { path: "/path/node", version: "24.12.0" };
+    const path = { path: "/path/node", version: "24.12.0", onPath: true };
+    const path20 = { path: "/path/node", version: "20.20.2", onPath: true };
     const v20 = { path: "/nvm/v20/node", version: "20.20.2" };
     const v26 = { path: "/nvm/v26/node", version: "26.2.0" };
     const v22 = { path: "/nvm/v22/node", version: "22.20.0" };
     expect(pickNode(range, [path, v26])).toBe(path);
     // A shell defaulting to Node 20 still gets a server that starts.
-    expect(pickNode(range, [v20, v22, v26])).toBe(v26);
+    expect(pickNode(range, [path20, v22, v26])).toBe(v26);
     expect(pickNode(range, [v20])).toBeNull();
     // No declared range: the PATH node as-is.
-    expect(pickNode(null, [v20, v26])).toBe(v20);
+    expect(pickNode(null, [path20, v26])).toBe(path20);
+    // No node on PATH: the first nvm directory listed is not mistaken for it.
+    expect(pickNode(range, [v22, v26])).toBe(v26);
+    expect(pickNode(null, [v20, v26])).toBe(v26);
     expect(pickNode(range, [])).toBeNull();
 });
 

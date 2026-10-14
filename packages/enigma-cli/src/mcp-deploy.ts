@@ -365,6 +365,15 @@ export function applyContextServer(tool: string, dir: string, name: string, serv
     }
 }
 
+/** Whether `tool`'s config in the context dir `dir` holds an MCP server entry named `name`. */
+export function hasContextServer(tool: string, dir: string, name: string): boolean {
+    const file = mcpAccountPath(tool, dir);
+    if (!file || !existsSync(file)) return false;
+    if (tool === "codex") return readFileSync(file, "utf8").split("\n").some((l) => l.trim() === `[mcp_servers.${name}]`);
+    const parent = readJson<Record<string, unknown>>(file)?.[tool === "opencode" ? "mcp" : "mcpServers"];
+    return Boolean(parent && typeof parent === "object" && name in parent);
+}
+
 /** The agents whose own config can host the enigma MCP server. */
 const MANAGED_TOOLS = ["claude", "codex", "opencode", "kimi"] as const;
 

@@ -5392,7 +5392,7 @@ export {
                 const added = p.enabled ? '<span class="tag" style="color:var(--ok)">added</span>' : "";
                 const actions = p.installed
                     ? '<button type="button" class="toggle on" data-pack="launch" data-id="' + esc(p.id) + '">Launch command</button>'
-                        + '<button type="button" class="toggle" data-pack="setup" data-id="' + esc(p.id) + '" title="Register the agent's MCP servers">Setup MCP</button>'
+                        + '<button type="button" class="toggle" data-pack="setup" data-id="' + esc(p.id) + '" title="Register the agent MCP servers">Setup MCP</button>'
                         + '<button type="button" class="iconbtn" data-pack="update" data-id="' + esc(p.id) + '" title="Update" aria-label="Update ' + esc(p.label) + '">' + REFRESH_ICON + "</button>"
                         + '<button type="button" class="btn-danger icon" data-pack="remove" data-id="' + esc(p.id) + '" title="Remove" aria-label="Remove ' + esc(p.label) + '">' + TRASH_ICON + "</button>"
                     : '<button type="button" class="toggle on" data-pack="install" data-id="' + esc(p.id) + '">Install</button>';

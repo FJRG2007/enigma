@@ -17,7 +17,7 @@ process.env.HOME = HOME;
 // it this file would inherit whatever temp dir a test file that ran earlier left behind.
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
-const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation, browserInvocation } = await import("../src/mcp-deploy");
+const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation, browserInvocation, applyContextServer, hasContextServer } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -276,4 +276,22 @@ test("codex config with two managed servers reaches a fixed point", () => {
     expect(first).toContain("[mcp_servers.chrome-devtools]");
     expect(applyMcpForAccount("codex", dir)).toBe(false);
     expect(readFileSync(join(dir, "config.toml"), "utf8")).toBe(first);
+});
+
+test("hasContextServer reports only an entry that was actually written", () => {
+    const server = { command: "node", args: ["engine.mjs"] };
+    for (const tool of ["claude", "codex", "opencode", "kimi"]) {
+        const dir = join(HOME, `ctx-${tool}`);
+        mkdirSync(dir, { recursive: true });
+        expect(hasContextServer(tool, dir, "rea")).toBe(false);
+        applyContextServer(tool, dir, "rea", server);
+        expect(hasContextServer(tool, dir, "rea")).toBe(true);
+        applyContextServer(tool, dir, "rea", null);
+        expect(hasContextServer(tool, dir, "rea")).toBe(false);
+    }
+    const broken = join(HOME, "ctx-broken");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(join(broken, ".claude.json"), "{ not json");
+    expect(applyContextServer("claude", broken, "rea", server)).toBe(false);
+    expect(hasContextServer("claude", broken, "rea")).toBe(false);
 });

@@ -9,6 +9,10 @@
  * package on every agent start, needs a `cmd /c` wrapper (and a console window) on Windows, and
  * runs under whatever node is first on PATH even when the engine refuses it.
  *
+ * When the bundle also ships `assets/engine-lock.json` (an npm lockfile for that pin, written by
+ * the sync script), the engine is installed with `npm ci` from it, so every transitive package is
+ * fixed to the version and integrity hash the bundle was released with.
+ *
  * The node is picked against the engine's own `engines.node` range from every runtime this
  * machine has (PATH, nvm, nvm-windows): a developer whose shell defaults to an older Node still
  * gets a server that starts.
@@ -18,32 +22,55 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readJson, resolveBin } from "./util";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 /** An agent's pinned engine, as declared by its bundle's `assets/engine.json`. */
 export interface EngineSpec {
     package: string;
     version: string;
+    /** The bundle's npm lockfile for this pin (`assets/engine-lock.json`), when it ships one. */
+    lockfile?: string;
 }
 
 /** A node executable and its version. */
 export interface NodeRuntime {
     path: string;
     version: string;
+    /** The node found on PATH, as opposed to a version-manager install. */
+    onPath?: boolean;
 }
 
 const PACKAGE_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 const EXACT_VERSION = /^\d+\.\d+\.\d+$/;
+const HOST_NAME = "enigma-agent-engine-host";
 
 /**
  * Read and validate `<assets>/engine.json`. Both fields reach an npm command line, so anything
- * but a plain package name and an exact x.y.z version is rejected, never passed on.
+ * but a plain package name and an exact x.y.z version is rejected, never passed on. A shipped
+ * `engine-lock.json` that does not lock that exact pin makes the whole spec invalid.
  */
 export function readEngineSpec(assets: string): EngineSpec | null {
     const raw = readJson<{ package?: unknown; version?: unknown; }>(join(assets, "engine.json"));
     if (!raw || typeof raw.package !== "string" || typeof raw.version !== "string") return null;
     if (!PACKAGE_NAME.test(raw.package) || !EXACT_VERSION.test(raw.version)) return null;
-    return { package: raw.package, version: raw.version };
+    const spec: EngineSpec = { package: raw.package, version: raw.version };
+    const lockfile = join(assets, "engine-lock.json");
+    if (!existsSync(lockfile)) return spec;
+    return engineLockMatches(lockfile, spec) ? { ...spec, lockfile } : null;
+}
+
+interface EngineLock {
+    packages?: Record<string, { version?: unknown; integrity?: unknown; dependencies?: Record<string, unknown>; }>;
+}
+
+/** Whether a lockfile pins `spec` as the host's only direct dependency, with an integrity hash. */
+function engineLockMatches(lockfile: string, spec: EngineSpec): boolean {
+    const packages = readJson<EngineLock>(lockfile)?.packages;
+    const root = packages?.[""];
+    const entry = packages?.[`node_modules/${spec.package}`];
+    if (!root || !entry) return false;
+    return JSON.stringify(root.dependencies ?? {}) === JSON.stringify({ [spec.package]: spec.version })
+        && entry.version === spec.version && typeof entry.integrity === "string";
 }
 
 /** The engine's npm host dir inside an agent's managed root. */
@@ -119,10 +146,18 @@ function acquireLock(lock: string): boolean {
 
 function installEngine(agentRoot: string, dir: string, spec: EngineSpec): string | null {
     const manifest = join(dir, "package.json");
-    if (!existsSync(manifest)) writeFileSync(manifest, `${JSON.stringify({ name: "enigma-agent-engine-host", private: true }, null, 2)}\n`);
+    let args: string[];
+    if (spec.lockfile) {
+        writeFileSync(manifest, `${JSON.stringify({ name: HOST_NAME, private: true, dependencies: { [spec.package]: spec.version } }, null, 2)}\n`);
+        copyFileSync(spec.lockfile, join(dir, "package-lock.json"));
+        args = ["ci", "--no-audit", "--no-fund"];
+    } else {
+        if (!existsSync(manifest)) writeFileSync(manifest, `${JSON.stringify({ name: HOST_NAME, private: true }, null, 2)}\n`);
+        args = ["install", `${spec.package}@${spec.version}`, "--no-audit", "--no-fund", "--save-exact"];
+    }
     // `npm` is a .cmd shim on Windows, so it needs the shell; both arguments were validated by
     // readEngineSpec and cannot carry shell syntax.
-    const result = spawnSync("npm", ["install", `${spec.package}@${spec.version}`, "--no-audit", "--no-fund", "--save-exact"], {
+    const result = spawnSync("npm", args, {
         cwd: dir, shell: true, stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", timeout: 600_000, windowsHide: true,
     });
     if (installedEngineVersion(agentRoot, spec.package) === spec.version) return null;
@@ -207,7 +242,7 @@ export function nodeRuntimes(env: NodeJS.ProcessEnv = process.env, platform: Nod
     const found: NodeRuntime[] = [];
     const onPath = resolveBin("node");
     const pathVersion = onPath ? nodeVersion(onPath) : null;
-    if (onPath && pathVersion) found.push({ path: onPath, version: pathVersion });
+    if (onPath && pathVersion) found.push({ path: onPath, version: pathVersion, onPath: true });
     const layouts = platform === "win32"
         ? [{ root: env.NVM_HOME ?? "", node: "node.exe" }]
         : [{ root: join(env.NVM_DIR || join(env.HOME || homedir(), ".nvm"), "versions", "node"), node: join("bin", "node") }];
@@ -223,15 +258,23 @@ export function nodeRuntimes(env: NodeJS.ProcessEnv = process.env, platform: Nod
     return found;
 }
 
+let cachedRuntimes: NodeRuntime[] | null = null;
+
+/** This machine's node runtimes, probed once per process. */
+function machineRuntimes(): NodeRuntime[] {
+    return cachedRuntimes ??= nodeRuntimes();
+}
+
 /**
  * The node to run an engine on: the PATH node when it satisfies `range`, else the newest runtime
- * that does. With no readable range the PATH node is used as-is. Null when nothing qualifies.
+ * that does. With no readable range the PATH node is used as-is (the newest runtime when none is
+ * on PATH). Null when nothing qualifies.
  */
-export function pickNode(range: string | null, runtimes: NodeRuntime[] = nodeRuntimes()): NodeRuntime | null {
-    if (!runtimes.length) return null;
-    if (range === null) return runtimes[0]!;
+export function pickNode(range: string | null, runtimes: NodeRuntime[] = machineRuntimes()): NodeRuntime | null {
+    const pathNode = runtimes.find((r) => r.onPath) ?? null;
+    const newest = (list: NodeRuntime[]) => [...list].sort((a, b) => compare(parse(b.version)!, parse(a.version)!))[0] ?? null;
+    if (range === null) return pathNode ?? newest(runtimes);
     const fits = runtimes.filter((r) => satisfiesRange(r.version, range) !== false);
-    if (!fits.length) return null;
-    if (fits.includes(runtimes[0]!)) return runtimes[0]!;
-    return fits.sort((a, b) => compare(parse(b.version)!, parse(a.version)!))[0]!;
+    if (pathNode && fits.includes(pathNode)) return pathNode;
+    return newest(fits);
 }

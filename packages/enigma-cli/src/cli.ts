@@ -2390,7 +2390,7 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             const explicit = opts.positionals[2];
             let src: ClaudeSessionSource | undefined;
             if (explicit) {
-                src = sources.find((s) => s.id === explicit || s.id === `account:${explicit}` || s.id === `pack:${explicit}` || s.id === `agent:${explicit}` || s.label === explicit);
+                src = sources.find((s) => s.id === explicit || s.id === `account:${explicit}` || s.id === `pack:${explicit}` || s.id === explicit.replace(/^agent:/, "pack:") || s.label === explicit);
                 if (!src) { console.error(`Unknown session source '${explicit}'. List them with: enigma account sessions.`); return 1; }
                 if (!src.usable) { console.error(`Source '${src.id}' has no usable session (${src.state}).`); return 1; }
             } else {

@@ -39,6 +39,21 @@ function readPin() {
     try { return JSON.parse(readFileSync(pinPath, "utf8")); } catch { return {}; }
 }
 
+/**
+ * The npm lockfile enigma installs the engine from (`npm ci`), so every transitive dependency is
+ * fixed to the version and integrity resolved here instead of floating on each user's machine.
+ * The host manifest must match the one enigma-cli's agent-engine.ts writes before `npm ci`.
+ */
+function engineLock(work, version, integrity) {
+    const host = join(work, "engine-host");
+    mkdirSync(host, { recursive: true });
+    writeFileSync(join(host, "package.json"), `${JSON.stringify({ name: "enigma-agent-engine-host", private: true, dependencies: { [PACKAGE]: version } }, null, 2)}\n`);
+    run("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: host });
+    const lock = readFileSync(join(host, "package-lock.json"), "utf8");
+    if (JSON.parse(lock).packages?.[`node_modules/${PACKAGE}`]?.integrity !== integrity) throw new Error(`The lockfile does not pin ${PACKAGE}@${version} to its registry integrity.`);
+    return lock.endsWith("\n") ? lock : `${lock}\n`;
+}
+
 function main() {
     const requested = arg("--version") || readPin().version;
     if (!requested) {
@@ -70,6 +85,7 @@ function main() {
         cpSync(join(pkgRoot, "LICENSE"), join(pkgDir, "LICENSE-REA"));
 
         writeFileSync(join(assetsDir, "engine.json"), `${JSON.stringify({ package: PACKAGE, version }, null, 2)}\n`);
+        writeFileSync(join(assetsDir, "engine-lock.json"), engineLock(work, version, meta["dist.integrity"]));
         writeFileSync(pinPath, `${JSON.stringify({
             package: PACKAGE,
             version,

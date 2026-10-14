@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { copyIfFresher } from "./claude-oauth";
-import { applyContextServer, browserInvocation, type ContextServer } from "./mcp-deploy";
+import { applyContextServer, browserInvocation, hasContextServer, type ContextServer } from "./mcp-deploy";
 import { engineBin, engineNodeRange, ensureEngine, installedEngineVersion, pickNode, readEngineSpec, type EngineSpec } from "./agent-engine";
 import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
@@ -568,7 +568,7 @@ function registerPackMcp(id: string, tool: string, builtinOnly: boolean): string
         const spec = packServerSpec(id, assets, server, tool, builtinOnly);
         if (spec === undefined) continue;
         applyContextServer(tool, dir, server.name, spec);
-        if (spec) added.push(server.name);
+        if (spec && hasContextServer(tool, dir, server.name)) added.push(server.name);
     }
     return added;
 }
@@ -587,6 +587,15 @@ export function ensurePackEngine(id: string, onInstall?: (spec: EngineSpec) => v
     if (!spec) return `${pack.label} declares no valid engine (assets/engine.json).`;
     if (installedEngineVersion(packRoot(id), spec.package) !== spec.version) onInstall?.(spec);
     return ensureEngine(packRoot(id), spec);
+}
+
+/** Whether the pack needs no engine or has its pinned one installed, without installing anything. */
+function isPackEngineReady(id: string): boolean {
+    const pack = getPack(id);
+    if (!pack?.engine) return true;
+    const assets = packAssetsDir(id);
+    const spec = assets ? readEngineSpec(assets) : null;
+    return Boolean(spec) && installedEngineVersion(packRoot(id), spec!.package) === spec!.version;
 }
 
 /**
@@ -707,8 +716,7 @@ export function ensurePackContext(id: string, tool: string = DEFAULT_TOOL, accou
     const seedAccount = resolvePackAccount(id, tool, account);
     if (!ensurePackInstalled(id)) throw new Error(`Could not fetch ${pack.label} (${pack.pkg}). Check your network and npm.`);
     if (!isPackEnabled(id)) enablePack(id);
-    const engineError = ensurePackEngine(id);
-    if (engineError) throw new Error(`Could not install the ${pack.label} engine: ${engineError}`);
+    if (!isPackEngineReady(id)) throw new Error(`The ${pack.label} engine is not installed. Run: enigma agent setup ${id}`);
     const dir = deployPack(id, tool);
     if (!dir) throw new Error(`${pack.label} assets are missing.`);
     seedCredentials(id, tool, seedAccount);
