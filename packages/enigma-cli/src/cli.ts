@@ -294,7 +294,16 @@ function parseArgs(argv: string[]): CliOptions {
                 // would now no-op forever; tests/cli-dispatch.test.ts matches the two sets so
                 // that case fails in CI instead of in silence on a user machine.
                 else if (a.startsWith("__")) { process.exit(0); }
-                else { console.error(`Unknown command: ${a}`); process.exit(1); }
+                // An account name in the command slot launches that account: `enigma work` is
+                // `enigma claude work`. Read only here, after every real command has had its
+                // turn, so a command keeps its name when an account shares it and no other
+                // invocation pays for the registry read.
+                else {
+                    const owner = i === 0 ? acct.toolOfAccount(a) : null;
+                    if (!owner) { console.error(`Unknown command: ${a}`); process.exit(1); }
+                    opts.command = owner;
+                    opts.positionals.push(a);
+                }
         }
     }
     return opts;
@@ -324,7 +333,8 @@ Commands:
                        auto-syncs deployed skills first (see auto-sync config key) and
                        keeps managed accounts stocked with skills, memory and the
                        mirrored settings (bypass, attribution) of the default account;
-                       flags go straight to the tool (e.g. claude work --resume <id>)
+                       flags go straight to the tool (e.g. claude work --resume <id>);
+                       a managed account's name alone does the same (enigma work)
   account <subcommand> Manage tool accounts (multi-login without logging out).
                        Defaults to Claude Code; target another tool with --tool <name>:
                          list                 List accounts (active one marked)
@@ -866,6 +876,8 @@ Deployed skills are auto-synced first ('enigma config auto-sync off' to stop tha
 Flags go to ${name} verbatim, starting at the first one:
   enigma ${name} --resume <id>
   enigma ${name} work --model opus
+
+A managed account's name alone launches it: 'enigma work' is 'enigma ${name} work'.
 
 '-h' and '--help' stay enigma's; for ${name}'s own, run '${name} --help'.`;
 }

@@ -158,3 +158,23 @@ test("a launch line keeps enigma's own help", () => {
     expect(res.code).toBe(0);
     expect(res.stdout).toContain("enigma claude");
 });
+
+test("an account name alone launches that account", () => {
+    // `enigma solo` is `enigma claude solo`: the name already says which tool and which login,
+    // and it used to die on `Unknown command: solo`.
+    expect(cli("account", "add", "solo").code).toBe(0);
+    const res = launched("solo", "--resume", "abc123");
+    expect(res.code).toBe(0);
+    expect(res.argv).toBe("--resume abc123");
+    // Forwarded flags alone would also pass if the ACTIVE account had launched instead. Only a
+    // launch stamps `lastUsed`, and this account was created a moment ago without one.
+    const registry = JSON.parse(readFileSync(join(HOME, ".enigma", "accounts.json"), "utf8"));
+    const solo = registry.tools.claude.accounts.find((a: { name: string; }) => a.name === "solo");
+    expect(typeof solo.lastUsed).toBe("string");
+    // A command always wins the slot, so an account named like one would be unreachable: the
+    // name is refused at creation, and the command keeps working.
+    const taken = cli("account", "add", "version");
+    expect(taken.code).not.toBe(0);
+    expect(`${taken.stdout}${taken.stderr}`).toContain("enigma command");
+    expect(cli("version").stdout).toMatch(/^\d+\.\d+\.\d+/);
+}, 60_000);

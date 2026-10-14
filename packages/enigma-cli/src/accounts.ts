@@ -521,6 +521,16 @@ export function accountExists(toolName: string, name: string): boolean {
 }
 
 /**
+ * The tool that owns a managed account with this name, or null when none does. Backs the
+ * `enigma <account>` launch shortcut, which maps the bare name to `enigma <tool> <account>`.
+ * When more than one tool has an account by this name, the first tool in `TOOL_NAMES` wins.
+ */
+export function toolOfAccount(name: string): string | null {
+    const reg = readRegistry();
+    return TOOL_NAMES.find((tool) => bucketOf(reg, tool).accounts.some((a) => a.name === name)) ?? null;
+}
+
+/**
  * Create (or return, if it already exists) a managed account for a tool.
  * Validates the name, creates its config directory under the tool's base, and
  * records it. Idempotent so re-running `account add` is safe.
