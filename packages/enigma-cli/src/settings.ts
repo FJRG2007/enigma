@@ -36,6 +36,9 @@ function printEffective(): void {
     console.log("Agent settings (attribution, bypass) reflect each agent's own config at the global scope.");
 }
 
+/** Keys `enigma config` handles before the registry: numeric and free-form values. */
+export const VALUE_CONFIG_KEYS = ["statusline-refresh", "token-price", "token-speed", "dashboard-port", "dashboard-bind", "dashboard-bind-address", "plan-session-limit", "plan-weekly-limit", "plan-weekly-sonnet-limit", "plan-weekly-opus-limit", "plan-weekly-reset"];
+
 /**
  * `enigma config` command. With no key on a TTY, opens the interactive TUI; with
  * no key on a non-TTY, prints effective values. With `<key> <on|off>`, writes that
@@ -184,7 +187,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
 
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, statusline-refresh, token-price, token-speed, dashboard-port, dashboard-bind, dashboard-bind-address, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${[...ALL_SETTINGS.map((s) => s.key), ...VALUE_CONFIG_KEYS].join(", ")}.`);
         return 1;
     }
 

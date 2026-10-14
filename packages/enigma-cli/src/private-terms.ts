@@ -29,9 +29,9 @@ export function readPrivateTerms(): string[] {
 /**
  * One matcher over every private term, or null when there are none. Case-insensitive, and a
  * run of spaces, `_` or `-` between a term's words matches any other such run or none, so
- * "Er Migue" also finds "ErMigue04" and "er_migue". It matches a whole word: a term inside a
- * longer word ("Arnau" in "Barnaul") is not a match, while a camelCase join ("offgridServer")
- * and a trailing number ("ErMigue04") are. Letters are spelled as explicit [xX] classes instead
+ * "Zephyr Quill" also finds "ZephyrQuill42" and "zephyr_quill". It matches a whole word: a term
+ * inside a longer word ("Orla" in "Gorlavsk") is not a match, while a camelCase join
+ * ("moonhavenServer") and a trailing number ("ZephyrQuill42") are. Letters are spelled as explicit [xX] classes instead
  * of the `i` flag so the lowercase-letter boundary keeps its case.
  */
 export function privateTermMatcher(terms: string[]): RegExp | null {
