@@ -6,12 +6,12 @@
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runGuard } from "../src/guard";
 import { execFileSync } from "node:child_process";
 import { privateTermLeak } from "../src/guardrails";
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { readGlobalGuard, setGuardList } from "../src/guard-config";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { runGuard } from "../src/guard";
 import { privateTermLines, privateTermMatcher, readPrivateTerms } from "../src/private-terms";
 
 setDefaultTimeout(60_000);
