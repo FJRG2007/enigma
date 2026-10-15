@@ -23,7 +23,7 @@ import { log } from "@/gate/log";
 import * as git from "@/gate/git";
 import { buildHost } from "./host";
 import { readConfigAt } from "@/config";
-import { redactOperatorHome } from "@/guardrails";
+import { redactPublished } from "@/guardrails";
 import type { Result } from "@/gate/agent/agent";
 import { detectProvider } from "@/gate/scm/host";
 import { resolveBranchBaseSHA } from "./commonGit";
@@ -119,9 +119,10 @@ export class PRStep implements Step {
         // so a plain title is a merge commit without the emoji every other commit carries.
         if (readConfigAt(sctx.repo.workingPath).commitEmoji) content.title = withTypeEmoji(content.title);
         // Last, over everything the PR will show: no spelling of this machine's home directory
-        // (account name, OS layout, temp paths) leaves in a PR, whichever section carried it.
-        content.title = redactOperatorHome(content.title);
-        content.body = redactOperatorHome(content.body);
+        // (account name, OS layout, temp paths) and no private term leaves in a PR, whichever
+        // section carried it.
+        content.title = redactPublished(content.title);
+        content.body = redactPublished(content.body);
 
         sctx.log(`checking for existing pull request on branch ${branch}...`);
         const existing = await host.findPR(branch, sctx.repo.defaultBranch, signal);

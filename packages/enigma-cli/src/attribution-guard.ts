@@ -18,9 +18,13 @@
  *
  * The same hook refuses a message that contains this machine's home directory (account name, OS
  * layout, temp paths), since the commands it already watches are exactly where an agent
- * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it. That
- * check runs whatever the attribution setting, so the hook is installed either way and the
+ * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it. Both
+ * checks run whatever the attribution setting, so the hook is installed either way and the
  * attribution check reads the session's setting at run time (`attributionOff`).
+ *
+ * It refuses a private term (`~/.enigma-guard.json`, private-terms.ts) the same way: the message
+ * must neither name the value nor say that a private value was removed, since either one points
+ * a reader at what the refusal hides.
  *
  * Messages passed by file (`-F <file>`, `--file`, `--body-file`) are read from disk relative to
  * the payload's cwd. A message written by an editor cannot be seen here; the turn-end check
@@ -33,6 +37,7 @@ import { applyClaudeHook } from "./claude-hooks";
 import { readFileSync, statSync } from "node:fs";
 import { operatorHomePathLeak } from "./guardrails";
 import type { HookGroup, HookWrite } from "./claude-hooks";
+import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./private-terms";
 
 /** Marker identifying enigma's handlers in settings.json (see applyClaudeHook). */
 const MARKER = "__attribution-guard";
@@ -155,6 +160,13 @@ export function runAttributionGuardHook(raw: string): number {
     const message = [messageText(payload.command), ...messageFiles(payload.command).map((f) => readMessageFile(payload.cwd, f))].join("\n");
     if (operatorHomePathLeak(message).length) {
         process.stderr.write("enigma: this commit or PR message contains a path inside your home directory, which publishes your account name and disk layout. Use a repo-relative path or a file name instead, then run the command again.\n");
+        return 2;
+    }
+    // A private term is refused the same way, and the refusal never echoes it: the message must
+    // not name the value, nor say a private value was removed (that tells a reader where to look).
+    const terms = privateTermMatcher(readPrivateTerms());
+    if (terms !== null && privateTermLines(message, terms).length) {
+        process.stderr.write("enigma: this commit or PR message contains one of your private terms (~/.enigma-guard.json). Write a neutral message that neither names the value nor says a private value was removed, then run the command again.\n");
         return 2;
     }
     return 0;

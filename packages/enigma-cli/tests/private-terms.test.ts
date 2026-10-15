@@ -8,11 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runGuard } from "../src/guard";
 import { execFileSync } from "node:child_process";
-import { privateTermLeak } from "../src/guardrails";
 import { test, expect, setDefaultTimeout } from "bun:test";
+import { runAttributionGuardHook } from "../src/attribution-guard";
 import { readGlobalGuard, setGuardList } from "../src/guard-config";
+import { privateTermLeak, redactPublished } from "../src/guardrails";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { privateTermLines, privateTermMatcher, readPrivateTerms } from "../src/private-terms";
+import { privateTermLines, privateTermMatcher, readPrivateTerms, redactPrivateTerms } from "../src/private-terms";
 
 setDefaultTimeout(60_000);
 
@@ -125,5 +126,30 @@ test("the guardrail reports the line at edit time, follows list changes, and say
         expect(privateTermLeak(content)).toEqual([]);
         writeFileSync(join(home, ".enigma-guard.json"), JSON.stringify({ privateTerms: ["moonhaven"] }));
         expect(privateTermLeak(content)).toEqual([{ line: 2, detail: "a private term from your list" }]);
+    });
+});
+
+// The gate writes PR titles, bodies and commit subjects on its own; a fixer agent once described
+// its own fix by naming the private term it had just removed. Text the gate sends is scrubbed.
+test("published text has every private term replaced by a neutral word, URLs kept", () => {
+    const body = "Rename the moonhaven-0 fixtures; Zephyr Quill asked for it (see https://example.test/moonhaven)";
+    expect(redactPrivateTerms(body, TERMS)).toBe("Rename the example-0 fixtures; example asked for it (see https://example.test/moonhaven)");
+    expect(redactPrivateTerms("Gorlavsk stays", TERMS)).toBe("Gorlavsk stays");
+    expect(redactPrivateTerms("untouched", [])).toBe("untouched");
+    withHome(() => {
+        setGuardList("privateTerms", ["Orla"]);
+        expect(redactPublished("thanks orla")).toBe("thanks example");
+    });
+});
+
+test("a commit or PR message carrying a private term is refused without echoing it", () => {
+    withHome(() => {
+        setGuardList("privateTerms", ["moonhaven"]);
+        const run = (command: string): number => runAttributionGuardHook(JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: process.cwd() }));
+        expect(run("git commit -q -m \"test: rename the moonhaven-0 fixtures\"")).toBe(2);
+        expect(run("gh pr edit 7 --title \"chore: tidy\" --body \"drops moonhaven\"")).toBe(2);
+        expect(run("git commit -q -m \"test: use generic fixture names\"")).toBe(0);
+        // Where the command runs is not what it publishes.
+        expect(run("cd /work/moonhaven && git commit -q -m \"test: use generic fixture names\"")).toBe(0);
     });
 });
