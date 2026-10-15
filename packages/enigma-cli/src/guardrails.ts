@@ -34,7 +34,7 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./private-terms";
+import { privateTermLines, privateTermMatcher, readPrivateTerms, redactPrivateTerms } from "./private-terms";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "node:fs";
 
@@ -1747,7 +1747,7 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // before the value reaches the history for good, and never on an old file it did not write.
         stage: "diff",
         fileCheck: "sec-private-term",
-        message: "This line carries one of your private terms - the real name, handle, server or community name of you or of the people you serve (the list in ~/.enigma-guard.json, `enigma config guard-private-terms`). Real data never goes into a tracked file, and tests, fixtures, examples and docs use ANONYMOUS data: invent the values (`Player One`, `alice@example.test`, `Test Server`) and, when a real log or payload shape matters, reproduce the shape with invented values instead of pasting the capture. Being shown a real value to work with is permission to use it, never to publish it (security-policy, testing-policy).",
+        message: "This line carries one of your private terms - the real name, handle, server or community name of you or of the people you serve (the list in ~/.enigma-guard.json, `enigma config guard-private-terms`). Real data never goes into a tracked file, and tests, fixtures, examples and docs use ANONYMOUS data: invent the values (`Player One`, `alice@example.test`, `Test Server`) and, when a real log or payload shape matters, reproduce the shape with invented values instead of pasting the capture. Being shown a real value to work with is permission to use it, never to publish it (security-policy, testing-policy). The commit message, PR title and PR body for the fix stay neutral: they never name the value and never say that a private value was removed.",
         severity: "block",
         skill: "security-policy",
     },
@@ -3774,6 +3774,15 @@ export function privateTermLeak(content: string): { line: number; detail: string
 export function redactOperatorHome(text: string): string {
     const re = operatorHomeRegex("gi");
     return re === null ? text : text.replace(re, "~");
+}
+
+/**
+ * `text` as enigma may publish it: the operator's home replaced by `~` and every private term by
+ * a neutral word. One entry point for every place the gate sends text, so a new kind of private
+ * value is added here once instead of at each call site.
+ */
+export function redactPublished(text: string): string {
+    return redactPrivateTerms(redactOperatorHome(text));
 }
 
 /** The regex matching this machine's home in all three spellings, or null for a generic account. */

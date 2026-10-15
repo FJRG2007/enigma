@@ -33,6 +33,7 @@ import { applyClaudeHook } from "./claude-hooks";
 import { readFileSync, statSync } from "node:fs";
 import { operatorHomePathLeak } from "./guardrails";
 import type { HookGroup, HookWrite } from "./claude-hooks";
+import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./private-terms";
 
 /** Marker identifying enigma's handlers in settings.json (see applyClaudeHook). */
 const MARKER = "__attribution-guard";
@@ -155,6 +156,13 @@ export function runAttributionGuardHook(raw: string): number {
     const message = [messageText(payload.command), ...messageFiles(payload.command).map((f) => readMessageFile(payload.cwd, f))].join("\n");
     if (operatorHomePathLeak(message).length) {
         process.stderr.write("enigma: this commit or PR message contains a path inside your home directory, which publishes your account name and disk layout. Use a repo-relative path or a file name instead, then run the command again.\n");
+        return 2;
+    }
+    // A private term is refused the same way, and the refusal never echoes it: the message must
+    // not name the value, nor say a private value was removed (that tells a reader where to look).
+    const terms = privateTermMatcher(readPrivateTerms());
+    if (terms !== null && privateTermLines(message, terms).length) {
+        process.stderr.write("enigma: this commit or PR message contains one of your private terms (~/.enigma-guard.json). Write a neutral message that neither names the value nor says a private value was removed, then run the command again.\n");
         return 2;
     }
     return 0;

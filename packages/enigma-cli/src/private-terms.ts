@@ -51,6 +51,19 @@ export function hasPrivateTerm(line: string, re: RegExp): boolean {
     return re.test(line.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " "));
 }
 
+/**
+ * `text` with every private term replaced by "example", for text enigma publishes on its own
+ * behalf (a PR the gate writes, its commit subjects, the squash message). A neutral word and not
+ * a "[redacted]" marker: a marker tells the reader something was removed, which is what it hides.
+ * URLs are kept as written, as in `hasPrivateTerm`.
+ */
+export function redactPrivateTerms(text: string, terms: string[] = readPrivateTerms()): string {
+    const re = privateTermMatcher(terms);
+    if (re === null) return text;
+    const all = new RegExp(re.source, "gu");
+    return text.split(/(\b[a-z][a-z0-9+.-]*:\/\/\S+)/gi).map((part, i) => i % 2 ? part : part.replace(all, "example")).join("");
+}
+
 /** 1-based lines of `text` carrying a private term. */
 export function privateTermLines(text: string, re: RegExp): number[] {
     const out: number[] = [];

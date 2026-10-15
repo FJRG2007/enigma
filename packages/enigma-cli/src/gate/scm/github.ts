@@ -10,7 +10,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { redactOperatorHome } from "@/guardrails";
+import { redactPublished } from "@/guardrails";
 import { Provider, PROVIDER_GITHUB } from "./host";
 import { stripAttributionLines } from "@/attribution-guard";
 
@@ -384,7 +384,7 @@ export class Host {
                 .join("\n\n");
             const original = body.replace(/\n{3,}/g, "\n\n").trim();
             const subject = `${view.title} (#${pr.number})`;
-            const message = { subject: redactOperatorHome(subject), body: redactOperatorHome(strip ? stripAttributionLines(body) : original) };
+            const message = { subject: redactPublished(subject), body: redactPublished(strip ? stripAttributionLines(body) : original) };
             if (message.subject === subject && message.body === original) return null;
             return message;
         } catch {
