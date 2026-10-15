@@ -33,9 +33,9 @@ export interface PortForward {
 
 /** A saved SSH connection. `password` is stored encrypted (enc:v1:...) and never displayed. */
 export interface SshConnection {
-  /** Short key the user connects with (e.g. "lirio-0"). Primary id; always set. */
+  /** Short key the user connects with (e.g. "web-0"). Primary id; always set. */
   alias: string;
-  /** The real server name (e.g. "lirio-production"). An ALTERNATE connect key when set. */
+  /** The real server name (e.g. "web-production"). An ALTERNATE connect key when set. */
   name?: string;
   host: string;
   user?: string;

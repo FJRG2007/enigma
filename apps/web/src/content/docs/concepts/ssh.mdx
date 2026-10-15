@@ -12,20 +12,20 @@ The same store powers the **CLI, the TUI hub and the dashboard**. Passwords are 
 
 ## Save a connection
 
-<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.0.2.10 --user deploy --password", "enigma ssh add db --host db.internal --user deploy --jump root@bastion -i ~/.ssh/id_ed25519"]}>
+<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add web-0 --name web-prod --host 192.0.2.10 --user deploy --password", "enigma ssh add db --host db.internal --user deploy --jump root@bastion -i ~/.ssh/id_ed25519"]}>
 Flags: `--host`, `--name`/`-n` (a second connect key, see below), `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias|name>` changes any field; `--no-password` clears a stored one, `--no-name` clears the name and `--no-port` clears the port (back to 22).
 </Cmd>
 
 ## Alias and name
 
-Every connection has an **alias** (the short key you type) and an optional **name** (the real server name). Both are connect keys - `enigma ssh lirio-0` and `enigma ssh lirio-prod` reach the same box. Neither an alias nor a name may be reused by a *different* connection (both are unique), but a single connection may set its name equal to its own alias.
+Every connection has an **alias** (the short key you type) and an optional **name** (the real server name). Both are connect keys - `enigma ssh web-0` and `enigma ssh web-prod` reach the same box. Neither an alias nor a name may be reused by a *different* connection (both are unique), but a single connection may set its name equal to its own alias.
 
 A key that the CLI already reads as a subcommand is refused, because it could never be reached: `enigma ssh tunnel` runs the tunnel subcommand, so no server can be aliased `tunnel` (nor `add`, `edit`, `remove`, `rm`, `delete`, `info`, `show`, `list`, `ls`, `forward`, `fwd`, `tunnels`). The CLI, the TUI and the dashboard all enforce this - the dashboard form flags it as you type. A **saved forward**'s name is refused the same way against the tunnel operations, since `enigma ssh tunnel <name>` runs it by name; a standalone tunnel's name is free, because you always run it as `enigma ssh tunnel start <name>`.
 
 ## Connect
 
-<Cmd name="enigma ssh <alias|name>" ex={["enigma ssh lirio-0", "enigma ssh lirio-prod", "enigma ssh"]}>
-Opens an interactive session - the key, port, jump host, options and any saved forwards are applied for you. With no argument it lists your saved connections. Anything after `--` is passed straight to `ssh` (e.g. `enigma ssh lirio-0 -- uptime`).
+<Cmd name="enigma ssh <alias|name>" ex={["enigma ssh web-0", "enigma ssh web-prod", "enigma ssh"]}>
+Opens an interactive session - the key, port, jump host, options and any saved forwards are applied for you. With no argument it lists your saved connections. Anything after `--` is passed straight to `ssh` (e.g. `enigma ssh web-0 -- uptime`).
 </Cmd>
 
 ## Password auto-fill (no extra tools)
@@ -44,7 +44,7 @@ A **tunnel** is a named port forward that is its own thing - it is *not* nested 
 | `R:8080:localhost:80` | **remote** forward |
 | `D:1080` | **dynamic** SOCKS proxy on `1080` |
 
-<Cmd name="enigma ssh tunnel <add|start|stop|rm|edit|list>" ex={["enigma ssh tunnel add pg lirio-0 9090:5432", "enigma ssh tunnel start pg", "enigma ssh tunnels", "enigma ssh tunnel edit pg --server other-box", "enigma ssh tunnel stop pg"]}>
+<Cmd name="enigma ssh tunnel <add|start|stop|rm|edit|list>" ex={["enigma ssh tunnel add pg web-0 9090:5432", "enigma ssh tunnel start pg", "enigma ssh tunnels", "enigma ssh tunnel edit pg --server other-box", "enigma ssh tunnel stop pg"]}>
 `add <name> <server> <spec>` defines a tunnel; `start`/`stop <name>` bring it up (a background `ssh -N`) and down; `enigma ssh tunnels` lists them all with live status; `edit <name> [--server s] [--spec 9090:5432] [--name new]` re-points or changes it; `rm <name>` deletes it. Passwords are auto-filled, so a tunnel starts with nothing to type.
 </Cmd>
 

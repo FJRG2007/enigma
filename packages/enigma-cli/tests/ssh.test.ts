@@ -37,19 +37,19 @@ test("add validates alias and host, and rejects duplicates", () => {
 });
 
 test("name is a second connect key: unique across servers, resolvable, same-server name==alias ok", () => {
-  expect(ssh.addConnection("lirio-0", { host: "h", name: "lirio-prod" }).ok).toBe(true);
+  expect(ssh.addConnection("web-0", { host: "h", name: "web-prod" }).ok).toBe(true);
   // Both keys resolve to the same connection.
-  expect(ssh.getConnection("lirio-0")!.alias).toBe("lirio-0");
-  expect(ssh.getConnection("lirio-prod")!.alias).toBe("lirio-0");
+  expect(ssh.getConnection("web-0")!.alias).toBe("web-0");
+  expect(ssh.getConnection("web-prod")!.alias).toBe("web-0");
   // A new server may not reuse either key (alias or name) of another.
-  expect(ssh.addConnection("x1", { host: "h", name: "lirio-0" }).ok).toBe(false);   // name clashes with an alias
-  expect(ssh.addConnection("lirio-prod", { host: "h" }).ok).toBe(false);            // alias clashes with a name
+  expect(ssh.addConnection("x1", { host: "h", name: "web-0" }).ok).toBe(false);   // name clashes with an alias
+  expect(ssh.addConnection("web-prod", { host: "h" }).ok).toBe(false);            // alias clashes with a name
   // A single server may set name == its own alias.
   expect(ssh.addConnection("solo", { host: "h", name: "solo" }).ok).toBe(true);
   // Editing to clear the name frees it for reuse.
-  ssh.updateConnection("lirio-0", { name: "" });
-  expect(ssh.getConnection("lirio-prod")).toBeNull();
-  expect(ssh.addConnection("reuse", { host: "h", name: "lirio-prod" }).ok).toBe(true);
+  ssh.updateConnection("web-0", { name: "" });
+  expect(ssh.getConnection("web-prod")).toBeNull();
+  expect(ssh.addConnection("reuse", { host: "h", name: "web-prod" }).ok).toBe(true);
 });
 
 test("a CLI subcommand cannot be used as an alias, a name or a forward name", () => {
@@ -82,7 +82,7 @@ test("a name already stored stays editable, so a pre-reserved connection is not 
 });
 
 test("the reserved lists match the issue helpers, so every surface refuses the same names", () => {
-  expect(ssh.connectionKeyIssue("lirio-0")).toBeNull();
+  expect(ssh.connectionKeyIssue("web-0")).toBeNull();
   expect(ssh.connectionKeyIssue("")).toContain("required");
   expect(ssh.connectionKeyIssue("bad alias")).toContain("alphanumeric");
   expect(ssh.forwardNameIssue("pg")).toBeNull();
@@ -103,11 +103,11 @@ test("askpassAnswer returns the decrypted password by alias or name, else empty"
 });
 
 test("askpassEnv wires enigma as SSH_ASKPASS with force", () => {
-  const env = ssh.askpassEnv("lirio-0");
+  const env = ssh.askpassEnv("web-0");
   expect(env.SSH_ASKPASS).toBe(process.execPath);
   expect(env.SSH_ASKPASS_REQUIRE).toBe("force");
   expect(env.ENIGMA_ASKPASS).toBe("1");
-  expect(env.ENIGMA_SSH_ASKPASS_ALIAS).toBe("lirio-0");
+  expect(env.ENIGMA_SSH_ASKPASS_ALIAS).toBe("web-0");
   expect(env.DISPLAY).toBeTruthy();
 });
 
