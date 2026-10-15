@@ -1356,7 +1356,7 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
         const a = sub === "tunnels" ? rest : rest.slice(1);
         if (op === "list" || op === "status") {
             const list = tun.listTunnels();
-            if (!list.length) { console.log("No tunnels yet. Add one:\n  enigma ssh tunnel add <name> <server> <spec>   (e.g. pg lirio-0 9090:5432)"); return 0; }
+            if (!list.length) { console.log("No tunnels yet. Add one:\n  enigma ssh tunnel add <name> <server> <spec>   (e.g. pg web-0 9090:5432)"); return 0; }
             console.log("Tunnels:\n");
             for (const t of list) {
                 const state = t.active ? "active " : "stopped";
@@ -1368,7 +1368,7 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
         }
         if (op === "add") {
             const [name, server, spec] = a;
-            if (!name || !server || !spec) { console.error("Usage: enigma ssh tunnel add <name> <server> <spec>   (e.g. pg lirio-0 9090:5432)"); return 1; }
+            if (!name || !server || !spec) { console.error("Usage: enigma ssh tunnel add <name> <server> <spec>   (e.g. pg web-0 9090:5432)"); return 1; }
             const res = tun.addTunnel(name, server, spec);
             if (!res.ok) { console.error(res.error); return 1; }
             console.log(`Added tunnel '${name}' -> ${server}. Start it: enigma ssh tunnel start ${name}`);

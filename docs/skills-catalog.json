@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.64.1",
+  "cliVersion": "1.64.2",
   "count": 21,
   "skills": [
     {
@@ -128,7 +128,7 @@
       "version": "1.6.1",
       "description": "Application and AI-agent security: secrets, authn/authz (least privilege, object- and role-level checks), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10 with vetted helpers for SSRF, redirects and uploads, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-14T23:32:53+02:00",
+      "updated": "2026-10-14T23:47:23+02:00",
       "sha": "dfa24051a8e0ded46fa2846bf09f642ac749dcab0aea0d308889c22bd52e2e57"
     },
     {

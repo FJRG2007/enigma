@@ -1377,20 +1377,20 @@ function coAuthored(dir: string, email: string, extra = ""): void {
 
 test("blocks a co-author address that came from nowhere", () => {
     const dir = repoWith();
-    coAuthored(dir, "team.fjrg2007@gmail.com");
-    const gaps = unsourcedTrailers(dir, transcript("Add me as co-contributor, my username is FJRG2007."));
+    coAuthored(dir, "team.octocat@gmail.com");
+    const gaps = unsourcedTrailers(dir, transcript("Add me as co-contributor, my username is octocat."));
     expect(gaps.length).toBe(1);
     expect(gaps[0]!.kind).toBe("source");
-    expect(gaps[0]!.detail).toContain("team.fjrg2007@gmail.com");
+    expect(gaps[0]!.detail).toContain("team.octocat@gmail.com");
 });
 
 test("clears an address the user actually typed", () => {
     // The whole discrimination: the trailer is identical, only its provenance differs.
     const dir = repoWith();
-    coAuthored(dir, "team.fjrg2007@gmail.com");
-    expect(unsourcedTrailers(dir, transcript("Add me as co-author: team.fjrg2007@gmail.com"))).toEqual([]);
+    coAuthored(dir, "team.octocat@gmail.com");
+    expect(unsourcedTrailers(dir, transcript("Add me as co-author: team.octocat@gmail.com"))).toEqual([]);
     // Case is not provenance - git and mail treat the domain case-insensitively.
-    expect(unsourcedTrailers(dir, transcript("co-author: Team.FJRG2007@Gmail.com"))).toEqual([]);
+    expect(unsourcedTrailers(dir, transcript("co-author: Team.Octocat@Gmail.com"))).toEqual([]);
 });
 
 test("a tool result does not vouch for an address", () => {
@@ -1481,14 +1481,14 @@ test("this hook's own feedback does not vouch for the address it just blocked", 
     // content, and reading it as provenance means the fabrication ships on the second turn.
     // The shape below is the one verified on real transcripts, isMeta included.
     const dir = repoWith();
-    coAuthored(dir, "team.fjrg2007@gmail.com");
+    coAuthored(dir, "team.octocat@gmail.com");
     const feedback = transcriptOf([
-        { type: "user", message: { role: "user", content: [{ type: "text", text: "Add me as co-contributor, my username is FJRG2007." }] } },
+        { type: "user", message: { role: "user", content: [{ type: "text", text: "Add me as co-contributor, my username is octocat." }] } },
         {
             type: "user",
             isMeta: true,
             isSidechain: false,
-            message: { role: "user", content: "Stop hook feedback:\n[enigma __verify-hook]: enigma verify: STOP. This change credits someone using a value you do not have:\n- commit abc12345 credits <team.fjrg2007@gmail.com> as a co-author, and that address appears nowhere." },
+            message: { role: "user", content: "Stop hook feedback:\n[enigma __verify-hook]: enigma verify: STOP. This change credits someone using a value you do not have:\n- commit abc12345 credits <team.octocat@gmail.com> as a co-author, and that address appears nowhere." },
         },
     ]);
     expect(unsourcedTrailers(dir, feedback).length).toBe(1);
