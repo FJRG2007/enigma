@@ -18,9 +18,13 @@
  *
  * The same hook refuses a message that contains this machine's home directory (account name, OS
  * layout, temp paths), since the commands it already watches are exactly where an agent
- * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it. That
- * check runs whatever the attribution setting, so the hook is installed either way and the
+ * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it. Both
+ * checks run whatever the attribution setting, so the hook is installed either way and the
  * attribution check reads the session's setting at run time (`attributionOff`).
+ *
+ * It refuses a private term (`~/.enigma-guard.json`, private-terms.ts) the same way: the message
+ * must neither name the value nor say that a private value was removed, since either one points
+ * a reader at what the refusal hides.
  *
  * Messages passed by file (`-F <file>`, `--file`, `--body-file`) are read from disk relative to
  * the payload's cwd. A message written by an editor cannot be seen here; the turn-end check
