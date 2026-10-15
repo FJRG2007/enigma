@@ -30,6 +30,12 @@ function privateTermMatcher(terms) {
 function hasPrivateTerm(line, re) {
   return re.test(line.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " "));
 }
+function redactPrivateTerms(text, terms = readPrivateTerms()) {
+  const re = privateTermMatcher(terms);
+  if (re === null) return text;
+  const all = new RegExp(re.source, "gu");
+  return text.split(/(\b[a-z][a-z0-9+.-]*:\/\/\S+)/gi).map((part, i) => i % 2 ? part : part.replace(all, "example")).join("");
+}
 function privateTermLines(text, re) {
   const out = [];
   text.split("\n").forEach((line, i) => {
@@ -2309,7 +2315,7 @@ var BUILTIN_RULES = [
     // before the value reaches the history for good, and never on an old file it did not write.
     stage: "diff",
     fileCheck: "sec-private-term",
-    message: "This line carries one of your private terms - the real name, handle, server or community name of you or of the people you serve (the list in ~/.enigma-guard.json, `enigma config guard-private-terms`). Real data never goes into a tracked file, and tests, fixtures, examples and docs use ANONYMOUS data: invent the values (`Player One`, `alice@example.test`, `Test Server`) and, when a real log or payload shape matters, reproduce the shape with invented values instead of pasting the capture. Being shown a real value to work with is permission to use it, never to publish it (security-policy, testing-policy).",
+    message: "This line carries one of your private terms - the real name, handle, server or community name of you or of the people you serve (the list in ~/.enigma-guard.json, `enigma config guard-private-terms`). Real data never goes into a tracked file, and tests, fixtures, examples and docs use ANONYMOUS data: invent the values (`Player One`, `alice@example.test`, `Test Server`) and, when a real log or payload shape matters, reproduce the shape with invented values instead of pasting the capture. Being shown a real value to work with is permission to use it, never to publish it (security-policy, testing-policy). The commit message, PR title and PR body for the fix stay neutral: they never name the value and never say that a private value was removed.",
     severity: "block",
     skill: "security-policy"
   },
@@ -3566,6 +3572,9 @@ function privateTermLeak(content) {
 function redactOperatorHome(text) {
   const re = operatorHomeRegex("gi");
   return re === null ? text : text.replace(re, "~");
+}
+function redactPublished(text) {
+  return redactPrivateTerms(redactOperatorHome(text));
 }
 function operatorHomeRegex(flags) {
   const home = operatorHome();
@@ -5124,6 +5133,7 @@ export {
   readReplyLedger,
   recordFindings,
   redactOperatorHome,
+  redactPublished,
   redirectFromInput,
   redirectPrefixCheck,
   remoteCollectionNames,
