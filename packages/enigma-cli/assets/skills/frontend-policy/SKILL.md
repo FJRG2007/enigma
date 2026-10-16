@@ -111,7 +111,7 @@ Never apply more than one of the three to the same boundary. A block with a bord
 
 **Text on colour takes its colour from the surface.** Neutral grey text on a coloured or tinted background reads as washed out and often fails contrast. Use a darker shade of the surface's own hue, or the on-colour text token (white or near-white on a saturated fill), and hold 4.5:1 for body text.
 
-**One icon set, and no emoji as icons.** Every icon comes from one library (the one the project already uses); a second set with a different stroke and grid is visible at a glance. Emoji are content, never icons, list bullets or section markers. Generic tells in both directions (the sparkles glyph for "AI", decorative gradients, badge pills) are catalogued in frontend-design's "Template tells".
+**One icon set, and no emoji as icons.** Every icon comes from one library (the one the project already uses; a self-contained file with no library draws one inline SVG set on a single grid and stroke width); a second set with a different stroke and grid is visible at a glance. Emoji are content, never icons, list bullets or section markers. Generic tells in both directions (the sparkles glyph for "AI", decorative gradients, badge pills) are catalogued in frontend-design's "Template tells".
 
 ---
 
@@ -177,7 +177,7 @@ Navigation and any other persistent chrome must stay where the user left it whil
 - **Pinning alone is not enough, and this is the part that gets missed.** `position: sticky` only pins the element's TOP edge: as soon as the sidebar's own content is taller than the viewport, the rest keeps scrolling away with the page and the last entries can never be reached. A pinned sidebar therefore needs BOTH a height bounded by the viewport (`max-height: calc(100dvh - <header height>)`, or `h-dvh`) AND its own `overflow-y: auto`. A sidebar with a content-sized height (`height: max-content`, `fit-content`, or none at all) plus `overflow: visible` is the broken pattern, even though it looks correct until the list grows.
 - Add `overscroll-behavior: contain` to the sidebar's scroll container so reaching its end does not start scrolling the page behind it.
 - Undo it where the layout stacks. At the mobile breakpoint the sidebar usually returns to normal flow (`position: static`), and the viewport height cap has to be lifted with it (`max-height: none; overflow-y: visible`) or it turns into a small scrolling box inside the page.
-- The same rule covers a sticky header, toolbar, filter rail or side panel: pinned, bounded, and independently scrollable. Keep pinned chrome shallow - it eats vertical space on small screens, so collapse it into a drawer or a top bar there rather than pinning it over half the viewport.
+- The same rule covers a sticky header, toolbar, filter rail or side panel: pinned, bounded, and independently scrollable. When such a panel holds the primary action (a booking summary with Confirm, a cart with Checkout), build it as a column with a scrolling body (`flex: 1; min-height: 0; overflow: auto`) and a footer that does not scroll, so the action stays in view and no content ever slides under it; never float the button over the body, and measure the action's bottom against the window height at a short window. Keep pinned chrome shallow - it eats vertical space on small screens, so collapse it into a drawer or a top bar there rather than pinning it over half the viewport.
 - Verify by scrolling to the BOTTOM of a long page and confirming the sidebar is still on screen with its last entry reachable. Mechanically: the sidebar's `getBoundingClientRect().top` stays at its offset as the page scrolls, and `scrollHeight <= clientHeight` holds for it, or it can scroll itself.
 
 ### On a phone the sidebar takes the whole screen
@@ -450,7 +450,7 @@ Cache on the client to avoid redundant server round-trips and to keep the app us
 
 - Every cached entry must have an explicit TTL and/or invalidation trigger; never cache without an invalidation plan.
 - Invalidate or update the client cache immediately after a mutation that changes the cached data.
-- Prefer stale-while-revalidate for non-critical data: serve cached, refresh in the background.
+- Prefer stale-while-revalidate for non-critical data: serve cached, refresh in the background. Data whose staleness leads straight to a failed action (free appointment slots, stock, seats) is not served from cache; fetch it fresh and treat the server's answer on submit as final.
 - Never serve stale data for security-, money-, or correctness-critical reads.
 
 ### Show the last snapshot, then patch only what changed
