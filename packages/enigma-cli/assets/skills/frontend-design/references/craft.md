@@ -1,127 +1,174 @@
 # Design craft: the fundamentals behind a polished interface
 
-Read this before building or restyling any screen, and run the closing checklist before calling a UI done. It is the working knowledge that separates "it renders" from "it looks designed": systems instead of one-off values, hierarchy instead of everything shouting, and the small finishing decisions that make a screen feel deliberate. The aesthetic direction (palette, faces, signature) comes from SKILL.md; this file is how to execute any direction well.
+Read this before building or restyling any screen, and run the closing checklist before calling a UI done. It is the working knowledge that separates "it renders" from "it looks designed": systems instead of one-off values, hierarchy instead of everything shouting, and the small finishing decisions that make a screen feel deliberate. The aesthetic direction (palette, faces, signature) comes from SKILL.md; this file is how to execute any direction well. Values below are proven starting points: keep their ratios and relationships, and derive hues from the plan's palette.
 
 Where a rule here meets a rule in frontend-policy's "Visual Hierarchy & Layout Restraint" or SKILL.md's "Template tells", those win: they record decisions this project already made.
 
 ## 1. Start from a feature, in low fidelity
 
 - Design one real piece of functionality first (the search form, the record view), not the app shell. Navigation, header and sidebar are decided after a few features exist, because only then do you know what they must hold.
-- Work in grayscale first. With no colour to lean on, hierarchy has to come from spacing, contrast and size, and a design that reads in grayscale only gets better when colour is added.
-- Skip typefaces, shadows and icons until the layout works. Sketches and wireframes are disposable; build the real thing as soon as the idea holds, then iterate on the working version, where the edge cases actually show up.
-- Design the smallest useful version. Do not draw functionality that is not going to be built now (an attachments area on a comment form nobody is implementing): it blocks shipping the part that is ready. Nice-to-haves come later.
+- Work in grayscale first. With no colour to lean on, hierarchy has to come from spacing, contrast and size. When colour arrives it usually lands only on interactive and selected states (the toggle, the primary button, the selected card's border and check); text, sizes, spacing and surfaces stay as they were.
+- Skip typefaces, shadows and icons until the layout works. Build the real thing as soon as the idea holds, then iterate on the working version, where the edge cases actually show up.
+- Design the smallest useful version. Do not draw functionality that is not going to be built now (an attachments area on a comment form nobody is implementing): it blocks shipping the part that is ready.
 
 ## 2. Decide the personality on purpose
 
-A few concrete levers set how a design feels, and each must be chosen, then held consistently:
+A few concrete levers set how a design feels; choose each, then hold it everywhere:
 
-- **Type:** a serif reads elegant or classic, a rounded sans reads playful, a neutral sans steps back and lets other elements carry the voice.
-- **Colour:** blue reads safe and familiar, gold or deep tones read premium, pink or saturated warm hues read playful. Choose by the audience and the subject, not by habit.
-- **Corner radius:** none reads formal and serious, small reads neutral, large reads friendly. Pick one family and never mix square and rounded corners in the same interface.
-- **Words:** formal copy feels official, casual copy feels friendly. Copy is as much a part of the personality as colour (SKILL.md "More on writing in design", technical-writing-policy).
-- When unsure, look at what the target audience already uses and match its register, without borrowing from direct competitors.
+- **Type:** a serif reads elegant or classic, a rounded sans reads playful, a neutral sans steps back. Weight shifts it too: a thin (300) large headline reads luxurious, a heavy (800) one reads loud and fun.
+- **Colour:** blue reads safe and familiar, gold and muted beige read premium (often with black-and-white photography), hot pink and saturated warm hues read playful.
+- **Corner radius:** 0 reads formal, ~4px reads neutral, pills and 8-12px cards read friendly. Pick one family; never mix square and rounded in one interface.
+- **Words:** formal copy feels official, casual copy feels friendly. The same components can change tone through colour and copy alone.
+- When unsure, match the register of what the target audience already uses, without copying direct competitors.
 
 ## 3. Constrain every decision with a system
 
-Choosing from an unlimited range makes every decision slow and every screen inconsistent. Define small scales up front, as design tokens (CSS custom properties or the framework's theme), and pick only from them:
+Define small scales up front as design tokens (CSS custom properties or the framework theme) and pick only from them. Odd values such as 11, 13, 15, 17 or 26px in one component are the sign that no scale exists.
 
-- **Spacing and sizing:** a non-linear scale where no two neighbours are closer than about 25%. A practical one on a 16px base: 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 640, 768 px. A linear "multiples of 4" scale does not help: it still leaves you choosing between 120 and 124.
-- **Type sizes:** a hand-picked scale for interfaces, for example 12, 14, 16, 18, 20, 24, 30, 36, 48, 60, 72 px. Define it in `px` or `rem`, never `em`: a nested `em` compounds into a size that is not on the scale.
-- **Font weights:** two are usually enough for UI, a regular (400-500) and a bold (600-700). Below 400 is for large display text only; to de-emphasise small text, use a lighter colour or a smaller size, not a thin weight.
-- **Colour:** 8-10 shades per hue (section 6).
-- **Shadows:** a fixed elevation scale (section 7).
-- **Radius, border widths, opacity, line heights, widths:** the same idea. When you notice yourself agonising over a low-level value twice, that is a missing scale.
-- **Choosing within a scale:** guess the likely value, then try its neighbours on both sides. With values far enough apart, the wrong ones are obviously wrong; if a neighbour wins, repeat from there.
+- **Spacing and sizing:** non-linear, no two neighbours closer than about 25%. On a 16px base: 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 640, 768. A linear "multiples of 4" scale still leaves you choosing between 120 and 124. A component usually needs only two or three of them: a small gap for related items and a gap twice as large for padding and section breaks (12 and 24 is a common pair).
+- **Type sizes:** 12, 14, 16, 18, 20, 24, 30, 36, 48, 60, 72 px, in `px` or `rem`, never `em` (nested `em` compounds into off-scale sizes). A typical card collapses to four: 14 for labels, links, buttons and meta; 16 for body and secondary headings; 18 for the card title; 24 for the key figure. Avoid ratio-generated scales for UI: they produce fractional sizes and leave gaps exactly where interfaces need steps.
+- **Icon sizes:** 12, 16, 24, 32 for small to medium.
+- **Font weights:** two for UI: regular (400-500) and bold (600-700). Below 400 only for large display text; de-emphasise small text with colour or size, never a thin weight.
+- **Colour:** 9-10 shades per hue (section 7). **Shadows:** a five-step elevation scale (section 8).
+- **Radius, border widths, opacity, line heights, widths:** the same idea. Agonising over a low-level value twice means a scale is missing.
+- **Choosing within a scale:** guess the likely value, then compare its two neighbours. With values far enough apart the wrong ones are obviously wrong; if a neighbour wins, recentre on it and compare again.
 
 ## 4. Hierarchy is the main tool
 
-Visual hierarchy, how important each element looks relative to the others, does more to make a screen feel designed than any styling. When everything competes, nothing reads.
+How important each element looks relative to the others does more to make a screen feel designed than any styling.
 
-- **Use weight and colour before size.** Leaning on font size alone makes primary text too big and secondary text too small. A bolder primary element can stay a sensible size; secondary text in a softer colour stays readable at a normal size.
-- **Two or three text colours:** dark for primary content, a mid grey for secondary (a date, a byline), a lighter grey for tertiary (a footer notice).
-- **Emphasise by de-emphasising.** When the main element does not stand out and nothing more can be added to it, soften what competes with it: inactive nav items in a quieter colour, a sidebar with no background so the content owns the page.
-- **Text on colour:** de-emphasised text on a coloured background is not grey and not white with reduced opacity (it looks washed out, and over an image or pattern the background shows through). Pick a colour of the background's own hue, adjusting saturation and lightness until it sits back at the right contrast.
-- **Labels are a last resort.** Data whose format explains itself needs no label (an email, a phone number, a price). Merge label and value where you can ("12 left in stock", "3 bedrooms", not "Stock: 12"). Where labels are needed, as in a scannable dashboard, treat them as supporting text: smaller, lighter or lower contrast than the value. The exception is a spec sheet the user scans BY label: there the label leads and the value is only slightly lighter.
-- **Visual hierarchy is not document hierarchy.** Use the right heading element for semantics, then style it for its role. Section titles in an app usually act as labels and should be small; the content under them is the focus. A title can even be visually hidden while kept for screen readers when the content speaks for itself.
-- **Balance weight with contrast.** A solid icon beside text is visually heavier than the text, so give it a softer colour. Conversely, a 1px border that disappears in a soft colour can get a 2px width instead of a harsher colour.
-- **Actions follow a pyramid.** One primary action per view: solid, high-contrast fill. Secondary actions: an outline or a low-contrast fill. Tertiary actions: styled as links. A destructive action is not automatically big and red; when it is not the main thing on the page it gets the secondary or tertiary treatment, and the bold red styling belongs on the confirmation step, where destroying IS the primary action.
+- **Weight and colour before size.** Leaning on size alone makes primary text too big and secondary text too small. Example card: title 24px/700 in the dark text colour, price 18px/700, description 18px/400 in the mid grey, review count and footnote 16px/400 in the light grey; nothing under 16px.
+- **Three text colours, one hue:** dark for primary (≈ `hsl(202 57% 15%)`), mid grey for secondary (≈ `hsl(201 23% 34%)`), light grey for tertiary (≈ `hsl(203 15% 47%)`). On white, a neutral grey must stay at or below ~42% lightness for body text and ~54% for large text to pass contrast.
+- **Emphasise by de-emphasising.** When the active nav item does not stand out, keep it and turn the inactive items to a light blue-grey at the same weight. When a sidebar competes with the content, drop its card background, shadow and radius so it sits on the page and only the main panel is a surface.
+- **Text on colour:** secondary text on a coloured surface takes the surface's hue with higher saturation and lightness (on teal, ≈ `hsl(183 70% 84%)`), never neutral grey and never white with opacity, which looks disabled and lets patterns or photos show through the glyphs.
+- **Labels are a last resort.** Data whose format explains itself needs none (email, phone, price). Merge label and value ("12 left in stock" with the number bold; a bed icon, a bold "3" and a grey "bedrooms"). In a contact card drop the labels entirely: large dark name, a smaller medium-weight role in the accent colour, small grey contact lines. Where labels are needed (a dashboard tile), the label is tiny, uppercase, tracked and light grey; the value is large, bold and dark; a unit beside it is much smaller, bold, uppercase and grey, on the same baseline. In a spec sheet the user scans by label, so the label leads (bold, dark) and the value is only slightly lighter.
+- **The small uppercase label is a workhorse:** 11-12px, uppercase, `letter-spacing: .05em`-`.1em`, mid grey, for eyebrows, table headers, section headers and meta lines (with " · " separators). Use it consistently, not everywhere.
+- **Visual hierarchy is not document hierarchy.** Use the right heading element, then style it for its role: an app page title like "Manage Account" can be 16px; section titles act as labels; the content is the focus.
+- **Balance weight with contrast.** A solid icon beside text is heavier than the text, so give it the same hue at a much higher lightness (text ≈ L13%, icon ≈ L68%). A 1px border too faint in a soft colour gets 2px in the same soft colour instead of a darker one.
+- **Actions follow a pyramid:** one primary per view (solid, high-contrast fill), secondary actions as an outline or a light tinted fill, tertiary actions as link-styled text. Three solid buttons in three hues is the classic mistake: the destructive one becomes a plain text link, edit becomes a light fill, publish keeps the solid fill.
+- **On a dark or coloured background** the primary inverts to a white fill with brand-coloured text, the secondary becomes a translucent white fill or a light 1px outline, the tertiary plain white text.
+- **Destructive is not automatically big and red.** Off the main path, give it the secondary (white fill, neutral border, red text) or tertiary (grey text) treatment. The confirmation dialog is where destroying IS the primary action: a red primary, a quiet text "Cancel", both right-aligned in a light footer band.
 
 ## 5. Layout and spacing
 
-- **Start with too much white space, then remove it.** Space added only until something stops looking broken is never enough. What feels like slightly too much around one element is usually right in the full screen.
-- **Density is a decision, not a default.** A dashboard that must fit on one screen can be compact; choose that deliberately.
-- **Do not fill the screen because it is there.** If the content needs 600px, give it 600px. Not every section has to be full width because the nav is.
-- **Design mobile first on a narrow canvas** (~400px), then widen and fix only what felt compromised. When a narrow element looks lost in a wide layout, split supporting content into a column beside it instead of stretching it.
-- **Fixed where it should be fixed, fluid where it should flow.** A sidebar gets a fixed width suited to its content and the main area takes the rest; percentages for a sidebar waste space on wide screens and squeeze it on narrow ones. A card or form with an ideal width gets a `max-width` and only shrinks when the screen is narrower than that, instead of being a grid fraction that can end up narrower on a large screen than on a medium one.
-- **Sizes do not scale proportionally.** Large elements must shrink faster than small ones on small screens: a 45px desktop headline over 18px body text becomes about 20-24px over 14px on a phone, not 2.5 times the body. Inside a component, a larger button gets proportionally MORE padding and a smaller one tighter padding; padding defined in `em` only zooms the button.
-- **No ambiguous spacing.** When spacing alone shows grouping, the space around a group must be clearly larger than the space within it: more space between form groups than between a label and its input, more above a heading than below it, more between list items than between their wrapped lines.
+- **Start with too much space, then remove it.** Nudging a cramped layout a few pixels at a time never gets there. What feels like slightly too much around one element is usually right in the full screen. Card padding of 24-32px is normal.
+- **Density is a decision:** a dashboard that must fit one screen can be compact (28-32px table rows, panels separated by subtle shadows rather than padding).
+- **Do not fill the screen because it is there.** A checkout needs ~600px: centre it (`max-width: 600px; margin-inline: auto`) and constrain the header to the same column. A login card is ~360-400px. A full-width nav does not oblige the content to be full width; a full-bleed hero can hold a content column.
+- **Mobile first on a ~400px canvas,** then widen and fix only what felt compromised. To use width without stretching a form, move section titles and help text into a left column (`grid-template-columns: 1fr 2fr`, or a fixed ~240px column) and keep the fields at their ideal width on the right.
+- **Fixed where it should be fixed, fluid where it should flow.** A sidebar has a fixed width suited to its content (`flex: 0 0 200px`-`240px`) and the main area flexes, with its own grid (`repeat(auto-fill, minmax(200px, 1fr))`). A card with an ideal width gets `width: 100%; max-width: 500px` and only shrinks below that, instead of grid columns that can make it narrower on a large screen than a medium one. Images and avatars beside text get `flex-shrink: 0`.
+- **Sizes do not scale proportionally.** Large elements shrink faster: an 18px body with a 45px headline on desktop becomes a 14px body with a 20-24px headline on a phone, set per breakpoint, not as `2.5em`. Buttons get disproportionate padding per size, as tokens, not `em`:
+
+  | font-size | padding |
+  |---|---|
+  | 12px | 6px 8px |
+  | 14px | 8px 10px |
+  | 16px | 12px 16px |
+  | 20px | 15px 30px |
+
+- **No ambiguous spacing.** Space around a group is clearly larger than space within it, at least 2:1. Form: 20px above a label, 10px between the label and its input. Article: 36px above a heading, 12px below it. Lists: the gap between items larger than the line height of one item. Horizontal: 6px between an icon and its count, 36px between pairs. Histogram rows 8px apart, 24px between blocks.
 
 ## 6. Text
 
-- **Line length:** 45-75 characters per line for paragraphs (`max-width` of about 20-35em, or `max-inline-size: 65ch`). In a wide content area that mixes images, the paragraphs still keep that measure.
-- **Line height is proportional:** taller for small text and long lines (up to 2 for very wide lines), shorter for large text (headlines can sit at 1 to 1.25).
-- **Baseline, not centre:** when several font sizes share a line (a big title with small actions beside it), align them on the text baseline (`align-items: baseline`), not vertically centred.
-- **Choosing faces:** a neutral sans is the safe UI default, and the system stack is acceptable as a deliberate choice for a data-dense tool. Prefer families with at least five weights (a sign of care). For small UI text avoid condensed faces with a short x-height; display faces with tight spacing are for headlines only. Popular and well-loved families are a reasonable filter; so is studying what strong product teams ship.
-- **Alignment:** start-aligned for anything longer than two or three lines. If a centred block grows too long, shorten the copy instead of left-aligning one block among centred ones. Right-align numbers in tables so magnitudes line up (`font-variant-numeric: tabular-nums`). Justified text needs `hyphens: auto`.
-- **Letter spacing:** leave it alone by default. Tighten it slightly on headlines set in a face built for body text; widen it on all-caps labels, which lose the shape cues lowercase has.
-- **Links:** inside running copy a link must look like a link. In an interface where almost everything is clickable, a heavier weight or darker colour is enough, and ancillary links can reveal colour or underline only on hover.
+- **Line length:** 45-75 characters (`max-width: 65ch`, or 20-35em). In a wide section, the heading and a three-column grid keep the full width while the intro paragraph keeps its measure (`max-width: 34em; margin-inline: auto`).
+- **Line height is proportional:** 16px at 1.5 for narrow columns, up to 2 for very wide lines, 1.75 for small text in a wide block, 1-1.2 for large headlines.
+- **Baseline, not centre:** a large title with small actions beside it uses `align-items: baseline`.
+- **Faces:** a neutral sans is the safe UI default, and a brand face goes first with the system stack as fallback (`"Brand", -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", sans-serif`). Prefer families with at least five weights. For body and UI text pick a tall x-height and open spacing; short x-height, tight display faces are for headlines only. Popular, well-loved families are a reasonable filter.
+- **Alignment:** start-aligned for anything longer than two or three lines. Centred feature columns stay at two lines each; if one runs long, rewrite it shorter rather than mixing alignments. Right-align numeric columns and their headers, with a fixed number of decimals and `font-variant-numeric: tabular-nums`. Justified text needs `hyphens: auto` and a `lang` attribute.
+- **Letter spacing:** leave it alone by default. `-0.02em` to `-0.05em` on large headlines set in a body face; `+0.05em` on all-caps labels.
+- **Links:** inside running copy, coloured (and underlined). In link-dense UI (a video grid), titles are dark and bold, secondary links grey, metadata lighter grey, and ancillary links show an underline only on hover.
 
 ## 7. Colour
 
-- **Think in HSL (or OKLCH).** Hue, saturation and lightness map to how people perceive colour, so related colours look related in code. HSL lightness is not HSB brightness.
+- **Think in HSL (or OKLCH):** related colours stay visibly related (a chart's three series as `hsl(220 95% 34%)`, `hsl(220 65% 61%)`, `hsl(220 69% 80%)`). HSL lightness is not HSB brightness: S100/B100 equals `hsl(h 100% 50%)`.
 - **A real palette is large:**
-  - Greys: 8-10 shades, from a near-black for text (true black looks unnatural) to an off-white background. Almost everything on screen is grey.
-  - Primary: one or two hues with 5-10 shades each. The lightest tint backgrounds (an alert), the darkest makes coloured text.
-  - Accents and semantic colours: red for destructive, amber for warning, green for positive, plus attention colours for new features; each with several shades, used sparingly. Data visualisation, tags and calendars may need more categorical hues.
-  - A complex product easily needs ten hues with 5-10 shades each. A five-colour generator palette builds nothing.
-- **Define shades up front, never on the fly.** No `lighten()`/`darken()`/`color-mix()` at the call site: that is how 35 near-identical blues appear. Build each scale once (100-900): pick the base (500, a colour that works as a button fill), then the darkest (900, for text) and lightest (100, for tinted backgrounds), then fill 700 and 300, then the remaining gaps. Adjust by eye, then freeze the scale; add a shade only when one is truly missing.
-- **Keep saturation as lightness moves away from the middle:** very light and very dark shades need MORE saturation or they look washed out.
-- **Change brightness by rotating hue too:** hues differ in perceived brightness (yellow, cyan and magenta read light; red, green and blue read dark). To lighten a shade, rotate its hue a little toward the nearest bright hue (60, 180, 300 degrees); to darken, toward the nearest dark hue (0, 120, 240). Keep the rotation under 20-30 degrees. This is what keeps dark yellows warm instead of muddy brown.
-- **Tinted greys:** a touch of blue makes greys cool, a touch of yellow or orange makes them warm. Raise the saturation at the light and dark ends to keep the temperature even.
-- **Accessible without being ugly:** body text needs 4.5:1, large text 3:1. White text on a colour often needs a very dark fill, which then shouts; flip it to dark coloured text on a light tint of the same hue. For secondary text on a dark coloured panel, rotate the hue toward a brighter one instead of pushing toward white.
-- **Never colour alone.** A trend shown only in red and green is invisible to colour-blind users: add an icon or a sign. In charts, distinguish series by lightness and contrast, and by markers or direct labels, not by hue alone (see the dataviz skill when present).
+  - Greys: 9-10 shades from a near-black (never `#000`) to an off-white, slightly tinted. Almost everything on screen is grey: labels in the darkest, help text in dark grey, input borders in grey, dividers and read-only borders in light grey, read-only backgrounds in the lightest.
+  - Primary: 9-10 shades; the lightest tints backgrounds (alerts, tooltips), the darkest makes coloured text.
+  - Accents and semantics: red, amber, green, plus attention hues (a teal "NEW" pill), 7-10 shades each, used sparingly. A complex product easily holds 35-100 swatches. A five-colour generator palette builds nothing, and a mid-saturated palette colour must never fill a large area such as a main panel.
+- **Define shades up front, never on the fly** (no `lighten()`, `darken()` or `color-mix()` at call sites). Build each scale 100-900: the base 500 is the shade where a white uppercase button label still looks crisp; 900 is a text colour and 100 a barely tinted background (test both in an alert: 100 background, 900 bold title, a mid shade for the body, a 1px border a step darker than the background); then 700 and 300; then 800, 600, 400, 200. Adjust by eye, then freeze.
+- **Saturation follows a U-curve:** lowest near 50% lightness and rising toward both ends, roughly S 55% at L50, 72% at L28 and L72, 90% at L15 and L88. Constant saturation makes the ends look washed out.
+- **Change brightness by rotating hue too.** Perceived brightness differs by hue (yellow, cyan and magenta read light; red, green and blue read dark; perceived brightness ≈ `sqrt(.299r² + .587g² + .114b²)`). To lighten while staying vivid, rotate up to ~20-30° toward 60/180/300 (an icon gradient `hsl(190 100% 50%)` -> `hsl(210 100% 50%)` instead of `hsl(210 100% 75%)` -> `hsl(210 100% 50%)`); to darken, toward 0/120/240 (yellow drifting to orange as it darkens instead of turning olive).
+- **Tinted greys:** cool greys carry ~12% saturation of a blue hue (≈ 210), warm greys of a yellow-orange hue (≈ 40), with saturation rising to ~15% at the dark end and ~21% at the light end, for example cool `hsl(209 15% 28%)`, `hsl(207 12% 43%)`, `hsl(208 12% 58%)`, `hsl(210 16% 76%)`, `hsl(208 21% 88%)`.
+- **Accessible without being ugly:** 4.5:1 for body text, 3:1 for large text. White text on a bright badge fails and on a dark fill shouts; the fix is the same hue flipped: a 100-shade background with 800-900 text (it reaches 9:1 and up). For secondary text on a dark coloured panel, rotate the hue toward a brighter one (on indigo, a cyan-ish `hsl(188 100% 85%)`) instead of pushing toward white, so it reads as secondary and still passes.
+- **Never colour alone.** A trend badge carries an arrow (`↑ 1.4%`, `↓ 11.1%`), not only green or red. Chart series differ by lightness (steps of ~20 points on one hue) and labels, not only by hue (see the dataviz skill when present).
 
 ## 8. Depth
 
-- **Light comes from above.** A raised element shows a slightly lighter top edge (an inset top highlight or top border, a hand-picked lighter colour rather than white at low opacity) and casts a small, sharp, slightly offset shadow below. An inset element (an input, a well, a checkbox) shows the reverse: an inner shadow at the top and a lighter bottom edge. Borrow these cues lightly; realism is not the goal.
-- **Shadows encode elevation, not decoration.** Decide where the element sits on the z-axis, then take that level's shadow: small for a button or card, medium for a dropdown or popover, large for a dialog. The closer it looks, the more attention it draws.
-- **A fixed elevation scale of up to five levels,** from the smallest to the largest shadow with even steps between them. For example: `0 1px 3px`, `0 4px 6px`, `0 5px 15px`, `0 10px 24px`, `0 15px 35px`, each in a low-alpha near-black.
-- **A good shadow token has two layers with distinct jobs:** a larger, softer layer with more offset (the cast shadow from a direct light) and a tight, darker layer close to the edge (where ambient light cannot reach). The tight layer fades as elevation rises and is nearly gone at the top level. This two-layer token is ONE elevation, not stacked decoration: still one token per element, still one light direction.
-- **Shadows respond to interaction:** a dragged item lifts to a higher level, a pressed button drops to a lower one or none.
-- **Flat designs still have depth:** a surface lighter than its background feels raised, darker feels inset. A short solid shadow with no blur keeps a flat style while lifting a card or button.
-- **Overlap creates layers:** a card that straddles the boundary between two background sections, or an element taller than its container. When images overlap, give each a border in the background colour so they do not clash.
+- **Light comes from above.** A raised element has a slightly lighter top edge and a small, sharp shadow below; an inset element (input, checkbox, well, slider track) the reverse. Raised button: `box-shadow: inset 0 1px 0 <same hue, lighter>, 0 1px 3px hsl(0 0% 0% / .2)`, with the highlight hand-picked in the button's hue, not white with opacity. Inset well: `box-shadow: inset 0 2px 2px hsl(0 0% 0% / .1), 0 2px 0 hsl(0 0% 100% / .15)`. On a dark panel, controls lighter than the panel read raised (selects), darker read recessed (checkboxes, tracks). Stop before realism.
+- **Shadows encode elevation.** Decide where the element sits on the z-axis and take that level: level 1 for a button, 2 for a dropdown, 3-4 for popovers and cards that lift, 5 for a dialog. The closer it looks, the more attention it draws.
+- **A five-level scale, each level one token of two layers:** a larger, softer cast layer and a tight, darker contact layer that fades as elevation rises:
+
+  ```css
+  --shadow-1: 0 1px 3px hsl(0 0% 0% / .12), 0 1px 2px hsl(0 0% 0% / .24);
+  --shadow-2: 0 3px 6px hsl(0 0% 0% / .15), 0 2px 4px hsl(0 0% 0% / .12);
+  --shadow-3: 0 10px 20px hsl(0 0% 0% / .15), 0 3px 6px hsl(0 0% 0% / .10);
+  --shadow-4: 0 15px 25px hsl(0 0% 0% / .15), 0 5px 10px hsl(0 0% 0% / .05);
+  --shadow-5: 0 20px 40px hsl(0 0% 0% / .2);
+  ```
+
+  A single-layer scale works too (`0 1px 3px`, `0 4px 6px`, `0 5px 15px`, `0 10px 24px`, `0 15px 35px` at one alpha). Either way: one token per element, one light direction.
+- **Shadows respond to interaction:** a dragged row lifts to a high level, overhangs its list slightly and shows a drag handle the resting rows do not; a pressed button drops a level (or two) and darkens slightly.
+- **Flat designs still have depth:** a surface lighter than its background feels raised, darker feels inset (white card on a light grey page, light grey inputs inside it). A solid, unblurred offset keeps a flat style while lifting a row: `box-shadow: 0 3px 0 hsl(220 7% 83%)`.
+- **Overlap creates layers:** a search card straddling a hero and the section below (`margin-bottom: -60px`, padding the next section to compensate), a card extending past both edges of a band, carousel arrows half outside their card (`margin-inline: -24px`). Overlapping avatars get a ring in the background colour (`border: 4px solid <surface>`) so they never merge.
 
 ## 9. Images and icons
 
-- **Use good photos or none.** A placeholder planned to be replaced by a phone snapshot later never works out. Use professional or quality stock imagery that fits the palette.
-- **Text over an image needs steady contrast:** a semi-transparent dark or light overlay, a lower-contrast image, an image colourised toward one brand hue (lower contrast, desaturate, multiply a solid fill), or a soft, unoffset text glow. Verify contrast over the brightest and darkest parts of the image.
-- **Everything has an intended size.** Icons drawn for 16-24px look chunky at 3-4 times that size: keep the icon near its native size inside a larger tinted shape instead. Do not shrink a full-app screenshot until its text is unreadable: capture at a smaller viewport, crop to the part that matters, or draw a simplified version with lines for text. A favicon is a redrawn, simplified mark, not a downscaled logo.
-- **User uploads cannot be art-directed,** so constrain them: fixed aspect-ratio frames with `object-fit: cover`, and a subtle inner shadow or semi-transparent inner border so an image whose background matches the page keeps its edge.
+- **Good photos or none.** The same card reads cheap or premium purely from the photo: bright, evenly lit, coherent palette. Fix the image before the type.
+- **Text over an image needs steady contrast:** an overlay (`linear-gradient(hsl(0 0% 0% / .55), hsl(0 0% 0% / .55)), url(...) center/cover`); a washed-out image (≈ `brightness(1.4) contrast(.3)` on an image layer) with dark text; a colourised image (`background-blend-mode: multiply` over a brand colour, image greyscaled and lower-contrast on its own layer); or a soft glow `text-shadow: 0 0 50px hsl(0 0% 0% / .4)` with milder image treatment. Check contrast over the brightest and darkest parts.
+- **Everything has an intended size.** Do not scale 16-24px icons beyond ~1.5×: keep them at native size inside a ~48px circle tinted with a very light shade of a hue, with the icon in a dark shade of the same hue. Do not shrink full-app screenshots until unreadable: capture a smaller layout and show it larger, crop to the part that matters, or draw a simplified UI with grey bars for text that keeps the structural colours. Favicons are redrawn simplified marks at 16/32px.
+- **User uploads cannot be art-directed:** fixed frames (`width: 100%; aspect-ratio: 4/3; object-fit: cover`), and against bleed an inner ring that works on any image, `box-shadow: inset 0 0 0 1px hsl(0 0% 0% / .1)` (or a faint top-weighted inset shadow), on a wrapper or `::after` overlay, because an inset shadow does not paint over an `<img>`'s content. A grey border clashes with the photo's colours.
 
 ## 10. Finishing touches
 
-- **Upgrade the defaults before adding new elements:** bullets replaced by meaningful icons (a check, an arrow, a padlock for security items), a large coloured quote mark on a testimonial, links with a custom underline, checkboxes and radios in the brand colour instead of browser defaults.
-- **A touch of colour where it carries meaning:** a coloured bar across the top of a card or of the whole layout, an active-nav indicator, a short accent under a headline. The thick left stripe on a rounded card stays banned (frontend-policy); a status uses an icon plus a tint.
-- **Backgrounds can carry energy:** a different background colour per section, a slight gradient between two hues no more than about 30 degrees apart, a low-contrast repeating pattern along one edge, or a single simple shape. Keep any decoration low contrast so it never competes with content, and within the "Template tells" limits in SKILL.md.
-- **Empty states are a first impression, not an afterthought:** an illustration or icon, one line saying what belongs here, and the primary call to action. Hide tabs, filters and bulk actions that do nothing until there is content.
-- **Fewer borders:** separate with spacing, then a background tone, then a subtle shadow; a border only where it carries information (frontend-policy).
-- **Question the stock shape of a component.** A dropdown can have sections, columns, descriptions and icons. A table can merge related columns into one cell with a primary and a secondary line, and show avatars, status colours or badges. A short set of important options can be selectable cards instead of a stack of radio buttons. Keep the semantics and keyboard behaviour of the underlying control.
+- **Upgrade the defaults before adding elements:** bullets become ~16px brand circles with a white check (or a topical glyph), aligned to the first line; testimonials get oversized quote marks in a light tint, hanging outside the text; links get a heavier weight and colour, or a thick light-tinted underline that overlaps the glyph bottoms (a positioned background gradient); checkboxes become ~18px brand-filled squares with a 3px radius, radios ~20px rings with an ~8px centre dot when selected.
+- **Colour where it means something:** a ~4px bar across the top of a card or the whole layout, a 2-3px bar under the active nav item, a short ~32×3px accent under a headline. The thick left stripe on a rounded card stays banned (frontend-policy); a status uses an icon plus a tint.
+- **Backgrounds carry energy:** alternate section backgrounds (saturated hero, white, charcoal, pale grey), a gradient between two hues no more than ~30° apart, a low-contrast pattern (about 10% lightness off the background) or one along an edge only, a single spot graphic (`pointer-events: none`). Keep decoration low contrast and inside the "Template tells" limits in SKILL.md.
+- **Empty states are a first impression:** a ~64px illustration or icon on a light tint circle, one line saying what belongs here, one primary button, centred with 12-16px gaps. Hide tabs, filters, search and bulk actions until there is content.
+- **Fewer borders, step by step:** a card border becomes a shadow (`0 5px 15px hsl(0 0% 0% / .15)`, on a card that differs from the page); an input or footer border becomes a light fill (≈ `hsl(200 10% 94%)`); row dividers become a ~6px gap, with the selected row as an inset, rounded, pale tint.
+- **Question the stock shape of a component, keeping its semantics and keyboard behaviour:**
+  - Tables: merge related columns into one cell with a dark medium-weight primary line and a smaller light-grey secondary line; add ~32px avatars; status as small pills (light tint background, dark text of the same hue, `2px 8px` padding); row actions as a quiet "•••".
+  - Dropdowns: a wide panel with a caret, a two-column grid of items (icon, semibold title, grey description, an optional tiny "NEW" pill) and a tinted footer band.
+  - Radio groups: selectable cards (tiny tracked label, large bold value, price line); the selected card gets a 2px brand border, a faint brand tint and a check circle in the corner.
+  - Inputs: a button joined to its input (shared height, outer corners rounded), or the button inside the input's container; a validation check or reveal toggle inside the input's end with matching end padding.
+  - A dark popover (a date picker) over a light UI, or a two-colour headline, when it serves the content.
 
 ## 11. Keep improving the eye
 
-When a design you admire does something you would not have thought of (an inverted calendar header, a button inside an input, a two-colour headline), note the decision and reuse the idea. Rebuilding an admired screen from scratch is the fastest way to discover its small rules: tighter line height on headings, tracking on uppercase, layered shadows.
+When an admired design does something you would not have thought of, note the decision and reuse it. Rebuilding an admired screen from scratch is the fastest way to discover its small rules: tighter line height on headings, tracking on uppercase, layered shadows.
+
+## Starter tokens
+
+A neutral starting point to adapt, not a palette to ship as is: swap the hues for the plan's, keep the structure.
+
+```css
+:root {
+  /* spacing */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px; --space-10: 128px;
+  /* type */
+  --text-xs: 12px; --text-sm: 14px; --text-base: 16px; --text-lg: 18px; --text-xl: 20px;
+  --text-2xl: 24px; --text-3xl: 30px; --text-4xl: 36px; --text-5xl: 48px;
+  --leading-tight: 1.2; --leading-normal: 1.5; --leading-loose: 1.75;
+  --tracking-tight: -0.02em; --tracking-caps: 0.05em;
+  /* cool greys (saturation rises at both ends) */
+  --grey-900: hsl(210 24% 16%); --grey-800: hsl(209 20% 25%); --grey-700: hsl(209 15% 28%);
+  --grey-600: hsl(207 12% 43%); --grey-500: hsl(208 12% 58%); --grey-400: hsl(210 16% 76%);
+  --grey-300: hsl(208 21% 88%); --grey-200: hsl(210 25% 93%); --grey-100: hsl(210 38% 97%);
+  /* radius */
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-full: 9999px;
+}
+```
 
 ## Closing checklist
 
 Run this pass on every screen before calling it done, with a screenshot when the environment allows:
 
-1. Squint (or blur the screenshot): the one primary element and the one primary action are the first things you see. If not, de-emphasise what competes before enlarging anything.
+1. Squint (or blur the screenshot): the one primary element and the one primary action are the first things you see. If not, turn down what competes before enlarging anything.
 2. Every font size, weight, colour, spacing, radius and shadow comes from the defined scales. No one-off values.
 3. Grayscale check: the hierarchy survives without colour.
-4. Grouping: space between groups is clearly larger than space within them; no border, background and shadow stacked on one boundary.
-5. Text: paragraphs within 45-75 characters, line heights proportional, mixed sizes baseline-aligned, numbers right-aligned in tables, all-caps tracked.
-6. Colour: text on colour uses the surface's hue, not grey; contrast meets 4.5:1 (3:1 for large text); no meaning carried by colour alone.
-7. Depth: every shadow is an elevation token with one light direction; nothing raised that does not float.
-8. Images: steady contrast under any overlaid text, icons at their intended size, uploads in fixed frames.
+4. Grouping: space between groups at least twice the space within them; no border, background and shadow stacked on one boundary.
+5. Text: paragraphs within 45-75 characters, line heights proportional, mixed sizes baseline-aligned, numbers right-aligned and tabular, all-caps tracked.
+6. Colour: text on colour uses the surface's hue, not grey or opacity; contrast meets 4.5:1 (3:1 large); nothing carried by colour alone; no mid-saturated colour filling a large area.
+7. Depth: every shadow is an elevation token with one light direction; nothing raised that does not float; pressed and dragged states change elevation.
+8. Images: steady contrast under any overlaid text, icons at their intended size, uploads in fixed frames with an inner ring.
 9. States: empty, loading, error and long-content states exist and look as considered as the happy path.
 10. Every window size and zoom level (frontend-policy, "Responsive & Adaptive Layout").
