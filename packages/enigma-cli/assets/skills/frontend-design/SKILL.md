@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
+description: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, polished execution (token scales, hierarchy, spacing, colour palettes, elevation, a closing design checklist), and making choices that don't read as templated defaults.
 ---
 
 # Frontend Design
@@ -36,6 +36,17 @@ Then review that plan against the brief before building: if any part of it reads
 When writing the code, be careful of structuring your CSS selector specificities. It's easy to generate CSS classes that cancel each other out (especially with a type-based selector like .section and a element-based selector like .cta). This can happen often with paddings/margins between sections.
 
 Try to do a lot of this planning and iteration in your thinking, and only show ideas to the user when you have higher confidence it'll delight them.
+
+## Execute it with craft
+
+A distinctive direction executed with arbitrary values still looks amateur. Before writing any UI code, read `references/craft.md`. It covers the fundamentals of polished execution: token scales for spacing, type, colour and elevation; hierarchy through weight and colour before size; spacing that groups; text measure and rhythm; colour palettes built shade by shade; depth from one light source; images; and finishing touches. Fold its scales into the token system from the plan above. The rules that matter most:
+
+- Every size, weight, colour, radius and shadow comes from a scale defined up front, never a one-off value.
+- Hierarchy comes from weight and colour first and size last. Each view has exactly one primary action, and everything that competes with it is turned down.
+- Start with more space than looks necessary, then remove it. Space between groups is always larger than space within a group.
+- Get the hierarchy right in grayscale before adding colour. Colour then supports what the layout already says, and is never the only signal.
+
+Before calling a screen done, run the closing checklist at the end of `references/craft.md`.
 
 ## Restraint and self-critique
 
