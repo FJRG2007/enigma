@@ -163,7 +163,7 @@ function setBrowser(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
-/** Persist the headless choice and re-render the Chrome DevTools MCP entry in every agent. */
+/** Persist the headless choice; the browser launcher reads it each time it starts Chrome. */
 function setBrowserHeadless(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("browserHeadless", on, scope);
     applyMcpToggle(scope);
@@ -498,14 +498,14 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "browser",
                 label: "Browser testing (Chrome MCP)",
-                hint: "lets your agents open the app in a real Chrome to click through it and read the console, network, load-speed trace and Lighthouse audit before calling it done; runs an isolated profile, never your logins; needs Chrome and Node; toggling applies immediately; enigma default: on",
+                hint: "lets your agents open the app in a real Chrome to click through it and read the console, network, load-speed trace and Lighthouse audit before calling it done; runs an isolated profile, never your logins, and closes after 5 minutes unused; needs Chrome and Node; toggling applies immediately; enigma default: on",
                 read: () => conf.readConfig().config.browser,
                 write: (value, scope) => setBrowser(value, scope),
             },
             {
                 key: "browser-headless",
                 label: "Headless browser",
-                hint: "run the agents' Chrome without a window, so testing never pops up on your screen; turn off only to watch an agent drive it; toggling applies immediately; enigma default: on",
+                hint: "run the agents' Chrome without a window, so testing never pops up on your screen; turn off only to watch an agent drive it; applies the next time an agent's browser starts; enigma default: on",
                 read: () => conf.readConfig().config.browserHeadless,
                 write: (value, scope) => setBrowserHeadless(value, scope),
             },

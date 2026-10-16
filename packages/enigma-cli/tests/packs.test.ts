@@ -275,7 +275,7 @@ test("Orion deploys its skills, commands, agents and the browser server into its
     expect(existsSync(join(ctx!, "agents", "flow-breaker.md"))).toBe(true);
     expect(readFileSync(join(ctx!, "CLAUDE.md"), "utf8")).toContain("Orion");
     const servers = JSON.parse(readFileSync(join(ctx!, ".claude.json"), "utf8")).mcpServers;
-    expect(servers["chrome-devtools"].args).toContain("--isolated");
+    expect(servers["chrome-devtools"].args.at(-1)).toBe("__browser-mcp");
     // Helio's shipped python server is still setup-only: deploy never registers it.
     // (An earlier test ran setup for Helio, so start from a context without its server.)
     const helio = packs.deployPack("helio", "claude");

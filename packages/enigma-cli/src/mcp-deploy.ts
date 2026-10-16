@@ -20,7 +20,8 @@
  * resolved enigma binary; on Windows, where that is an npm `.cmd` shim no shell-less spawn
  * can run, the agents that spawn without a shell (claude, opencode, kimi) are pointed at the
  * launcher under node instead - see mcpInvocation for why that beats the `cmd /c` wrapper. The
- * Chrome DevTools server is `npx chrome-devtools-mcp`, resolved per OS/tool by browserInvocation.
+ * Chrome DevTools server is launched the same way, as `enigma __browser-mcp` (browser-mcp.ts),
+ * which owns its flags and its lifetime.
  */
 
 import { kimiHome } from "./kimi";
@@ -55,7 +56,7 @@ function launcherScript(): string | null {
  * the only one with a decision in it - is reachable from a test on the Linux runner that CI
  * actually uses. Nothing else passes it.
  */
-export function mcpInvocation(tool: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[]; } {
+export function mcpInvocation(tool: string, platform: NodeJS.Platform = process.platform, subcommand: string = "mcp"): { command: string; args: string[]; } {
     const base = resolveBin("enigma") ?? "enigma";
     // On Windows `enigma` is an npm `.cmd` shim, which CreateProcess cannot run, so an agent
     // that spawns its servers without a shell (claude, opencode, kimi) needed a `cmd /c`
@@ -71,10 +72,10 @@ export function mcpInvocation(tool: string, platform: NodeJS.Platform = process.
         // Either half unresolved (an unusual install, node off PATH) means falling back rather
         // than writing an entry that cannot start: a registration that fails silently costs the
         // user every enigma tool, which is far worse than the extra process.
-        if (script && node) return { command: node, args: [script, "mcp"] };
-        return { command: "cmd", args: ["/c", base, "mcp"] };
+        if (script && node) return { command: node, args: [script, subcommand] };
+        return { command: "cmd", args: ["/c", base, subcommand] };
     }
-    return { command: base, args: ["mcp"] };
+    return { command: base, args: [subcommand] };
 }
 
 /**
@@ -211,30 +212,15 @@ interface ManagedServer {
 }
 
 /**
- * The Chrome DevTools MCP server, pinned. It lets any agent open the app it is working on in a
- * real Chrome, drive it, and read the console, network, performance traces and a Lighthouse
- * audit - so a "it works" or "it loads fast" claim can be checked where the user sees it.
- * `--isolated` runs a throwaway profile, never the user's own cookies and logins; usage
- * statistics and the CrUX lookup (which sends trace URLs to Google) are off. `--headless`
- * (the server defaults to a visible window) keeps an agent's testing off the user's screen;
- * the `browserHeadless` setting turns it off for someone who wants to watch.
+ * How an agent launches the Chrome DevTools MCP server, which lets it open the app it is working
+ * on in a real Chrome, drive it, and read the console, network, performance traces and a
+ * Lighthouse audit - so a "it works" or "it loads fast" claim can be checked where the user sees
+ * it. The entry names enigma's launcher, never the server's own flags: the launcher reads the
+ * `browserHeadless` setting when it starts and closes an idle browser (browser-mcp.ts), so an
+ * entry some other writer reverts cannot put a window on the user's screen again.
  */
-const BROWSER_MCP_PACKAGE = "chrome-devtools-mcp@1.10.1";
-const BROWSER_MCP_BASE_ARGS = ["-y", BROWSER_MCP_PACKAGE, "--isolated", "--no-usage-statistics", "--no-performance-crux"];
-
-function browserMcpArgs(headless: boolean): string[] {
-    return headless ? [...BROWSER_MCP_BASE_ARGS, "--headless"] : [...BROWSER_MCP_BASE_ARGS];
-}
-
-/**
- * How an agent launches the browser server. `npx` is an npm `.cmd` shim on Windows, which an
- * agent that spawns without a shell (claude, opencode, kimi) cannot start, so those get the
- * `cmd /c` form; Codex resolves `.cmd` itself.
- */
-export function browserInvocation(tool: string, platform: NodeJS.Platform = process.platform, headless: boolean = readConfig().config.browserHeadless): { command: string; args: string[]; } {
-    const args = browserMcpArgs(headless);
-    if (platform === "win32" && tool !== "codex") return { command: "cmd", args: ["/c", "npx", ...args] };
-    return { command: "npx", args };
+export function browserInvocation(tool: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[]; } {
+    return mcpInvocation(tool, platform, "__browser-mcp");
 }
 
 const SERVERS: ManagedServer[] = [

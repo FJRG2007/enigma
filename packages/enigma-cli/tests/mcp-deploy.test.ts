@@ -222,7 +222,7 @@ test("every platform starts the same server", () => {
     }
 });
 // The Chrome DevTools server lets any agent test the app in a real, isolated Chrome. It rides
-// next to the enigma server under its own toggle, pinned, with telemetry and CrUX off.
+// next to the enigma server under its own toggle, launched through enigma's own launcher.
 test("the browser server is registered per agent behind its own toggle", () => {
     setEnigmaValue("browser", true, "global");
     const dir = join(HOME, ".enigma", "claude", "browser-acct");
@@ -230,21 +230,20 @@ test("the browser server is registered per agent behind its own toggle", () => {
     writeFileSync(join(dir, ".claude.json"), "{}");
     applyMcpForAccount("claude", dir);
     const entry = JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers["chrome-devtools"];
-    expect(entry.args).toContain("chrome-devtools-mcp@1.10.1");
-    expect(entry.args).toContain("--isolated");
-    expect(entry.args).toContain("--no-usage-statistics");
+    expect(entry.args.at(-1)).toBe("__browser-mcp");
     setEnigmaValue("browser", false, "global");
     applyMcpForAccount("claude", dir);
     expect(JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers?.["chrome-devtools"]).toBeUndefined();
-    expect(browserInvocation("claude", "win32").command).toBe("cmd");
-    expect(browserInvocation("codex", "win32").command).toBe("npx");
-    expect(browserInvocation("claude", "linux")).toEqual({ command: "npx", args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux", "--headless"] });
+    for (const platform of ["win32", "darwin", "linux"] as const) {
+        expect(withLauncher(() => browserInvocation("claude", platform)).args.at(-1), platform).toBe("__browser-mcp");
+    }
+    expect(browserInvocation("codex", "win32").args).toEqual(["__browser-mcp"]);
 });
 
-// The server opens a visible window unless told otherwise, which put every agent's testing on the
-// user's screen. Headless is the default, and an entry an older enigma wrote without the flag is
-// rewritten on the next sync - the fix has to reach installs that already exist.
-test("the browser server runs headless by default and old entries are upgraded", () => {
+// The entry used to carry the server's own flags, so whoever rewrote it decided whether Chrome
+// opened a window on the user's screen. Any older entry, with --headless or without it, is
+// replaced by the launcher on the next sync, which reads the setting itself at start.
+test("old npx browser entries are upgraded to the launcher", () => {
     setEnigmaValue("browser", true, "global");
     const dir = join(HOME, ".enigma", "claude", "headless-acct");
     mkdirSync(dir, { recursive: true });
@@ -252,15 +251,9 @@ test("the browser server runs headless by default and old entries are upgraded",
     writeFileSync(join(dir, ".claude.json"), JSON.stringify({ mcpServers: { "chrome-devtools": old } }));
     expect(applyMcpForAccount("claude", dir)).toBe(true);
     const read = (): string[] => JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers["chrome-devtools"].args;
-    expect(read()).toContain("--headless");
+    expect(read().at(-1)).toBe("__browser-mcp");
+    expect(read().join(" ")).not.toContain("chrome-devtools-mcp");
     expect(applyMcpForAccount("claude", dir)).toBe(false);
-    setEnigmaValue("browserHeadless", false, "global");
-    applyMcpForAccount("claude", dir);
-    expect(read()).not.toContain("--headless");
-    setEnigmaValue("browserHeadless", true, "global");
-    applyMcpForAccount("claude", dir);
-    expect(read()).toContain("--headless");
-    expect(browserInvocation("codex", "linux", false).args).not.toContain("--headless");
 });
 
 // With two managed tables, re-appending each in turn moved one behind the other on every sync.

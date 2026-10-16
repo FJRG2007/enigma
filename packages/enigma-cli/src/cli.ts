@@ -3129,6 +3129,13 @@ export async function run(argv: string[]): Promise<void> {
         await runMcpServer(process.env.ENIGMA_VERSION || PKG.version || "0.0.0");
         return;
     }
+    // Hidden: the Chrome DevTools MCP launcher every agent's browser entry points at. Same stdout
+    // contract as `mcp`; it decides the server's flags and closes an idle browser (browser-mcp.ts).
+    if (argv[0] === "__browser-mcp") {
+        const { runBrowserMcp } = await import("./browser-mcp");
+        runBrowserMcp();
+        return;
+    }
     // Hidden: the merged post-edit hook - trim, guardrails and the graph's blast radius in ONE
     // process, because Claude Code starts a fresh one per settings.json entry and three starts of
     // the ~99 MB binary per edit is what a long session feels as input lag (post-edit-hook.ts).
