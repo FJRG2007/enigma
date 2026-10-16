@@ -11,13 +11,15 @@
  *   so a stale or reverted entry still launches the configured (headless) browser.
  * - After `BROWSER_IDLE_MS` without traffic the whole server tree, Chrome included, is killed.
  *   The next request starts a fresh server and replays the agent's `initialize` handshake to it
- *   first, so the agent sees no difference beyond the server's "reconnected" note.
+ *   first. The fresh server has no pages, so the first tool result after the restart carries
+ *   `RESTART_NOTE`, telling the agent why the pages and element uids it held are gone.
  * - When the agent goes away (stdin closes, or a termination signal) the tree is killed with it.
  *
  * Messages are newline-delimited JSON-RPC, as the MCP stdio transport specifies.
  */
 
 import { readConfig } from "./config";
+import { StringDecoder } from "node:string_decoder";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 /** Pinned server package; bumping it is a deliberate, reviewed change. */
@@ -25,6 +27,9 @@ export const BROWSER_MCP_PACKAGE = "chrome-devtools-mcp@1.10.1";
 
 /** How long the browser may sit unused before its process tree is closed. */
 export const BROWSER_IDLE_MS = 5 * 60_000;
+
+/** Prepended to the first tool result after an idle restart. */
+const RESTART_NOTE = "Note: the browser was closed after being idle and has been restarted. Pages, the selected page and element uids from before are gone; open the page again.";
 
 /** Request id of the replayed handshake; its response is the launcher's and never forwarded. */
 const REINIT_ID = "enigma-browser-reinit";
@@ -59,22 +64,29 @@ function killTree(child: ChildProcess): void {
     try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
 }
 
-/** Split a byte stream into lines, calling `onLine` for each complete, non-empty one. */
+/**
+ * Split a byte stream into lines, calling `onLine` for each complete, non-empty one. The decoder
+ * keeps a multi-byte character split across two chunks whole, and the scan resumes where the
+ * last one stopped, so a multi-megabyte snapshot is not rescanned on every chunk.
+ */
 function lineReader(onLine: (line: string) => void): (chunk: Buffer | string) => void {
+    const decoder = new StringDecoder("utf8");
     let buffer = "";
+    let scanned = 0;
     return (chunk) => {
-        buffer += chunk.toString();
-        let newline = buffer.indexOf("\n");
+        buffer += typeof chunk === "string" ? chunk : decoder.write(chunk);
+        let newline = buffer.indexOf("\n", scanned);
         while (newline !== -1) {
             const line = buffer.slice(0, newline).replace(/\r$/, "");
             buffer = buffer.slice(newline + 1);
             if (line.trim()) onLine(line);
             newline = buffer.indexOf("\n");
         }
+        scanned = buffer.length;
     };
 }
 
-type Message = { id?: unknown; method?: unknown; result?: unknown; error?: unknown; };
+type Message = { id?: unknown; method?: unknown; params?: { requestId?: unknown; }; result?: { content?: unknown; }; error?: unknown; };
 
 function parse(line: string): Message | null {
     try {
@@ -109,6 +121,9 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
     // Requests the agent is waiting on, by JSON id. A server that dies with one outstanding
     // answers it here with an error, so the agent is never left hanging on a dead process.
     const pending = new Map<string, unknown>();
+    // After an idle restart, the first tool call's id; its result gets RESTART_NOTE.
+    let noteDue = false;
+    let noteFor: string | null = null;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const send = (line: string): void => { opts.output.write(`${line}\n`); };
@@ -130,7 +145,7 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
 
     const failPending = (): void => {
         for (const id of pending.values()) {
-            send(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32603, message: "The browser server exited; retry the call." } }));
+            send(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32603, message: "The browser server stopped. Check that Node (npx) and Chrome are installed, then retry the call." } }));
         }
         pending.clear();
     };
@@ -152,8 +167,16 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
                 queue = [];
                 return;
             }
-            if (message && message.method === undefined && message.id !== undefined) pending.delete(JSON.stringify(message.id));
             armIdle();
+            if (message && message.method === undefined && message.id !== undefined) {
+                const key = JSON.stringify(message.id);
+                pending.delete(key);
+                if (key === noteFor && Array.isArray(message.result?.content)) {
+                    noteFor = null;
+                    send(JSON.stringify({ ...message, result: { ...message.result, content: [{ type: "text", text: RESTART_NOTE }, ...message.result.content] } }));
+                    return;
+                }
+            }
             send(line);
         }));
         // A server that cannot start (npx missing) emits "error" and may never emit "exit".
@@ -164,12 +187,15 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
             queue = [];
             failPending();
         };
+        // "close", not "exit": stdout can still hold the last response when the process exits, and
+        // failing that request first would answer it twice.
         proc.on("error", gone);
-        proc.on("exit", gone);
+        proc.on("close", gone);
         proc.stdin?.on("error", () => { /* a dead server's pipe; handled by gone() */ });
         if (replay && initialize !== null) {
             const message = parse(initialize) ?? {};
             proc.stdin?.write(`${JSON.stringify({ ...message, id: REINIT_ID })}\n`);
+            noteDue = true;
         }
     };
 
@@ -186,11 +212,28 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
     opts.input.on("data", lineReader((line) => {
         if (closed) return;
         const message = parse(line);
+        const isRequest = typeof message?.method === "string" && message.id !== undefined;
         if (message?.method === "initialize") initialize = line;
         else if (message?.method === "notifications/initialized") initialized = line;
-        if (message && typeof message.method === "string" && message.id !== undefined) pending.set(JSON.stringify(message.id), message.id);
+        // A cancelled call gets no response from the server, so it must stop counting as one in
+        // flight, or the browser would never be closed for idleness again.
+        else if (message?.method === "notifications/cancelled") {
+            const key = JSON.stringify(message.params?.requestId);
+            pending.delete(key);
+            if (key === noteFor) noteFor = null;
+        }
+        if (isRequest) pending.set(JSON.stringify(message!.id), message!.id);
         armIdle();
-        if (!child) startServer(true);
+        if (!child) {
+            // Only a request needs a server; a notification or a reply to a server that is gone
+            // has nobody to reach. An initialize is the handshake itself, not something to replay.
+            if (!isRequest) return;
+            startServer(message!.method !== "initialize");
+        }
+        if (isRequest && noteDue && message!.method === "tools/call") {
+            noteDue = false;
+            noteFor = JSON.stringify(message!.id);
+        }
         if (ready) child?.stdin?.write(`${line}\n`);
         else queue.push(line);
     }));

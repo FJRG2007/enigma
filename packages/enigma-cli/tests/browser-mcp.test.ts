@@ -12,6 +12,7 @@ const FAKE_SERVER = `
 const fs = require("node:fs");
 const log = process.argv[2];
 let buf = "";
+process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => {
     buf += c;
     let i;
@@ -20,7 +21,7 @@ process.stdin.on("data", (c) => {
         fs.appendFileSync(log, line + "\\n");
         const m = JSON.parse(line);
         if (m.method === "hang") continue;
-        if (m.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { method: m.method, pid: process.pid } }) + "\\n");
+        if (m.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { method: m.method, pid: process.pid, content: [{ type: "text", text: (m.params && m.params.text) || m.method }] } }) + "\\n");
     }
 });
 `;
@@ -92,6 +93,10 @@ test("an idle server is killed and transparently restarted with the handshake re
     t.write({ id: 3, method: "tools/call", params: { name: "take_screenshot" } });
     await until(() => t.replies.length === 3);
     expect(t.replies[2]).toMatchObject({ id: 3, result: { method: "tools/call" } });
+    // The fresh server lost the old pages; the agent is told so once, on this first result.
+    const content = (t.replies[2]!.result as { content: { text: string; }[]; }).content;
+    expect(content[0]!.text).toContain("restarted");
+    expect(content[1]!.text).toBe("tools/call");
     expect((t.replies[2]!.result as { pid: number; }).pid).not.toBe(firstPid);
     expect(t.replies.some((r) => r.id === "enigma-browser-reinit")).toBe(false);
 
@@ -110,6 +115,43 @@ test("an outstanding call keeps the server alive past the idle limit", async () 
     await new Promise((r) => setTimeout(r, 700));
     expect(alive(pid)).toBe(true);
     expect(t.proxy.child()).not.toBeNull();
+});
+
+// The server sends nothing back for a cancelled call, so a cancel must end it for the idle timer
+// too; otherwise one timed-out trace keeps Chrome open for the rest of the session.
+test("a cancelled call no longer holds the server open", async () => {
+    const t = setup(200);
+    t.write({ id: 1, method: "initialize" });
+    await until(() => t.replies.length === 1);
+    const pid = (t.replies[0]!.result as { pid: number; }).pid;
+    t.write({ id: 2, method: "hang" });
+    t.write({ method: "notifications/cancelled", params: { requestId: 2 } });
+    await until(() => t.proxy.child() === null && !alive(pid));
+});
+
+// A multi-byte character split across two chunks must arrive whole, in both directions: page
+// snapshots and console dumps run far past one pipe chunk.
+test("non-ASCII text survives large messages in both directions", async () => {
+    const t = setup(60_000);
+    t.write({ id: 1, method: "initialize" });
+    await until(() => t.replies.length === 1);
+    const text = `a${"ñ漢🙂".repeat(120_000)}`;
+    t.write({ id: 2, method: "echo", params: { text } });
+    await until(() => t.replies.length === 2, 20_000);
+    expect((t.replies[1]!.result as { content: { text: string; }[]; }).content[0]!.text).toBe(text);
+    expect((t.sent()[1]!.params as { text: string; }).text).toBe(text);
+});
+
+// After an idle kill, a stray notification or a late reply has no server to reach; it must not
+// start a whole browser just to be dropped.
+test("a notification while the server is down does not start one", async () => {
+    const t = setup(200);
+    t.write({ id: 1, method: "initialize" });
+    await until(() => t.replies.length === 1);
+    await until(() => t.proxy.child() === null);
+    t.write({ method: "notifications/roots/list_changed" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(t.proxy.child()).toBeNull();
 });
 
 // The agent going away takes the server (and so Chrome) with it.
