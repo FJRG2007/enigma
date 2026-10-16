@@ -3133,7 +3133,7 @@ export async function run(argv: string[]): Promise<void> {
     // contract as `mcp`; it decides the server's flags and closes an idle browser (browser-mcp.ts).
     if (argv[0] === "__browser-mcp") {
         const { runBrowserMcp } = await import("./browser-mcp");
-        runBrowserMcp();
+        await runBrowserMcp();
         return;
     }
     // Hidden: the merged post-edit hook - trim, guardrails and the graph's blast radius in ONE

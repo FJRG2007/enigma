@@ -91,7 +91,7 @@ export interface BrowserProxyOptions {
     idleMs: number;
     input: NodeJS.ReadableStream;
     output: NodeJS.WritableStream;
-    /** Called once the proxy has shut down (agent gone); the CLI exits the process here. */
+    /** Called once the proxy has shut down (agent gone); the CLI command resolves here. */
     onClose?: () => void;
 }
 
@@ -156,14 +156,17 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
             armIdle();
             send(line);
         }));
-        proc.on("error", () => { /* reported through exit */ });
-        proc.on("exit", () => {
+        // A server that cannot start (npx missing) emits "error" and may never emit "exit".
+        const gone = (): void => {
             if (child !== proc) return; // an idle kill already detached it
             child = null;
             ready = false;
             queue = [];
             failPending();
-        });
+        };
+        proc.on("error", gone);
+        proc.on("exit", gone);
+        proc.stdin?.on("error", () => { /* a dead server's pipe; handled by gone() */ });
         if (replay && initialize !== null) {
             const message = parse(initialize) ?? {};
             proc.stdin?.write(`${JSON.stringify({ ...message, id: REINIT_ID })}\n`);
@@ -199,16 +202,21 @@ export function startBrowserProxy(opts: BrowserProxyOptions): { child: () => Chi
     return { child: () => child, close };
 }
 
-/** CLI entry: proxy the agent's stdio to a server launched with the configured flags. */
-export function runBrowserMcp(): void {
+/**
+ * CLI entry: proxy the agent's stdio to a server launched with the configured flags. Resolves
+ * when the agent goes away; the CLI exits as soon as its command returns, so it must await this.
+ */
+export function runBrowserMcp(): Promise<void> {
     const { command, args } = browserServerCommand(readConfig().config.browserHeadless);
-    const proxy = startBrowserProxy({
-        command,
-        args,
-        idleMs: BROWSER_IDLE_MS,
-        input: process.stdin,
-        output: process.stdout,
-        onClose: () => process.exit(0),
+    return new Promise((resolve) => {
+        const proxy = startBrowserProxy({
+            command,
+            args,
+            idleMs: BROWSER_IDLE_MS,
+            input: process.stdin,
+            output: process.stdout,
+            onClose: resolve,
+        });
+        for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, proxy.close);
     });
-    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, proxy.close);
 }

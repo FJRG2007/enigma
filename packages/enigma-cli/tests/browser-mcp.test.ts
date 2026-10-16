@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { PassThrough } from "node:stream";
 import { afterEach, expect, test } from "bun:test";
@@ -132,3 +133,27 @@ test("a call outstanding when the server dies gets an error reply", async () => 
     await until(() => t.replies.length === 2);
     expect(t.replies[1]).toMatchObject({ id: 7, error: { code: -32603 } });
 });
+
+// Through the real CLI: the binary exits once a command returns, so a launcher that does not hold
+// the command open until the agent leaves dies at once and the agent never gets an answer. With
+// no npx on PATH the server cannot start, which still has to reach the agent as an error reply.
+test("the CLI command stays up for the agent and exits when it leaves", async () => {
+    const home = mkdtempSync(join(tmpdir(), "browser-mcp-cli-"));
+    dirs.push(home);
+    const proc = spawn(process.execPath, [join(import.meta.dir, "..", "src", "bin", "enigma.ts"), "__browser-mcp"], {
+        stdio: ["pipe", "pipe", "ignore"],
+        windowsHide: true,
+        env: { ...process.env, PATH: home, Path: home, HOME: home, USERPROFILE: home, ENIGMA_CONFIG_HOME: home, ENIGMA_OFFLINE: "1" },
+    });
+    let exitCode: number | null = null;
+    proc.on("exit", (code) => { exitCode = code ?? -1; });
+    let out = "";
+    proc.stdout.on("data", (c: Buffer) => { out += c.toString(); });
+    proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" })}\n`);
+    await until(() => out.includes("\n"), 20_000);
+    expect(JSON.parse(out.split("\n")[0]!)).toMatchObject({ id: 1, error: { code: -32603 } });
+    expect(exitCode).toBeNull();
+    proc.stdin.end();
+    await until(() => exitCode !== null, 20_000);
+    expect(exitCode).toBe(0);
+}, 60_000);
