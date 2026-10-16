@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.65.2",
+  "cliVersion": "1.65.3",
   "count": 21,
   "skills": [
     {
@@ -96,7 +96,7 @@
       "version": "1.10.0",
       "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-16T16:38:41+02:00",
+      "updated": "2026-10-16T17:11:52+02:00",
       "sha": "0336c367deedcc05974cbfefcc1d2ac597172ea4d8f0298b88ce48af131aadf1"
     },
     {
