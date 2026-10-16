@@ -189,7 +189,7 @@ export function readSkillMeta(skillDir: string): SkillMeta {
  * Decide what should happen to a skill at `destDir`: install / update /
  * identical (skip) / tampered (changed at destination) / reinstall (no hash).
  */
-function skillStatus(destDir: string, srcMeta: SkillMeta): SkillStatus {
+export function skillStatus(destDir: string, srcMeta: SkillMeta): SkillStatus {
     if (!existsSync(destDir)) return { kind: "install", from: null, to: srcMeta.version || null };
     const destMeta = readSkillMeta(destDir);
     const from = destMeta.version || null;
@@ -199,13 +199,16 @@ function skillStatus(destDir: string, srcMeta: SkillMeta): SkillStatus {
     if (!recordedSha) return { kind: "reinstall", from, to };
     const actualSha = computeContentSha(destDir);
     if (actualSha !== recordedSha) return { kind: "tampered", from, to };
+    // Same version, new content (a release that changed a skill without bumping it): the
+    // deployed copy is pristine but stale, so it updates instead of being skipped as current.
+    if (srcMeta.sha && srcMeta.sha !== recordedSha) return { kind: "update", from, to };
     return { kind: "identical", from, to };
 }
 
 function statusLabel(st: SkillStatus): string {
     switch (st.kind) {
         case "install": return st.to ? `install v${st.to}` : "install";
-        case "update": return `update ${st.from} -> ${st.to}`;
+        case "update": return st.from === st.to ? `update v${st.to} (content)` : `update ${st.from} -> ${st.to}`;
         case "identical": return st.to ? `up-to-date v${st.to} (skip)` : "up-to-date (skip)";
         case "tampered": return st.to ? `MODIFIED locally v${st.to}` : "MODIFIED locally";
         default: return st.to ? `reinstall v${st.to}` : "reinstall";
