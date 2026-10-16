@@ -27,6 +27,9 @@ Define small scales up front as design tokens (CSS custom properties or the fram
 
 - **Spacing and sizing:** non-linear, no two neighbours closer than about 25%. On a 16px base: 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 640, 768. A linear "multiples of 4" scale still leaves you choosing between 120 and 124. A component usually needs only two or three of them: a small gap for related items and a gap twice as large for padding and section breaks (12 and 24 is a common pair).
 - **Type sizes:** 12, 14, 16, 18, 20, 24, 30, 36, 48, 60, 72 px, in `px` or `rem`, never `em` (nested `em` compounds into off-scale sizes). A typical card collapses to four: 14 for labels, links, buttons and meta; 16 for body and secondary headings; 18 for the card title; 24 for the key figure. Avoid ratio-generated scales for UI: they produce fractional sizes and leave gaps exactly where interfaces need steps.
+- **Below the scale:** 1px for borders and 2px for hairline offsets (pill padding, a focus-ring offset); nothing else lives under 4px.
+- **Control and target sizes:** one height scale shared by inputs, selects and buttons in a row (32, 36, 40, 48), so a search field and the button beside it line up. On a coarse pointer every tap target reaches 44px (`@media (pointer: coarse)` raises the height, or a padded hit area), even where the visual control stays smaller.
+- **Fixed widths are tokens too:** sidebar (200-240px), drawer (320-400px), dialog (400 / 560 / 720px), popover and menu (min 180px). Put them next to the spacing scale instead of inventing one per component.
 - **Icon sizes:** 12, 16, 24, 32 for small to medium.
 - **Font weights:** two for UI: regular (400-500) and bold (600-700). Below 400 only for large display text; de-emphasise small text with colour or size, never a thin weight.
 - **Colour:** 9-10 shades per hue (section 7). **Shadows:** a five-step elevation scale (section 8).
@@ -55,7 +58,8 @@ How important each element looks relative to the others does more to make a scre
 - **Density is a decision:** a dashboard that must fit one screen can be compact (28-32px table rows, panels separated by subtle shadows rather than padding).
 - **Do not fill the screen because it is there.** A checkout needs ~600px: centre it (`max-width: 600px; margin-inline: auto`) and constrain the header to the same column. A login card is ~360-400px. A full-width nav does not oblige the content to be full width; a full-bleed hero can hold a content column.
 - **Mobile first on a ~400px canvas,** then widen and fix only what felt compromised. To use width without stretching a form, move section titles and help text into a left column (`grid-template-columns: 1fr 2fr`, or a fixed ~240px column) and keep the fields at their ideal width on the right.
-- **Fixed where it should be fixed, fluid where it should flow.** A sidebar has a fixed width suited to its content (`flex: 0 0 200px`-`240px`) and the main area flexes, with its own grid (`repeat(auto-fill, minmax(200px, 1fr))`). A card with an ideal width gets `width: 100%; max-width: 500px` and only shrinks below that, instead of grid columns that can make it narrower on a large screen than a medium one. Images and avatars beside text get `flex-shrink: 0`.
+- **Fixed where it should be fixed, fluid where it should flow.** A sidebar has a fixed width suited to its content (`flex: 0 0 200px`-`240px`) and the main area flexes, with its own grid (`repeat(auto-fill, minmax(200px, 1fr))`). A card with an ideal width gets `width: 100%; max-width: 500px` and only shrinks below that, instead of grid columns that can make it narrower on a large screen than a medium one. Images and avatars beside text get `flex-shrink: 0`. The fixed sidebar holds only while the main area keeps its minimum useful width; below that it becomes a drawer, full screen on a phone (frontend-policy, "Responsive & Adaptive Layout").
+- **Data tables decide at the container, not the device.** Measure the narrowest width at which the essential columns still read (name not truncated to nothing, amounts whole); below it, switch the table to stacked rows with a container query: the primary line (name, amount) on top, the secondary line (status, due date) under it, minor columns moved into the row's detail or menu. Horizontal scrolling is for comparison tables where every column matters, and then the first column is sticky. Never squeeze every column into a phone.
 - **Sizes do not scale proportionally.** Large elements shrink faster: an 18px body with a 45px headline on desktop becomes a 14px body with a 20-24px headline on a phone, set per breakpoint, not as `2.5em`. Buttons get disproportionate padding per size, as tokens, not `em`:
 
   | font-size | padding |
@@ -72,9 +76,9 @@ How important each element looks relative to the others does more to make a scre
 - **Line length:** 45-75 characters (`max-width: 65ch`, or 20-35em). In a wide section, the heading and a three-column grid keep the full width while the intro paragraph keeps its measure (`max-width: 34em; margin-inline: auto`).
 - **Line height is proportional:** 16px at 1.5 for narrow columns, up to 2 for very wide lines, 1.75 for small text in a wide block, 1-1.2 for large headlines.
 - **Baseline, not centre:** a large title with small actions beside it uses `align-items: baseline`.
-- **Faces:** a neutral sans is the safe UI default, and a brand face goes first with the system stack as fallback (`"Brand", -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", sans-serif`). Prefer families with at least five weights. For body and UI text pick a tall x-height and open spacing; short x-height, tight display faces are for headlines only. Popular, well-loved families are a reasonable filter.
+- **Faces:** a neutral sans is the safe UI default, and a brand face goes first with the system stack as fallback (`"Brand", -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", sans-serif`). When web fonts cannot load (a self-contained file, an offline or locked-down page), take character from system stacks by role instead: a serif display stack (`"Iowan Old Style", Charter, "Sitka Text", Cambria, serif`), a monospace stack for codes and ids (`ui-monospace, "Cascadia Code", Menlo, Consolas, monospace`). Figures need lining, tabular numerals (`font-variant-numeric: lining-nums tabular-nums`); Georgia and other old-style-figure faces render amounts unevenly, so keep numbers in the sans. Prefer families with at least five weights. For body and UI text pick a tall x-height and open spacing; short x-height, tight display faces are for headlines only. Popular, well-loved families are a reasonable filter.
 - **Alignment:** start-aligned for anything longer than two or three lines. Centred feature columns stay at two lines each; if one runs long, rewrite it shorter rather than mixing alignments. Right-align numeric columns and their headers, with a fixed number of decimals and `font-variant-numeric: tabular-nums`. Justified text needs `hyphens: auto` and a `lang` attribute.
-- **Letter spacing:** leave it alone by default. `-0.02em` to `-0.05em` on large headlines set in a body face; `+0.05em` on all-caps labels.
+- **Letter spacing:** leave it alone by default. `-0.02em` to `-0.05em` on large headlines set in a body face; `+0.05em` to `+0.1em` on all-caps labels, more as the text gets smaller.
 - **Links:** inside running copy, coloured (and underlined). In link-dense UI (a video grid), titles are dark and bold, secondary links grey, metadata lighter grey, and ancillary links show an underline only on hover.
 
 ## 7. Colour
@@ -89,6 +93,7 @@ How important each element looks relative to the others does more to make a scre
 - **Change brightness by rotating hue too.** Perceived brightness differs by hue (yellow, cyan and magenta read light; red, green and blue read dark; perceived brightness ≈ `sqrt(.299r² + .587g² + .114b²)`). To lighten while staying vivid, rotate up to ~20-30° toward 60/180/300 (an icon gradient `hsl(190 100% 50%)` -> `hsl(210 100% 50%)` instead of `hsl(210 100% 75%)` -> `hsl(210 100% 50%)`); to darken, toward 0/120/240 (yellow drifting to orange as it darkens instead of turning olive).
 - **Tinted greys:** cool greys carry ~12% saturation of a blue hue (≈ 210), warm greys of a yellow-orange hue (≈ 40), with saturation rising to ~15% at the dark end and ~21% at the light end, for example cool `hsl(209 15% 28%)`, `hsl(207 12% 43%)`, `hsl(208 12% 58%)`, `hsl(210 16% 76%)`, `hsl(208 21% 88%)`.
 - **Accessible without being ugly:** 4.5:1 for body text, 3:1 for large text. White text on a bright badge fails and on a dark fill shouts; the fix is the same hue flipped: a 100-shade background with 800-900 text (it reaches 9:1 and up). For secondary text on a dark coloured panel, rotate the hue toward a brighter one (on indigo, a cyan-ish `hsl(188 100% 85%)`) instead of pushing toward white, so it reads as secondary and still passes.
+- **Non-text contrast is 3:1:** an input's border, a focus ring, a checkbox outline, an icon that carries meaning without a label, and a chart segment that is not labelled with its value all need 3:1 against what surrounds them. On white that puts the input border at the 500 grey or darker in the starter tokens below; the 400 grey (≈1.8:1) is for dividers and decorative borders only. A focus ring in the brand 600-700 shade with a 2px offset passes on most surfaces.
 - **Never colour alone.** A trend badge carries an arrow (`↑ 1.4%`, `↓ 11.1%`), not only green or red. Chart series differ by lightness (steps of ~20 points on one hue) and labels, not only by hue (see the dataviz skill when present).
 
 ## 8. Depth
@@ -122,7 +127,9 @@ How important each element looks relative to the others does more to make a scre
 - **Upgrade the defaults before adding elements:** bullets become ~16px brand circles with a white check (or a topical glyph), aligned to the first line; testimonials get oversized quote marks in a light tint, hanging outside the text; links get a heavier weight and colour, or a thick light-tinted underline that overlaps the glyph bottoms (a positioned background gradient); checkboxes become ~18px brand-filled squares with a 3px radius, radios ~20px rings with an ~8px centre dot when selected.
 - **Colour where it means something:** a ~4px bar across the top of a card or the whole layout, a 2-3px bar under the active nav item, a short ~32×3px accent under a headline. The thick left stripe on a rounded card stays banned (frontend-policy); a status uses an icon plus a tint.
 - **Backgrounds carry energy:** alternate section backgrounds (saturated hero, white, charcoal, pale grey), a gradient between two hues no more than ~30° apart, a low-contrast pattern (about 10% lightness off the background) or one along an edge only, a single spot graphic (`pointer-events: none`). Keep decoration low contrast and inside the "Template tells" limits in SKILL.md.
-- **Empty states are a first impression:** a ~64px illustration or icon on a light tint circle, one line saying what belongs here, one primary button, centred with 12-16px gaps. Hide tabs, filters, search and bulk actions until there is content.
+- **Empty states are a first impression,** and there are two kinds:
+  - **Nothing exists yet** (a new account): a ~64px illustration or icon on a light tint circle, one line saying what belongs here, one primary button, centred with 12-16px gaps. Hide tabs, filters, search and bulk actions until there is content. The view still has one primary action: when the page header already carries it, the empty state's button replaces it (hide the header one) rather than doubling it.
+  - **Nothing matches** (a search or filter came back empty): keep the search and filters on screen, name what was searched for, and offer "Clear filters" as the way out. This is not the onboarding screen.
 - **Fewer borders, step by step:** a card border becomes a shadow (`0 5px 15px hsl(0 0% 0% / .15)`, on a card that differs from the page); an input or footer border becomes a light fill (≈ `hsl(200 10% 94%)`); row dividers become a ~6px gap, with the selected row as an inset, rounded, pale tint.
 - **Question the stock shape of a component, keeping its semantics and keyboard behaviour:**
   - Tables: merge related columns into one cell with a dark medium-weight primary line and a smaller light-grey secondary line; add ~32px avatars; status as small pills (light tint background, dark text of the same hue, `2px 8px` padding); row actions as a quiet "•••".
@@ -142,7 +149,7 @@ A neutral starting point to adapt, not a palette to ship as is: swap the hues fo
 ```css
 :root {
   /* spacing */
-  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --space-px: 1px; --space-0_5: 2px; --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
   --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px; --space-10: 128px;
   /* type */
   --text-xs: 12px; --text-sm: 14px; --text-base: 16px; --text-lg: 18px; --text-xl: 20px;
@@ -151,8 +158,12 @@ A neutral starting point to adapt, not a palette to ship as is: swap the hues fo
   --tracking-tight: -0.02em; --tracking-caps: 0.05em;
   /* cool greys (saturation rises at both ends) */
   --grey-900: hsl(210 24% 16%); --grey-800: hsl(209 20% 25%); --grey-700: hsl(209 15% 28%);
-  --grey-600: hsl(207 12% 43%); --grey-500: hsl(208 12% 58%); --grey-400: hsl(210 16% 76%);
+  --grey-600: hsl(207 12% 43%); --grey-500: hsl(208 12% 58%); /* lightest grey for an input border: 3.1:1 on white */
+  --grey-400: hsl(210 16% 76%); /* dividers and decorative borders only */
   --grey-300: hsl(208 21% 88%); --grey-200: hsl(210 25% 93%); --grey-100: hsl(210 38% 97%);
+  /* controls and fixed widths */
+  --control-sm: 32px; --control-md: 36px; --control-lg: 40px; --control-xl: 48px; --target-min: 44px;
+  --width-sidebar: 240px; --width-drawer: 360px; --width-dialog-sm: 400px; --width-dialog-md: 560px; --width-dialog-lg: 720px;
   /* radius */
   --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-full: 9999px;
 }
@@ -162,13 +173,13 @@ A neutral starting point to adapt, not a palette to ship as is: swap the hues fo
 
 Run this pass on every screen before calling it done, with a screenshot when the environment allows:
 
-1. Squint (or blur the screenshot): the one primary element and the one primary action are the first things you see. If not, turn down what competes before enlarging anything.
+1. Squint: apply `filter: grayscale(1) blur(2px)` to the page (or blur the screenshot): the one primary element and the one primary action are the first things you see. If not, turn down what competes before enlarging anything.
 2. Every font size, weight, colour, spacing, radius and shadow comes from the defined scales. No one-off values.
 3. Grayscale check: the hierarchy survives without colour.
 4. Grouping: space between groups at least twice the space within them; no border, background and shadow stacked on one boundary.
 5. Text: paragraphs within 45-75 characters, line heights proportional, mixed sizes baseline-aligned, numbers right-aligned and tabular, all-caps tracked.
-6. Colour: text on colour uses the surface's hue, not grey or opacity; contrast meets 4.5:1 (3:1 large); nothing carried by colour alone; no mid-saturated colour filling a large area.
+6. Colour: text on colour uses the surface's hue, not grey or opacity; contrast meets 4.5:1 for text (3:1 large) and 3:1 for input borders, focus rings, meaningful icons and unlabelled chart segments; nothing carried by colour alone; no mid-saturated colour filling a large area.
 7. Depth: every shadow is an elevation token with one light direction; nothing raised that does not float; pressed and dragged states change elevation.
 8. Images: steady contrast under any overlaid text, icons at their intended size, uploads in fixed frames with an inner ring.
-9. States: empty, loading, error and long-content states exist and look as considered as the happy path.
+9. States: both empty states (nothing yet, nothing matches), loading, error and long-content states exist and look as considered as the happy path.
 10. Every window size and zoom level (frontend-policy, "Responsive & Adaptive Layout").
