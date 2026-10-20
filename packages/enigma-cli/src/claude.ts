@@ -242,9 +242,31 @@ export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: 
     const next: Record<string, unknown> = { ...current };
     if (Object.keys(permissions).length) next.permissions = permissions;
     else delete next.permissions;
+    // The acceptance goes with the bypass it accepted; a scope-local "off" leaves the user file alone.
+    if (scope === "global") delete next[BYPASS_ACCEPTED];
 
     writeClaudeSettings(path, next);
     return { path, changed: true };
+}
+
+/**
+ * Claude Code's record that the bypass warning was accepted, kept in the USER settings file.
+ * Without it, the first session with `defaultMode: "bypassPermissions"` (or
+ * `--dangerously-skip-permissions`) opens a full-screen warning whose preselected answer is to
+ * exit, so a fresh install that only set the mode still asked - and the user had to run
+ * `claude --dangerously-skip-permissions` once by hand. Turning the bypass on through enigma IS
+ * that acceptance, so it is written with the mode, and mirrored to every account's config dir,
+ * which Claude Code reads instead of `~/.claude` under CLAUDE_CONFIG_DIR.
+ */
+export const BYPASS_ACCEPTED = "skipDangerousModePermissionPrompt";
+
+/** Record the bypass acceptance in the user settings file. Returns whether it changed. */
+function acceptBypassWarning(dryRun: boolean): boolean {
+    const path = claudeSettingsPath("global");
+    const current = readJson<Record<string, unknown>>(path) || {};
+    if (current[BYPASS_ACCEPTED] === true) return false;
+    if (!dryRun) writeClaudeSettings(path, { ...current, [BYPASS_ACCEPTED]: true });
+    return true;
 }
 
 /**
@@ -304,10 +326,14 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
         : {};
     const deny = Array.isArray(permissions.deny) ? (permissions.deny as unknown[]).map(String) : [];
     const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
-    if (permissions.defaultMode === "bypassPermissions" && missing.length === 0) return { path, changed: false };
+    // A project scope's mode still needs the acceptance, and Claude Code reads it from the user file.
+    const accepted = acceptBypassWarning(dryRun);
+    if (permissions.defaultMode === "bypassPermissions" && missing.length === 0) return { path, changed: accepted };
     if (dryRun) return { path, changed: true };
 
-    const next = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
+    // Re-read: in global scope the acceptance was just written to this same file.
+    const fresh = readJson<Record<string, unknown>>(path) || {};
+    const next = { ...fresh, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
     writeClaudeSettings(path, next);
     return { path, changed: true };
 }
@@ -582,7 +608,7 @@ export function mirrorClaudeTrust(accountDir: string): boolean {
  * settings into a managed account's config dir, so an account launched via
  * `enigma claude <account>` behaves like the default one. Mirrored knobs:
  * attribution overrides (commit/pr/sessionUrl + includeCoAuthoredBy), permission bypass
- * (permissions.defaultMode), the feedback-survey env override
+ * (permissions.defaultMode, its guard and its accepted warning), the feedback-survey env override
  * (env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY) and the enigma statusline (added only
  * when the account has none - never clobbers a custom one). Every other account setting
  * is preserved, and absence in the global file removes the matching override so
@@ -627,6 +653,8 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
         const deny = Array.isArray(perm.deny) ? (perm.deny as unknown[]).map(String) : [];
         const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
         if (missing.length) perm.deny = [...deny, ...missing];
+        // The account reads its own settings file, so it needs its own acceptance too.
+        next[BYPASS_ACCEPTED] = true;
     } else if (perm.defaultMode === "bypassPermissions") {
         delete perm.defaultMode;
         withoutGuard(perm);
