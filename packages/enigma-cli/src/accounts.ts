@@ -937,7 +937,10 @@ export function openLoginTerminal(toolName: string, name: string): boolean {
     getTool(toolName);
     if (process.env.ENIGMA_NO_TERMINAL === "1") return false; // tests/headless: never open a window
     const enigma = process.env.ENIGMA_BIN_PATH || resolveBin("enigma") || "enigma";
-    const args = name === DEFAULT_NAME ? [toolName] : [toolName, name];
+    // `account login` rather than a bare launch: it names the account (a bare `enigma <tool>` opens
+    // whichever account is the default, so `default` could land in another one) and it runs the
+    // tool's own login command where it has one (`codex login`), not just the tool.
+    const args = ["account", "login", name, "--tool", toolName];
     try {
         if (process.platform === "win32") {
             // `start "" cmd /k <enigma ...>`: a new console that stays open after the tool exits.
