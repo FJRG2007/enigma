@@ -79,6 +79,12 @@ test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
         expect(lib.status).toBe(200);
         expect(lib.headers.get("content-type")).toContain("javascript");
         expect(await lib.text()).toContain("createChart");
+        // So is every other script the page loads from /lib - a missing one breaks the palette.
+        const scripts = [...page.matchAll(/<script src="\/lib\/([^"]+)"/g)].map((m) => m[1]);
+        expect(scripts).toContain("enigma-primitives.js");
+        for (const file of scripts) expect((await fetch(`${base}/lib/${file}`)).status).toBe(200);
+        // Only the vendored files: nothing else under /lib resolves.
+        expect((await fetch(`${base}/lib/index.html`)).status).toBe(404);
 
         const api = await fetch(`${base}/api/stats`);
         expect(api.status).toBe(200);

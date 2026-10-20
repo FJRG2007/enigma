@@ -58,8 +58,9 @@ function installedCliVersion(): string {
     return process.env.ENIGMA_VERSION || "";
 }
 
-/** The vendored charting library file name, served locally - never a CDN. */
-const LIB_FILE = "chart.min.js";
+/** The vendored scripts under `assets/lib/` the page loads, served locally - never a CDN. A fixed
+ * list, not a directory listing, so a URL can never name any other file. */
+const LIB_FILES = ["chart.min.js", "enigma-primitives.js"];
 
 /** Absolute path to an installed UI asset, or null when the on-demand package is absent. */
 function assetPath(...parts: string[]): string | null {
@@ -227,14 +228,14 @@ function dashboardHtml(): string {
     return r.value;
 }
 
-let libCache: { text: string; key: string; } | null = null;
+let libCache = new Map<string, { text: string; key: string; }>();
 
-/** The vendored chart library JS, or null if the asset is missing (cards still render). */
-function dashboardLib(): string | null {
-    const path = assetPath("lib", LIB_FILE);
+/** A vendored library's JS, or null if the asset is missing (the page degrades without it). */
+function dashboardLib(file: string): string | null {
+    const path = assetPath("lib", file);
     if (!path) return null;
-    const r = readAssetCached(libCache, path, "");
-    libCache = r.cache;
+    const r = readAssetCached(libCache.get(file) ?? null, path, "");
+    if (r.cache) libCache.set(file, r.cache);
     // An empty value means the read failed and no cache exists yet -> treat as missing.
     return r.cache ? r.cache.text : null;
 }
@@ -440,7 +441,7 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
             if (lint.isLinterInstalled()) lint.refreshLinterPkg();
             // Only drop the asset cache when the bundle actually changed, so an unchanged
             // run does not force a needless page reload.
-            if (uiChanged) { htmlCache = null; libCache = null; }
+            if (uiChanged) { htmlCache = null; libCache = new Map(); }
             const parts: string[] = [];
             if (updated.length) parts.push(`skills updated: ${updated.join(", ")}`);
             else if (synced.length) parts.push(`skills re-synced: ${synced.join(", ")}`);
@@ -1104,8 +1105,9 @@ function createDashboardServer(version: string): Server {
             res.end(dashboardHtml());
             return;
         }
-        if (url === "/lib/" + LIB_FILE) {
-            const js = dashboardLib();
+        const libFile = url.startsWith("/lib/") ? url.slice(5) : "";
+        if (LIB_FILES.includes(libFile)) {
+            const js = dashboardLib(libFile);
             if (js === null) { res.writeHead(404).end(); return; }
             res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "max-age=86400" });
             res.end(js);
