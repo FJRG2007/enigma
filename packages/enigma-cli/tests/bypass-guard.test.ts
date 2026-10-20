@@ -23,13 +23,13 @@ afterEach(() => {
     else process.env.ENIGMA_CONFIG_HOME = priorConfigHome;
 });
 
-const { enableClaudeBypass, ensureClaudeBypassGuard, mirrorClaudeSettings, BYPASS_GUARD_DENY } = await import("../src/claude");
+const { enableClaudeBypass, ensureClaudeBypassGuard, mirrorClaudeSettings, BYPASS_GUARD_DENY, BYPASS_ACCEPTED } = await import("../src/claude");
 
 const GLOBAL = join(HOME, ".claude", "settings.json");
 mkdirSync(join(HOME, ".claude"), { recursive: true });
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
-const read = (path: string): { permissions?: { defaultMode?: string; deny?: string[]; allow?: string[]; }; } => JSON.parse(readFileSync(path, "utf8"));
+const read = (path: string): { permissions?: { defaultMode?: string; deny?: string[]; allow?: string[]; }; skipDangerousModePermissionPrompt?: boolean; } => JSON.parse(readFileSync(path, "utf8"));
 
 test("turning the bypass on adds the guard next to the user's own rules", () => {
     writeFileSync(GLOBAL, JSON.stringify({ permissions: { deny: ["Bash(curl * | sh)"], allow: ["Bash(npm test)"] } }));
@@ -77,4 +77,57 @@ test("turning the bypass off takes the guard with it and leaves the user's rules
     writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions", deny: ["Bash(make deploy)", ...BYPASS_GUARD_DENY] } }));
     expect(setClaudeBypass("global", false, false).changed).toBe(true);
     expect(read(GLOBAL).permissions).toEqual({ deny: ["Bash(make deploy)"] });
+});
+
+// Claude Code shows a one-time warning before the first bypassed session, preselected to exit,
+// and records the answer as BYPASS_ACCEPTED. A fresh install that wrote only the mode still asked.
+test("turning the bypass on accepts Claude Code's warning so the first session does not ask", () => {
+    expect(BYPASS_ACCEPTED).toBe("skipDangerousModePermissionPrompt");
+    writeFileSync(GLOBAL, JSON.stringify({ theme: "dark" }));
+    expect(enableClaudeBypass("global", false).changed).toBe(true);
+    const settings = read(GLOBAL);
+    expect(settings.skipDangerousModePermissionPrompt).toBe(true);
+    expect(settings.permissions?.defaultMode).toBe("bypassPermissions");
+    expect((settings as Record<string, unknown>).theme).toBe("dark");
+    expect(enableClaudeBypass("global", false).changed).toBe(false);
+});
+
+test("an install that already had the bypass but never accepted the warning gets it on sync", () => {
+    writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions", deny: [...BYPASS_GUARD_DENY] } }));
+    expect(ensureClaudeBypassGuard("global")).toBe(true);
+    expect(read(GLOBAL).skipDangerousModePermissionPrompt).toBe(true);
+    expect(ensureClaudeBypassGuard("global")).toBe(false);
+});
+
+test("a dry run reports the missing acceptance without writing it", () => {
+    writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions", deny: [...BYPASS_GUARD_DENY] } }));
+    expect(enableClaudeBypass("global", true).changed).toBe(true);
+    expect(read(GLOBAL).skipDangerousModePermissionPrompt).toBeUndefined();
+});
+
+test("an account launched with the bypass carries the acceptance in its own settings", () => {
+    writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions", deny: [...BYPASS_GUARD_DENY] }, skipDangerousModePermissionPrompt: true }));
+    const account = join(HOME, "account-accept");
+    mkdirSync(account, { recursive: true });
+    mirrorClaudeSettings(account);
+    expect(read(join(account, "settings.json")).skipDangerousModePermissionPrompt).toBe(true);
+});
+
+test("turning the global bypass off withdraws the acceptance", async () => {
+    const { setClaudeBypass } = await import("../src/claude");
+    writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions" }, skipDangerousModePermissionPrompt: true }));
+    expect(setClaudeBypass("global", false, false).changed).toBe(true);
+    expect(read(GLOBAL).skipDangerousModePermissionPrompt).toBeUndefined();
+});
+
+test("an account mirrored after the global bypass is off loses the acceptance with the mode", () => {
+    writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions", deny: [...BYPASS_GUARD_DENY] }, skipDangerousModePermissionPrompt: true }));
+    const account = join(HOME, "account-withdraw");
+    mkdirSync(account, { recursive: true });
+    mirrorClaudeSettings(account);
+    writeFileSync(GLOBAL, JSON.stringify({ theme: "dark" }));
+    mirrorClaudeSettings(account);
+    const settings = read(join(account, "settings.json"));
+    expect(settings.skipDangerousModePermissionPrompt).toBeUndefined();
+    expect(settings.permissions?.defaultMode).toBeUndefined();
 });

@@ -1668,9 +1668,10 @@ export function syncDeployed(agentNames?: string[]): string[] {
             const { subagentLimit } = conf.readConfig().config;
             if (subagentLimit >= 0) notices.push(`Subagent limit is on: a session runs at most ${subagentLimit} subagent(s) at once. Change with 'enigma config subagent-limit', how long one runs with 'enigma config subagent-turns', and where conversations compact with 'enigma config compact-window'.`);
         }
-        // The destructive-command guard rides with the bypass, and like the rest of this block it
-        // is settings.json wiring an existing install only receives here. Silent: nothing the
-        // agent is allowed to do changes except wiping a machine or force-pushing main.
+        // The destructive-command guard and the bypass-warning acceptance both ride with the
+        // bypass, and like the rest of this block they are settings.json wiring an existing
+        // install only receives here. Silent: nothing the agent is allowed to do changes except
+        // wiping a machine or force-pushing main.
         if (agent.name === "claude" && hasDeployment(agent, "global")) ensureClaudeBypassGuard("global");
         // Same reasoning: the status bar is on by default and is settings.json WIRING, not a
         // file the copy loop above touches, so an existing deployment has to pick it up on

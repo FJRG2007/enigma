@@ -220,11 +220,12 @@ export function getClaudeBypass(scope: "global" | "local"): boolean {
 }
 
 /**
- * Enable or disable Claude Code's permission bypass for a scope. Enabling sets
- * `permissions.defaultMode` to "bypassPermissions"; disabling removes that key so
- * Claude returns to its default (ask before acting). Other settings and explicit
- * `permissions.deny` rules are preserved. On `dryRun`, reports the would-be
- * change without writing.
+ * Enable or disable Claude Code's permission bypass for a scope. Enabling delegates to
+ * `enableClaudeBypass`, which also records the bypass-warning acceptance. Disabling removes
+ * `permissions.defaultMode` so Claude returns to its default (ask before acting); a global "off"
+ * also withdraws that acceptance, while a local "off" leaves the (shared) user file's acceptance
+ * alone. Other settings and explicit `permissions.deny` rules are preserved. On `dryRun`, reports
+ * the would-be change without writing.
  */
 export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: boolean): { path: string; changed: boolean; } {
     if (on) return enableClaudeBypass(scope, dryRun);
@@ -242,9 +243,31 @@ export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: 
     const next: Record<string, unknown> = { ...current };
     if (Object.keys(permissions).length) next.permissions = permissions;
     else delete next.permissions;
+    // The acceptance goes with the bypass it accepted; a scope-local "off" leaves the user file alone.
+    if (scope === "global") delete next[BYPASS_ACCEPTED];
 
     writeClaudeSettings(path, next);
     return { path, changed: true };
+}
+
+/**
+ * Claude Code's record that the bypass warning was accepted, kept in the USER settings file.
+ * Without it, the first session with `defaultMode: "bypassPermissions"` (or
+ * `--dangerously-skip-permissions`) opens a full-screen warning whose preselected answer is to
+ * exit, so a fresh install that only set the mode still asked - and the user had to run
+ * `claude --dangerously-skip-permissions` once by hand. Turning the bypass on through enigma IS
+ * that acceptance, so it is written with the mode, and mirrored to every account's config dir,
+ * which Claude Code reads instead of `~/.claude` under CLAUDE_CONFIG_DIR.
+ */
+export const BYPASS_ACCEPTED = "skipDangerousModePermissionPrompt";
+
+/** Record the bypass acceptance in the user settings file. Returns whether it changed. */
+function acceptBypassWarning(dryRun: boolean): boolean {
+    const path = claudeSettingsPath("global");
+    const current = readJson<Record<string, unknown>>(path) || {};
+    if (current[BYPASS_ACCEPTED] === true) return false;
+    if (!dryRun) writeClaudeSettings(path, { ...current, [BYPASS_ACCEPTED]: true });
+    return true;
 }
 
 /**
@@ -290,10 +313,12 @@ export function ensureClaudeBypassGuard(scope: "global" | "local"): boolean {
 
 /**
  * Enable Claude Code's permission bypass by setting `permissions.defaultMode`
- * to "bypassPermissions" so the agent stops asking for per-action approval.
- * Merges into any existing settings; explicit `permissions.deny` rules still
- * take precedence (deny wins). Returns the target path and whether it changed.
- * On `dryRun`, reports the would-be change without writing.
+ * to "bypassPermissions" so the agent stops asking for per-action approval. Also records
+ * `BYPASS_ACCEPTED` in the global (user) settings file - the mode alone still shows Claude
+ * Code's one-time bypass warning, since that acceptance is always read from the user file
+ * regardless of which scope's mode triggered it. Merges into any existing settings; explicit
+ * `permissions.deny` rules still take precedence (deny wins). Returns the target path and
+ * whether it changed. On `dryRun`, reports the would-be change without writing.
  */
 export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): { path: string; changed: boolean; } {
     const path = claudeSettingsPath(scope);
@@ -304,10 +329,15 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
         : {};
     const deny = Array.isArray(permissions.deny) ? (permissions.deny as unknown[]).map(String) : [];
     const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
-    if (permissions.defaultMode === "bypassPermissions" && missing.length === 0) return { path, changed: false };
+    // A project scope's mode still needs the acceptance, and Claude Code reads it from the user file.
+    const local = scope === "local";
+    const accepted = local ? acceptBypassWarning(dryRun) : current[BYPASS_ACCEPTED] !== true;
+    const upToDate = permissions.defaultMode === "bypassPermissions" && missing.length === 0;
+    if (upToDate && (local || !accepted)) return { path, changed: accepted };
     if (dryRun) return { path, changed: true };
 
-    const next = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
+    const next: Record<string, unknown> = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
+    if (!local) next[BYPASS_ACCEPTED] = true;
     writeClaudeSettings(path, next);
     return { path, changed: true };
 }
@@ -582,7 +612,7 @@ export function mirrorClaudeTrust(accountDir: string): boolean {
  * settings into a managed account's config dir, so an account launched via
  * `enigma claude <account>` behaves like the default one. Mirrored knobs:
  * attribution overrides (commit/pr/sessionUrl + includeCoAuthoredBy), permission bypass
- * (permissions.defaultMode), the feedback-survey env override
+ * (permissions.defaultMode, its guard and its accepted warning), the feedback-survey env override
  * (env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY) and the enigma statusline (added only
  * when the account has none - never clobbers a custom one). Every other account setting
  * is preserved, and absence in the global file removes the matching override so
@@ -627,9 +657,12 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
         const deny = Array.isArray(perm.deny) ? (perm.deny as unknown[]).map(String) : [];
         const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
         if (missing.length) perm.deny = [...deny, ...missing];
+        // The account reads its own settings file, so it needs its own acceptance too.
+        next[BYPASS_ACCEPTED] = true;
     } else if (perm.defaultMode === "bypassPermissions") {
         delete perm.defaultMode;
         withoutGuard(perm);
+        delete next[BYPASS_ACCEPTED];
     }
     if (Object.keys(perm).length) next.permissions = perm;
     else delete next.permissions;
