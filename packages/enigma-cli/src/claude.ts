@@ -327,13 +327,14 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
     const deny = Array.isArray(permissions.deny) ? (permissions.deny as unknown[]).map(String) : [];
     const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
     // A project scope's mode still needs the acceptance, and Claude Code reads it from the user file.
-    const accepted = acceptBypassWarning(dryRun);
-    if (permissions.defaultMode === "bypassPermissions" && missing.length === 0) return { path, changed: accepted };
+    const local = scope === "local";
+    const accepted = local ? acceptBypassWarning(dryRun) : current[BYPASS_ACCEPTED] !== true;
+    const upToDate = permissions.defaultMode === "bypassPermissions" && missing.length === 0;
+    if (upToDate && (local || !accepted)) return { path, changed: accepted };
     if (dryRun) return { path, changed: true };
 
-    // Re-read: in global scope the acceptance was just written to this same file.
-    const fresh = readJson<Record<string, unknown>>(path) || {};
-    const next = { ...fresh, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
+    const next: Record<string, unknown> = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
+    if (!local) next[BYPASS_ACCEPTED] = true;
     writeClaudeSettings(path, next);
     return { path, changed: true };
 }
@@ -658,6 +659,7 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     } else if (perm.defaultMode === "bypassPermissions") {
         delete perm.defaultMode;
         withoutGuard(perm);
+        delete next[BYPASS_ACCEPTED];
     }
     if (Object.keys(perm).length) next.permissions = perm;
     else delete next.permissions;

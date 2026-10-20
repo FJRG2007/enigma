@@ -119,3 +119,15 @@ test("turning the global bypass off withdraws the acceptance", async () => {
     expect(setClaudeBypass("global", false, false).changed).toBe(true);
     expect(read(GLOBAL).skipDangerousModePermissionPrompt).toBeUndefined();
 });
+
+test("an account mirrored after the global bypass is off loses the acceptance with the mode", () => {
+    writeFileSync(GLOBAL, JSON.stringify({ permissions: { defaultMode: "bypassPermissions", deny: [...BYPASS_GUARD_DENY] }, skipDangerousModePermissionPrompt: true }));
+    const account = join(HOME, "account-withdraw");
+    mkdirSync(account, { recursive: true });
+    mirrorClaudeSettings(account);
+    writeFileSync(GLOBAL, JSON.stringify({ theme: "dark" }));
+    mirrorClaudeSettings(account);
+    const settings = read(join(account, "settings.json"));
+    expect(settings.skipDangerousModePermissionPrompt).toBeUndefined();
+    expect(settings.permissions?.defaultMode).toBeUndefined();
+});
