@@ -126,7 +126,7 @@ export function serializeAccounts(): AccountsPayload {
             let plan: string | undefined;
             let organization: string | undefined;
             if (loginState === "ok") { loginMethod = "subscription"; plan = sessionPlan(a.dir); }
-            else if (tool === "claude" && consoleSignIn && consoleSignIn.state !== "expired") {
+            else if (tool === "claude" && loginState !== "expired" && !a.provider && consoleSignIn && consoleSignIn.state !== "expired") {
                 // No claude.ai login here, so Claude Code runs this account on the Console sign-in.
                 loginState = "ok"; loginMethod = "console"; organization = consoleSignIn.organization;
             }

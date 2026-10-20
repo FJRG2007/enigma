@@ -5651,7 +5651,7 @@ export {
             } catch { setNote("packsNote", "Could not reach the server.", "err"); }
         }
         function wirePacks() {
-            $("packsRefresh").addEventListener("click", loadPacks);
+            $("packsRefresh").addEventListener("click", () => loadPacks());
             $("view-agents").addEventListener("click", (e) => {
                 const b = e.target.closest("button[data-pack]");
                 if (!b) return;

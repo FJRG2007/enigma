@@ -117,7 +117,7 @@ test("every account carries the command that opens it", () => {
     for (const a of d.accounts) expect(a.launch).toBe(`enigma ${a.tool} ${a.name}`);
 });
 
-test("a Claude account with no claude.ai login is signed in through the Console sign-in", () => {
+test("a Claude account with no claude.ai login is signed in through the Console sign-in", async () => {
     const acc = addAccount("claude", "apikey");
     writeFileSync(join(acc.dir, ".credentials.json"), "{}");
     let a = serializeAccounts().accounts.find((x) => x.name === "apikey")!;
@@ -132,6 +132,20 @@ test("a Claude account with no claude.ai login is signed in through the Console 
     expect(a.loginMethod).toBe("console");
     expect(a.organization).toBe("Example Org");
     expect(a.email).toBe("dev@example.com");
+
+    // An account on another provider runs on that provider's token, never the Console.
+    addAccount("claude", "proxied");
+    await applyAccountAction("account.provider", { tool: "claude", name: "proxied", provider: { preset: "minimax", token: "T" } });
+    a = serializeAccounts().accounts.find((x) => x.name === "proxied")!;
+    expect(a.loginMethod).toBeUndefined();
+    expect(a.organization).toBeUndefined();
+
+    // An expired claude.ai login stays expired so it can be re-authenticated.
+    const stale = addAccount("claude", "stale");
+    writeFileSync(join(stale.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "S", expiresAt: Date.now() - 3600_000 } }));
+    a = serializeAccounts().accounts.find((x) => x.name === "stale")!;
+    expect(a.loginState).toBe("expired");
+    expect(a.loginMethod).toBeUndefined();
 
     // An account with its own live claude.ai login keeps it: the Console is only the fallback.
     writeFileSync(join(acc.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "S", refreshToken: "SR", expiresAt: Date.now() + 3600_000, subscriptionType: "max" } }));
