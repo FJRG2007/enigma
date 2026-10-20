@@ -6,7 +6,7 @@
  * cli.ts.
  *
  * One thing the browser CANNOT do is run a tool's interactive login (that needs the
- * terminal): the UI surfaces the command to run instead (`enigma <tool> <account>`).
+ * terminal): the UI surfaces the command to run instead (`enigma account login <account> --tool <tool>`).
  *
  * dashboard.ts imports this DYNAMICALLY (only when the Accounts panel is used), and the
  * one heavy dependency (skills.ts, to seed a freshly created account dir) is imported

@@ -18,6 +18,10 @@
  * no re-login. This module owns those file operations; higher layers decide when to run them
  * (a pack keeps its context and account in lockstep; the dashboard/CLI expose a manual transfer).
  *
+ * This module also owns detecting an Anthropic Console (API billing) sign-in: Claude Code keeps
+ * that login OUTSIDE any `CLAUDE_CONFIG_DIR`, in a machine-wide profile store, and falls back to
+ * it for any config dir with no claude.ai login of its own - see `consoleLogin`.
+ *
  * Leaf module: Node builtins only, imports nothing from enigma, never logs a token value.
  */
 
