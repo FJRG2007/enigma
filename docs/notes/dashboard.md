@@ -55,3 +55,12 @@ uses by default. Adoption is not always the app taking from the package.
 Drift is the risk this arrangement carries, and `--check` in CI is the answer to it: the
 bundle is committed, so an edit to the package that never reached the dashboard would show
 up only when somebody opened the palette.
+
+## Live views, the agents route, clipboard on http
+
+- `#/packs` is now `#/agents` (`view-agents`); the route handler rewrites a legacy `#/packs` hash with `history.replaceState`, so old bookmarks still land. `/api/packs` and the code names keep "pack".
+- Accounts and Agents poll every 4 s while their view is open and the tab visible (`startLivePoll`, ONE timer, stopped on leaving the view), so a login finished in a terminal shows up without a reload. A poll is skipped while a dialog, an open dropdown or a focused `<select>` is in the view, and a payload whose JSON signature did not change leaves the DOM alone - otherwise the 4 s re-render would close the control under the pointer.
+- `navigator.clipboard` exists only on a secure origin; the dashboard is often served at `http://enigma` (hosts entry), where it is undefined. `writeClipboard` falls back to a hidden textarea + `execCommand("copy")`; every copy goes through it (`copyToClipboard` adds the animated check). The old direct calls in agents and SSH failed silently there.
+- `/lib/` serves a fixed allowlist (`LIB_FILES` in `dashboard.ts`), not a directory. It used to serve only `chart.min.js`, so `enigma-primitives.js` 404'd in every install: the palette ran on its stand-ins and every keydown threw `isPaletteShortcut is not a function`. `tests/dashboard.test.ts` now fetches every `<script src="/lib/...">` the page names.
+- The UI package can run against an older CLI: read new payload fields with a fallback (`a.launch || ...`).
+- Settings has a sticky filter (every typed word must appear in a row) and section jumps; on a phone the jumps are one swipeable line.
