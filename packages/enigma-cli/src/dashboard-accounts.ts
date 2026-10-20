@@ -6,7 +6,7 @@
  * cli.ts.
  *
  * One thing the browser CANNOT do is run a tool's interactive login (that needs the
- * terminal): the UI surfaces the command to run instead (`enigma <tool> <account>`).
+ * terminal): the UI surfaces the command to run instead (`enigma account login <account> --tool <tool>`).
  *
  * dashboard.ts imports this DYNAMICALLY (only when the Accounts panel is used), and the
  * one heavy dependency (skills.ts, to seed a freshly created account dir) is imported
@@ -15,7 +15,7 @@
 
 import * as acct from "./accounts";
 import { accountTokenState, packSessionSources } from "./packs";
-import { sessionState, sessionEmail, isUsableSession, transferSession, type SessionState } from "./claude-oauth";
+import { sessionState, sessionEmail, sessionPlan, consoleLogin, isUsableSession, transferSession, type SessionState } from "./claude-oauth";
 
 export interface DashAccount {
     tool: string;
@@ -30,6 +30,17 @@ export interface DashAccount {
     loggedIn: boolean;
     /** Claude login freshness: ok | expired | empty | absent. Undefined for tools without token inspection. */
     loginState?: "ok" | "expired" | "empty" | "absent";
+    /**
+     * How a signed-in Claude account is billed: its own claude.ai login ("subscription"), or the
+     * machine-wide Anthropic Console sign-in Claude Code falls back to ("console", API billing).
+     */
+    loginMethod?: "subscription" | "console";
+    /** Subscription plan ("max", "pro") for a claude.ai login. */
+    plan?: string;
+    /** Organization of a Console sign-in. */
+    organization?: string;
+    /** The command that opens a session on exactly this account. */
+    launch: string;
     /** Whether this tool supports a provider override (drives the provider control's visibility). */
     supportsProvider: boolean;
     /** The active provider override (token never included), or null for the default backend. */
@@ -104,17 +115,28 @@ function sessionSourceDir(id: string): string | null {
 
 /** Snapshot every tool's accounts and all profiles for the browser. */
 export function serializeAccounts(): AccountsPayload {
+    // Read once per snapshot: it is machine-wide, not per account.
+    const consoleSignIn = consoleLogin();
     const accounts: DashAccount[] = acct.TOOL_NAMES.flatMap((tool) =>
         acct.listAccounts(tool).map((a) => {
             // For Claude, "logged in" means a USABLE token, not just a cached email - so a stale
             // account (e.g. its token expired) is shown as such and can be re-authenticated.
-            const loginState = tool === "claude" ? accountTokenState(tool, a.name) : undefined;
+            let loginState = tool === "claude" ? accountTokenState(tool, a.name) : undefined;
+            let loginMethod: DashAccount["loginMethod"];
+            let plan: string | undefined;
+            let organization: string | undefined;
+            if (loginState === "ok") { loginMethod = "subscription"; plan = sessionPlan(a.dir); }
+            else if (tool === "claude" && loginState !== "expired" && !a.provider && consoleSignIn && consoleSignIn.state !== "expired") {
+                // No claude.ai login here, so Claude Code runs this account on the Console sign-in.
+                loginState = "ok"; loginMethod = "console"; organization = consoleSignIn.organization;
+            }
             const loggedIn = tool === "claude" ? loginState === "ok" : Boolean(a.email ?? a.displayName);
             return {
             tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
-            email: a.email ?? a.displayName,
+            email: a.email ?? a.displayName ?? (loginMethod === "console" ? consoleSignIn?.email : undefined),
             active: a.active, removable: a.name !== acct.DEFAULT_NAME,
-            loggedIn, loginState,
+            loggedIn, loginState, loginMethod, plan, organization,
+            launch: `enigma ${tool} ${a.name}`,
             supportsProvider: a.supportsProvider,
             provider: a.provider
                 ? { baseUrl: a.provider.baseUrl, model: a.provider.model, preset: a.provider.preset, hasToken: a.provider.hasToken }
@@ -170,9 +192,10 @@ export async function applyAccountAction(op: string, payload: AccountActionPaylo
                 // Spawn the tool's interactive login in a new terminal window (the browser can't
                 // host a TUI login). Falls back to telling the user the command when no terminal opens.
                 const opened = acct.openLoginTerminal(tool, name);
-                const cmd = `enigma ${tool}${name === acct.DEFAULT_NAME ? "" : ` ${name}`}`;
+                // The same command the terminal runs (see openLoginTerminal).
+                const cmd = `enigma account login ${name} --tool ${tool}`;
                 return opened
-                    ? { ok: true, note: `Opened a terminal to log in '${name}'. Complete /login there, then refresh.`, data: serializeAccounts() }
+                    ? { ok: true, note: `Opened a terminal to log in '${name}'. Finish /login there - this page picks it up by itself.`, data: serializeAccounts() }
                     : { ok: false, error: `Could not open a terminal. Run this yourself:  ${cmd}`, data: serializeAccounts() };
             }
             case "account.transfer": {

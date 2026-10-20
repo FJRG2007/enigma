@@ -18,11 +18,15 @@
  * no re-login. This module owns those file operations; higher layers decide when to run them
  * (a pack keeps its context and account in lockstep; the dashboard/CLI expose a manual transfer).
  *
+ * This module also owns detecting an Anthropic Console (API billing) sign-in: Claude Code keeps
+ * that login OUTSIDE any `CLAUDE_CONFIG_DIR`, in a machine-wide profile store, and falls back to
+ * it for any config dir with no claude.ai login of its own - see `consoleLogin`.
+ *
  * Leaf module: Node builtins only, imports nothing from enigma, never logs a token value.
  */
 
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
 /** The OAuth payload Claude Code stores under `claudeAiOauth` in `.credentials.json`. */
@@ -105,6 +109,75 @@ export function sessionEmail(dir: string): string | undefined {
     } catch {
         return undefined;
     }
+}
+
+/** Subscription plan recorded with a config dir's claude.ai login ("max", "pro"...), or undefined. */
+export function sessionPlan(dir: string): string | undefined {
+    const plan = readOAuth(dir)?.subscriptionType;
+    return typeof plan === "string" && plan ? plan : undefined;
+}
+
+/**
+ * An Anthropic Console sign-in (API billing). Claude Code keeps it OUTSIDE the config dir, in a
+ * machine-wide profile store shared by every `CLAUDE_CONFIG_DIR`, and falls back to it whenever a
+ * dir has no claude.ai login. So an account with an empty `.credentials.json` can still be signed
+ * in - with API billing - which is why a reader of `.credentials.json` alone reports it signed out.
+ */
+export interface ConsoleLogin {
+    state: "ok" | "refreshable" | "expired";
+    profile: string;
+    email?: string;
+    organization?: string;
+}
+
+/**
+ * The profile store's root, resolved the way Claude Code resolves it: ANTHROPIC_CONFIG_DIR, else
+ * %APPDATA%\Anthropic on Windows, else $XDG_CONFIG_HOME/anthropic, else ~/.config/anthropic.
+ */
+export function anthropicConfigDir(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string | null {
+    const explicit = env.ANTHROPIC_CONFIG_DIR?.trim();
+    if (explicit) return explicit;
+    if (platform === "win32") {
+        const appData = env.APPDATA?.trim();
+        if (appData) return join(appData, "Anthropic");
+        const profile = env.USERPROFILE?.trim();
+        return profile ? join(profile, "AppData", "Roaming", "Anthropic") : null;
+    }
+    const xdg = env.XDG_CONFIG_HOME?.trim();
+    if (xdg) return join(xdg, "anthropic");
+    const home = env.HOME?.trim();
+    return home ? join(home, ".config", "anthropic") : null;
+}
+
+const PROFILE_NAME = /^[A-Za-z0-9_.-]+$/;
+
+function readJsonFile<T>(file: string): T | null {
+    try { return JSON.parse(readFileSync(file, "utf8")) as T; } catch { return null; }
+}
+
+/**
+ * The Console sign-in Claude Code would use, or null when there is none. The profile is
+ * ANTHROPIC_PROFILE, else the store's `active_config`, else "default" - the same order Claude
+ * Code applies. Only an OAuth profile is reported; its tokens are read for presence and expiry,
+ * never returned.
+ */
+export function consoleLogin(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, now: number = Date.now()): ConsoleLogin | null {
+    const root = anthropicConfigDir(env, platform);
+    if (!root) return null;
+    let active = "";
+    try { active = readFileSync(join(root, "active_config"), "utf8").trim(); } catch { /* no pointer: default */ }
+    const profile = env.ANTHROPIC_PROFILE?.trim() || active || "default";
+    if (!PROFILE_NAME.test(profile) || profile === "." || profile === "..") return null;
+    const config = readJsonFile<{ authentication?: { type?: string; credentials_path?: string; }; }>(join(root, "configs", `${profile}.json`));
+    if (config?.authentication?.type !== "user_oauth") return null;
+    const custom = config.authentication.credentials_path?.trim();
+    const credFile = custom ? (isAbsolute(custom) ? custom : join(root, custom)) : join(root, "credentials", `${profile}.json`);
+    const cred = readJsonFile<{ access_token?: string; refresh_token?: string; expires_at?: number; account_email?: string; organization_name?: string; }>(credFile);
+    if (!cred || (!cred.access_token && !cred.refresh_token)) return null;
+    // expires_at is in SECONDS here, unlike the milliseconds of `.credentials.json`.
+    const live = Boolean(cred.access_token) && (typeof cred.expires_at !== "number" || cred.expires_at * 1000 > now);
+    const state = live ? "ok" : cred.refresh_token ? "refreshable" : "expired";
+    return { state, profile, email: cred.account_email || undefined, organization: cred.organization_name || undefined };
 }
 
 /** Atomically write `content` to `file` (temp + rename), creating the parent dir. */

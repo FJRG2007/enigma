@@ -122,11 +122,11 @@
     var ACCOUNTS = {
         tools: [{ name: "claude", label: "Claude Code" }, { name: "codex", label: "Codex" }, { name: "opencode", label: "opencode" }],
         accounts: [
-            { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "~/.claude", email: "you@example.com", active: true, removable: false, loggedIn: true, loginState: "ok", supportsProvider: true, provider: null },
-            { tool: "claude", toolLabel: "Claude Code", name: "work", dir: "~/.enigma/claude/work", email: "work@company.com", active: false, removable: true, loggedIn: false, loginState: "empty", supportsProvider: true, provider: null },
-            { tool: "claude", toolLabel: "Claude Code", name: "minimax", dir: "~/.enigma/claude/minimax", email: "", active: false, removable: true, loggedIn: false, loginState: "absent", supportsProvider: true, provider: { baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", preset: "minimax", hasToken: true } },
-            { tool: "codex", toolLabel: "Codex", name: "default", dir: "~/.codex", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, provider: null },
-            { tool: "opencode", toolLabel: "opencode", name: "default", dir: "~/.config/opencode", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, provider: null }
+            { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "~/.claude", email: "you@example.com", active: true, removable: false, loggedIn: true, loginState: "ok", loginMethod: "subscription", plan: "max", launch: "enigma claude default", supportsProvider: true, provider: null },
+            { tool: "claude", toolLabel: "Claude Code", name: "work", dir: "~/.enigma/claude/work", email: "work@company.com", active: false, removable: true, loggedIn: false, loginState: "empty", supportsProvider: true, launch: "enigma claude work", provider: null },
+            { tool: "claude", toolLabel: "Claude Code", name: "minimax", dir: "~/.enigma/claude/minimax", email: "", active: false, removable: true, loggedIn: false, loginState: "absent", supportsProvider: true, launch: "enigma claude minimax", provider: { baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", preset: "minimax", hasToken: true } },
+            { tool: "codex", toolLabel: "Codex", name: "default", dir: "~/.codex", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, launch: "enigma codex default", provider: null },
+            { tool: "opencode", toolLabel: "opencode", name: "default", dir: "~/.config/opencode", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, launch: "enigma opencode default", provider: null }
         ],
         profiles: [
             { name: "daily", active: true, accounts: { claude: "default" } },

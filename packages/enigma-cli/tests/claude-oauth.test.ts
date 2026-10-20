@@ -6,10 +6,10 @@
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { test, expect, afterAll } from "bun:test";
+import { test, expect, afterAll, describe } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 
-import { sessionState, isUsableSession, transferSession, copyIfFresher, sessionEmail } from "../src/claude-oauth";
+import { sessionState, isUsableSession, transferSession, copyIfFresher, sessionEmail, anthropicConfigDir, consoleLogin } from "../src/claude-oauth";
 
 const ROOT = mkdtempSync(join(tmpdir(), "enigma-oauth-"));
 afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
@@ -135,4 +135,55 @@ test("copyIfFresher heals a blanked account and refuses an unusable source", () 
     creds(blanked, { access: "", refresh: "" });
     expect(copyIfFresher(blanked, account)).toBe(false);
     expect(sessionState(account)).toBe("ok");
+});
+
+test("anthropicConfigDir resolves the Console store the way Claude Code does", () => {
+    expect(anthropicConfigDir({ ANTHROPIC_CONFIG_DIR: "/x/store", APPDATA: "/appdata" }, "win32")).toBe("/x/store");
+    expect(anthropicConfigDir({ APPDATA: "/appdata" }, "win32")).toBe(join("/appdata", "Anthropic"));
+    expect(anthropicConfigDir({ USERPROFILE: "/user" }, "win32")).toBe(join("/user", "AppData", "Roaming", "Anthropic"));
+    expect(anthropicConfigDir({ XDG_CONFIG_HOME: "/xdg", HOME: "/h" }, "linux")).toBe(join("/xdg", "anthropic"));
+    expect(anthropicConfigDir({ HOME: "/h" }, "darwin")).toBe(join("/h", ".config", "anthropic"));
+    expect(anthropicConfigDir({}, "linux")).toBeNull();
+});
+
+describe("consoleLogin", () => {
+    /** A Console store with one profile; `cred` is written as that profile's credentials. */
+    function store(profile: string, cred: Record<string, unknown> | null, auth = "user_oauth"): string {
+        const root = dir();
+        mkdirSync(join(root, "configs"));
+        mkdirSync(join(root, "credentials"));
+        writeFileSync(join(root, "configs", `${profile}.json`), JSON.stringify({ authentication: { type: auth } }));
+        if (cred) writeFileSync(join(root, "credentials", `${profile}.json`), JSON.stringify(cred));
+        return root;
+    }
+    const NOW = 1_700_000_000_000;
+    const LATER = NOW / 1000 + 3600; // expires_at is in seconds
+
+    test("reports a live sign-in with its email and organization, never the tokens", () => {
+        const root = store("default", { access_token: "A", refresh_token: "R", expires_at: LATER, account_email: "dev@example.com", organization_name: "Example Org" });
+        const got = consoleLogin({ ANTHROPIC_CONFIG_DIR: root }, "linux", NOW);
+        expect(got).toEqual({ state: "ok", profile: "default", email: "dev@example.com", organization: "Example Org" });
+    });
+
+    test("reads expires_at as seconds: expired with a refresh token is refreshable, without one expired", () => {
+        const past = NOW / 1000 - 60;
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: store("default", { access_token: "A", refresh_token: "R", expires_at: past }) }, "linux", NOW)!.state).toBe("refreshable");
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: store("default", { access_token: "A", expires_at: past }) }, "linux", NOW)!.state).toBe("expired");
+    });
+
+    test("follows ANTHROPIC_PROFILE first, then active_config, then default", () => {
+        const root = store("work", { access_token: "A", expires_at: LATER });
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: root }, "linux", NOW)).toBeNull();
+        writeFileSync(join(root, "active_config"), "work\n");
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: root }, "linux", NOW)!.profile).toBe("work");
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: root, ANTHROPIC_PROFILE: "other" }, "linux", NOW)).toBeNull();
+    });
+
+    test("is null for a missing store, an API-key profile, empty credentials or a path-like profile name", () => {
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: join(ROOT, "nope") }, "linux", NOW)).toBeNull();
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: store("default", { access_token: "A", expires_at: LATER }, "api_key") }, "linux", NOW)).toBeNull();
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: store("default", {}) }, "linux", NOW)).toBeNull();
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: store("default", null) }, "linux", NOW)).toBeNull();
+        expect(consoleLogin({ ANTHROPIC_CONFIG_DIR: store("default", { access_token: "A", expires_at: LATER }), ANTHROPIC_PROFILE: "../default" }, "linux", NOW)).toBeNull();
+    });
 });

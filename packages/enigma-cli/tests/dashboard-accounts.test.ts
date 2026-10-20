@@ -7,13 +7,18 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-dashacc-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.ENIGMA_NO_TERMINAL = "1"; // account.login must never open a real terminal in tests
+// The machine-wide Anthropic Console store, pointed into the temp HOME so a real sign-in on the
+// test machine can never mark an account as logged in.
+const ANTHROPIC = join(HOME, "anthropic");
+process.env.ANTHROPIC_CONFIG_DIR = ANTHROPIC;
+delete process.env.ANTHROPIC_PROFILE;
 
 const { serializeAccounts, applyAccountAction } = await import("../src/dashboard-accounts");
 const { addAccount, resolveConfigDir } = await import("../src/accounts");
@@ -103,7 +108,52 @@ test("account.login is offered for any account and never throws (terminal suppre
     const r = await applyAccountAction("account.login", { tool: "claude", name: "default" });
     // ENIGMA_NO_TERMINAL=1 makes the spawn a no-op, so it falls back to the command hint.
     expect(r.ok).toBe(false);
-    expect(r.error).toContain("enigma claude");
+    // It names the account, so `default` cannot land in whichever account is the default.
+    expect(r.error).toContain("enigma account login default --tool claude");
+});
+
+test("every account carries the command that opens it", () => {
+    const d = serializeAccounts();
+    for (const a of d.accounts) expect(a.launch).toBe(`enigma ${a.tool} ${a.name}`);
+});
+
+test("a Claude account with no claude.ai login is signed in through the Console sign-in", async () => {
+    const acc = addAccount("claude", "apikey");
+    writeFileSync(join(acc.dir, ".credentials.json"), "{}");
+    let a = serializeAccounts().accounts.find((x) => x.name === "apikey")!;
+    expect(a.loggedIn).toBe(false);
+
+    mkdirSync(join(ANTHROPIC, "configs"), { recursive: true });
+    mkdirSync(join(ANTHROPIC, "credentials"), { recursive: true });
+    writeFileSync(join(ANTHROPIC, "configs", "default.json"), JSON.stringify({ authentication: { type: "user_oauth" } }));
+    writeFileSync(join(ANTHROPIC, "credentials", "default.json"), JSON.stringify({ access_token: "A", refresh_token: "R", expires_at: Math.floor(Date.now() / 1000) + 3600, account_email: "dev@example.com", organization_name: "Example Org" }));
+    a = serializeAccounts().accounts.find((x) => x.name === "apikey")!;
+    expect(a.loggedIn).toBe(true);
+    expect(a.loginMethod).toBe("console");
+    expect(a.organization).toBe("Example Org");
+    expect(a.email).toBe("dev@example.com");
+
+    // An account on another provider runs on that provider's token, never the Console.
+    addAccount("claude", "proxied");
+    await applyAccountAction("account.provider", { tool: "claude", name: "proxied", provider: { preset: "minimax", token: "T" } });
+    a = serializeAccounts().accounts.find((x) => x.name === "proxied")!;
+    expect(a.loginMethod).toBeUndefined();
+    expect(a.organization).toBeUndefined();
+
+    // An expired claude.ai login stays expired so it can be re-authenticated.
+    const stale = addAccount("claude", "stale");
+    writeFileSync(join(stale.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "S", expiresAt: Date.now() - 3600_000 } }));
+    a = serializeAccounts().accounts.find((x) => x.name === "stale")!;
+    expect(a.loginState).toBe("expired");
+    expect(a.loginMethod).toBeUndefined();
+
+    // An account with its own live claude.ai login keeps it: the Console is only the fallback.
+    writeFileSync(join(acc.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "S", refreshToken: "SR", expiresAt: Date.now() + 3600_000, subscriptionType: "max" } }));
+    a = serializeAccounts().accounts.find((x) => x.name === "apikey")!;
+    expect(a.loginMethod).toBe("subscription");
+    expect(a.plan).toBe("max");
+    expect(a.organization).toBeUndefined();
+    rmSync(ANTHROPIC, { recursive: true, force: true });
 });
 
 // The dashboard's name field refuses a command name as it is typed, from the server's own list.
