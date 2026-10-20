@@ -220,11 +220,12 @@ export function getClaudeBypass(scope: "global" | "local"): boolean {
 }
 
 /**
- * Enable or disable Claude Code's permission bypass for a scope. Enabling sets
- * `permissions.defaultMode` to "bypassPermissions"; disabling removes that key so
- * Claude returns to its default (ask before acting). Other settings and explicit
- * `permissions.deny` rules are preserved. On `dryRun`, reports the would-be
- * change without writing.
+ * Enable or disable Claude Code's permission bypass for a scope. Enabling delegates to
+ * `enableClaudeBypass`, which also records the bypass-warning acceptance. Disabling removes
+ * `permissions.defaultMode` so Claude returns to its default (ask before acting); a global "off"
+ * also withdraws that acceptance, while a local "off" leaves the (shared) user file's acceptance
+ * alone. Other settings and explicit `permissions.deny` rules are preserved. On `dryRun`, reports
+ * the would-be change without writing.
  */
 export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: boolean): { path: string; changed: boolean; } {
     if (on) return enableClaudeBypass(scope, dryRun);
@@ -312,10 +313,12 @@ export function ensureClaudeBypassGuard(scope: "global" | "local"): boolean {
 
 /**
  * Enable Claude Code's permission bypass by setting `permissions.defaultMode`
- * to "bypassPermissions" so the agent stops asking for per-action approval.
- * Merges into any existing settings; explicit `permissions.deny` rules still
- * take precedence (deny wins). Returns the target path and whether it changed.
- * On `dryRun`, reports the would-be change without writing.
+ * to "bypassPermissions" so the agent stops asking for per-action approval. Also records
+ * `BYPASS_ACCEPTED` in the global (user) settings file - the mode alone still shows Claude
+ * Code's one-time bypass warning, since that acceptance is always read from the user file
+ * regardless of which scope's mode triggered it. Merges into any existing settings; explicit
+ * `permissions.deny` rules still take precedence (deny wins). Returns the target path and
+ * whether it changed. On `dryRun`, reports the would-be change without writing.
  */
 export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): { path: string; changed: boolean; } {
     const path = claudeSettingsPath(scope);
