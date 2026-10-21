@@ -40,3 +40,4 @@ packages/*/test-results/
 packages/*/playwright-report/
 # Test fixtures bundled at test time (React and the component, built by esbuild).
 packages/*/test/fixture/build/
+packages/enigma-cli/scratch-*.ts
