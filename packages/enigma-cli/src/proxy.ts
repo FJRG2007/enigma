@@ -22,12 +22,12 @@
  * model. Everything else still streams through verbatim. Detection reuses guard.ts.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { homedir } from "node:os";
 import { request as httpsRequest } from "node:https";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { buildSecretMatchers, findSecrets, redactSecrets, type SecretMatcher } from "./guard";
+import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 
 const UPSTREAM_HOST = "api.anthropic.com";
 
@@ -167,27 +167,60 @@ function recordBlock(mode: "redact" | "reject"): void {
     } catch { /* stats are best-effort */ }
 }
 
-/** Pull the largest `usage` object and the model id out of a Messages API response body. */
-export function parseUsage(path: string, body: string): OneCall | null {
-    if (!path.includes("/v1/messages")) return null;
-    let model = "";
-    let input = 0, cacheRead = 0, cacheCreation = 0, output = 0;
-    // Works for both streaming SSE (message_start carries input + model, message_delta the
-    // final cumulative output) and a single non-streaming JSON body (one usage object).
-    const usageRe = /"usage"\s*:\s*\{[^}]*\}/g;
+/** Largest numeric value of a JSON `"key": <int>` occurrence in `body` (0 if absent). */
+function maxTokenField(body: string, key: string): number {
+    const re = new RegExp(`"${key}"\\s*:\\s*(\\d+)`, "g");
     let m: RegExpExecArray | null;
-    while ((m = usageRe.exec(body))) {
-        const u = m[0];
-        const n = (key: string): number => { const r = new RegExp(`"${key}"\\s*:\\s*(\\d+)`).exec(u); return r ? Number(r[1]) : 0; };
-        input = Math.max(input, n("input_tokens"));
-        cacheRead = Math.max(cacheRead, n("cache_read_input_tokens"));
-        cacheCreation = Math.max(cacheCreation, n("cache_creation_input_tokens"));
-        output = Math.max(output, n("output_tokens"));
-    }
+    let max = 0;
+    while ((m = re.exec(body))) max = Math.max(max, Number(m[1]));
+    return max;
+}
+
+/** Model id from a `"model":"..."` field, or "unknown". */
+function modelOf(body: string): string {
     const mm = /"model"\s*:\s*"([^"]+)"/.exec(body);
-    if (mm) model = mm[1];
+    return mm ? mm[1] : "unknown";
+}
+
+/**
+ * Usage out of an Anthropic Messages response. Works for both streaming SSE (message_start
+ * carries input + model, message_delta the final cumulative output) and a single
+ * non-streaming JSON body. Scans per-key across the whole body and keeps the max, so a
+ * later cumulative value wins over an earlier partial one.
+ */
+function parseAnthropicUsage(body: string): OneCall | null {
+    const input = maxTokenField(body, "input_tokens");
+    const cacheRead = maxTokenField(body, "cache_read_input_tokens");
+    const cacheCreation = maxTokenField(body, "cache_creation_input_tokens");
+    const output = maxTokenField(body, "output_tokens");
     if (!input && !output && !cacheRead && !cacheCreation) return null;
-    return { model: model || "unknown", input, output, cacheRead, cacheCreation };
+    return { model: modelOf(body), input, output, cacheRead, cacheCreation };
+}
+
+/**
+ * Usage out of an OpenAI-shape response - Chat Completions (`prompt_tokens`/`completion_tokens`,
+ * cached in `prompt_tokens_details.cached_tokens`) and the Responses API
+ * (`input_tokens`/`output_tokens`, cached in `input_tokens_details.cached_tokens`). Per-key max
+ * over the whole body, so a streaming final chunk's usage (with `stream_options.include_usage`)
+ * wins over the `"usage":null` of earlier chunks. Cache-creation has no OpenAI equivalent (0).
+ */
+function parseOpenAiUsage(body: string): OneCall | null {
+    const input = Math.max(maxTokenField(body, "prompt_tokens"), maxTokenField(body, "input_tokens"));
+    const output = Math.max(maxTokenField(body, "completion_tokens"), maxTokenField(body, "output_tokens"));
+    const cacheRead = maxTokenField(body, "cached_tokens");
+    if (!input && !output && !cacheRead) return null;
+    return { model: modelOf(body), input, output, cacheRead, cacheCreation: 0 };
+}
+
+/**
+ * Pull token usage + model id out of a response body, choosing the parser by request path:
+ * Anthropic Messages (`/v1/messages`) or OpenAI Chat Completions / Responses
+ * (`/v1/chat/completions`, `/v1/responses`). Other paths carry no usage - return null.
+ */
+export function parseUsage(path: string, body: string): OneCall | null {
+    if (path.includes("/v1/messages")) return parseAnthropicUsage(body);
+    if (path.includes("/v1/chat/completions") || path.includes("/v1/responses")) return parseOpenAiUsage(body);
+    return null;
 }
 
 export interface RunningProxy { url: string; port: number; close: () => void; }

@@ -4,11 +4,11 @@
  * message_delta) and a non-streaming JSON body, and ignore non-messages paths / bodies
  * without usage. The parser is what feeds the dashboard's real proxy measurements.
  */
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect } from "bun:test";
 import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { parseUsage, startMeasuringProxy, readProxyStats, readProxyLimits } from "../src/proxy";
 
 const SSE = [
@@ -42,6 +42,44 @@ test("parses usage from a non-streaming JSON messages response", () => {
 test("ignores non-messages paths and bodies without usage", () => {
     expect(parseUsage("/v1/models", SSE)).toBeNull();
     expect(parseUsage("/v1/messages", '{"id":"x","model":"y"}')).toBeNull();
+});
+
+test("parses usage from an OpenAI Chat Completions response (prompt/completion tokens)", () => {
+    const body = '{"id":"chatcmpl-1","model":"gpt-4o","usage":{"prompt_tokens":80,"completion_tokens":30,"total_tokens":110,"prompt_tokens_details":{"cached_tokens":16}}}';
+    const u = parseUsage("/v1/chat/completions", body);
+    expect(u).not.toBeNull();
+    expect(u!.model).toBe("gpt-4o");
+    expect(u!.input).toBe(80);
+    expect(u!.output).toBe(30);
+    expect(u!.cacheRead).toBe(16);
+    expect(u!.cacheCreation).toBe(0); // no OpenAI equivalent
+});
+
+test("parses usage from a streaming Chat Completions response (final chunk carries usage)", () => {
+    // Earlier chunks have usage:null; only the final chunk (with stream_options.include_usage) has it.
+    const stream = [
+        'data: {"id":"chatcmpl-2","model":"gpt-4o-mini","choices":[{"delta":{"content":"hi"}}],"usage":null}',
+        'data: {"id":"chatcmpl-2","model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":5,"total_tokens":17}}',
+        "data: [DONE]",
+    ].join("\n");
+    const u = parseUsage("/v1/chat/completions", stream);
+    expect(u).not.toBeNull();
+    expect(u!.input).toBe(12);
+    expect(u!.output).toBe(5);
+});
+
+test("parses usage from an OpenAI Responses API body (input/output tokens, nested cache)", () => {
+    const body = '{"id":"resp_1","model":"gpt-5","usage":{"input_tokens":200,"input_tokens_details":{"cached_tokens":50},"output_tokens":90}}';
+    const u = parseUsage("/v1/responses", body);
+    expect(u).not.toBeNull();
+    expect(u!.model).toBe("gpt-5");
+    expect(u!.input).toBe(200);   // not truncated by the nested input_tokens_details object
+    expect(u!.output).toBe(90);
+    expect(u!.cacheRead).toBe(50);
+});
+
+test("ignores an OpenAI path whose body carries no usage", () => {
+    expect(parseUsage("/v1/chat/completions", '{"id":"chatcmpl-3","model":"gpt-4o","choices":[]}')).toBeNull();
 });
 
 test("forwards to the upstream verbatim and records the measured usage", async () => {
