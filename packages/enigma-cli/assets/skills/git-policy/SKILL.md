@@ -1,6 +1,6 @@
 ---
 name: git-policy
-description: Commit, branch, and pull request standards - conventional commits, atomic changes, branch naming, commit timing, and PR quality. Use when committing, branching, staging changes, or creating/updating a pull request.
+description: Commit, branch, and pull request standards - conventional commits, atomic changes, branch naming, commit timing, PR quality, and preserving commits and changes that other developers or agents made. Use when committing, branching, staging changes, or creating/updating a pull request, and BEFORE any operation that removes or rewrites commits or uncommitted changes - revert, reset, rebase, amend, force push, branch deletion, discarding or cleaning the working tree, stash, or resolving a conflict.
 ---
 
 ## Git & Contribution Policy (Senior Engineering Standards)
@@ -33,6 +33,23 @@ description: Commit, branch, and pull request standards - conventional commits, 
 - Never delete a protected or long-lived branch (the default branch, release/*, or any branch the repo marks as protected) unless the user explicitly asks.
 - Prune deleted upstreams periodically with `git fetch --prune` so gone remote branches stop lingering locally.
 - Where enigma is installed, clean up with `enigma branches tidy` right after your branch lands instead of deleting by hand: it proves containment by content (squash merges included), clears idle worktrees, merged gate-mirror branches and stale tracking refs, and records every tip so `git branch <name> <sha>` restores it. It also runs on its own after agent turns, at most hourly per repository; a manual run is for the branch you just finished.
+
+---
+
+## Preserving Work That Is Not Yours
+
+A repository is shared. Other developers and other agents commit to it and edit the same working tree, often while you are working in it. A commit, branch, stash or uncommitted change you did not create in this task belongs to someone else, and it is not yours to remove - however unrelated, broken, or in your way it looks.
+
+- These operations remove or rewrite work: `git revert`, `git reset`, `git rebase`, `git commit --amend` on a pushed commit, `git push --force`, `git branch -D`, `git checkout -- <path>`, `git restore`, `git clean`, `git stash drop|clear`, and resolving a conflict by taking one side wholesale (`--ours`, `--theirs`, `-X`). Before running any of them, list exactly what it takes away and who wrote it:
+  - Commits: `git log --format="%h %an %ad %s" <range>`. For a push that is not a fast-forward, `git fetch` first, then `git log <your-branch>..origin/<branch>` - that list is what the remote holds and your push would erase.
+  - Working tree: `git status --short`, `git diff`, and `git stash list`.
+- Everything on that list is yours from this task -> proceed. Anything on it is not -> stop, leave it intact, and ask the user, naming the commits and their authors. A request for an outcome ("undo my last change", "clean this up", "make CI green") covers that outcome, never whatever else the command happens to sweep along.
+- Changes in the working tree that you did not make - modified files you never touched, untracked files you did not create - are another agent's or the user's work in progress. Do not revert, stash, clean, reformat, or "fix" them. Stage your own paths by name (`git add <path>`); never `git add -A` or `git commit -a` over a tree that holds someone else's changes.
+- When someone else's commit breaks your build or your tests, report it (commit, author, what fails). Do not revert it or rewrite it to get your own change through.
+- Revert only the commit the user named, one commit at a time, after reading `git show --stat <sha>`. Reverting a range or a merge commit undoes every author in it, so that needs the user's approval with the list in front of them.
+- Integrate remote changes by rebasing or merging ONTO them. A rejected push means the remote has work you do not; the answer is `git pull --rebase`, never `--force`. Force-push only to a branch that is yours alone, only with `--force-with-lease`, and never to the default, a protected, or a shared branch.
+- Resolve conflicts hunk by hunk, keeping both intents. Taking your side wholesale deletes the other person's change without a trace in the diff.
+- Before a destructive step, record the tip (`git rev-parse HEAD`) so it can be put back, and afterwards diff against it to confirm that nothing beyond the intended change is gone. If you find you removed someone's work, say so at once with the SHA and restore it (`git reflog`, `git branch <name> <sha>`) - a silent loss is found days later, when the reflog has expired.
 
 ---
 
@@ -297,6 +314,7 @@ the user in chat, NOT in the commit, PR title, or branch name.
 Before creating a commit or PR:
 
 - Verify only relevant files are included
+- Verify nothing that someone else authored is removed, reverted, or overwritten by it (see Preserving Work That Is Not Yours)
 - Ensure no debug or temporary code is committed
 - Ensure no secrets or sensitive data are included
 - Ensure no operator-environment values leaked in (deployment domains, host names, IPs, absolute local paths with the OS username, personal emails) - in the diff, the message, the branch name, and the PR text

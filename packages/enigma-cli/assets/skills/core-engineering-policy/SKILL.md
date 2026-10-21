@@ -59,7 +59,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - A one-shot complexity-only review/audit, "what can we delete", "find bloat", or an enigma: debt-marker ledger -> anti-overengineering-review.
   - Before declaring a change done, or when reviewing a diff/PR -> code-review-policy.
   - Any bug, crash, failing test, or unexpected behavior -> debugging-policy.
-  - Any commit, branch, or pull request -> git-policy.
+  - Any commit, branch, or pull request, and any operation that removes or rewrites commits or uncommitted changes (revert, reset, rebase, force push, discard, clean, stash, conflict resolution) -> git-policy.
   - Any user-facing copy (UI labels, descriptions, hints, empty/error states, panel intros, README/doc prose) -> technical-writing-policy.
   - Any logo or brand/technology icon added, embedded, or referenced (websites, READMEs, app UI, integration lists, tech-stack badges, social icons) -> logo-sourcing-policy.
   - Any long, multi-item, or porting/migration task (1:1 ports, "migrate all", repo-wide changes, work spanning many files or sessions) -> task-completion-policy.
@@ -108,7 +108,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - ci-policy: CI/CD pipelines on any provider - faster and cheaper without dropping a check (measure first, one pipeline per commit, input-hashed caches, no duplicate checks, sharding, change filters that keep required checks green), flakes fixed not retried, and pipeline security (pinned actions, least-privilege tokens, untrusted PR code kept from secrets).
 - code-review-policy: self-review before delivery, review dimensions, change-quality gates.
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
-- git-policy: commits, branches, and pull request standards.
+- git-policy: commits, branches, pull request standards, and preserving work other developers or agents made.
 - technical-writing-policy: concise, realistic user-facing copy - UI microcopy, labels, descriptions, hints, empty/error states, panel intros, and README/doc prose that informs without over-explaining, restating the obvious, or leaking implementation detail.
 - logo-sourcing-policy: source real brand/platform/technology logos instead of fabricating them - vendor brand kits and vector-logo registries, SVG (WebP for web) preference, official colors, and contrast-aware placement; color-conflict resolution via the logo-color-policy setting.
 - ciphera-style-policy: Ciphera code style conventions - formatting, naming, quotes, string interpolation, length-sorted imports, indentation, comments/JSDoc, and code-level anti-patterns (TypeScript-first, language-agnostic).
