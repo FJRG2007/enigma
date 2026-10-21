@@ -14,16 +14,26 @@ import { isTrivial, measureChange, parseNumstat } from "../../src/gate/trivialit
 
 test("a one-line style fix is trivial", () => {
     const size = parseNumstat("1\t1\tsrc/components/tasks/Comments.tsx\n");
-    expect(size).toEqual({ files: 1, lines: 2, binary: false, sensitive: [] });
+    expect(size).toEqual({ files: 1, assets: 0, lines: 2, binary: false, sensitive: [] });
     expect(isTrivial(size, 20)).toBe(true);
 });
 
 test("size, breadth, binaries and the threshold all count", () => {
     expect(isTrivial(parseNumstat("15\t10\ta.ts\n"), 20)).toBe(false);
     expect(isTrivial(parseNumstat("1\t0\ta.ts\n1\t0\tb.ts\n1\t0\tc.ts\n1\t0\td.ts\n"), 20)).toBe(false);
-    expect(isTrivial(parseNumstat("-\t-\tlogo.png\n"), 20)).toBe(false);
+    expect(isTrivial(parseNumstat("-\t-\tbuild/app.wasm\n"), 20)).toBe(false);
     expect(isTrivial(parseNumstat("1\t1\ta.ts\n"), 0)).toBe(false);
     expect(isTrivial(parseNumstat(""), 20)).toBe(false);
+});
+
+test("a logo or icon swap is trivial: image and font assets add no size", () => {
+    const swap = parseNumstat("-\t-\tpublic/logo.png\n-\t-\tpublic/favicon.ico\n-\t-\tpublic/apple-touch-icon.png\n240\t180\tsrc/assets/logo.svg\n");
+    expect(swap).toEqual({ files: 0, assets: 4, lines: 0, binary: false, sensitive: [] });
+    expect(isTrivial(swap, 20)).toBe(true);
+    // Alongside a small text change it stays trivial; a large text change or a sensitive path does not.
+    expect(isTrivial(parseNumstat("-\t-\tpublic/logo.webp\n2\t2\tsrc/Header.tsx\n"), 20)).toBe(true);
+    expect(isTrivial(parseNumstat("-\t-\tpublic/logo.webp\n30\t2\tsrc/Header.tsx\n"), 20)).toBe(false);
+    expect(isTrivial(parseNumstat("-\t-\tsrc/auth/logo.png\n"), 20)).toBe(false);
 });
 
 test("sensitive paths are never trivial, however small", () => {
@@ -55,7 +65,7 @@ test("measureChange reads what HEAD adds on top of a base", () => {
         writeFileSync(join(dir, "a.css"), ".a { color: red; }\n");
         git("commit", "-qam", "remove duplicate divider", "--no-verify");
         const size = measureChange(dir, base)!;
-        expect(size).toEqual({ files: 1, lines: 1, binary: false, sensitive: [] });
+        expect(size).toEqual({ files: 1, assets: 0, lines: 1, binary: false, sensitive: [] });
         expect(isTrivial(size, 20)).toBe(true);
         expect(measureChange(dir, "not-a-ref")).toBeNull();
     } finally {

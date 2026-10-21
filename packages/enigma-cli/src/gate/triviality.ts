@@ -10,7 +10,10 @@
  * Size alone is not enough: a two-line change to an auth check, a migration, a dependency
  * manifest or a CI workflow is exactly where a review earns its time, so any SENSITIVE path
  * makes a change non-trivial whatever its size. A binary file has no line count to judge, so
- * it is never trivial either. The rule is deliberately one-sided: a false "trivial" skips a
+ * it is never trivial either - except an image or font asset: swapping a logo, a favicon or an
+ * icon set is the most common tiny change there is, a review reads nothing in it, and counting
+ * it as "binary" (or each file toward the breadth limit) sent every logo swap through the full
+ * pipeline and a PR. The rule is otherwise deliberately one-sided: a false "trivial" skips a
  * review that mattered, a false "not trivial" only costs a run - when in doubt, not trivial.
  */
 
@@ -31,8 +34,14 @@ const SENSITIVE_PATHS: RegExp[] = [
     /(^|\/)\.enigma\.json$/, /(^|\/)\.githooks\//,
 ];
 
+/** Image and font assets: no line count and nothing a review reads, so they add no size. */
+const ASSET_PATH = /\.(png|jpe?g|gif|webp|avif|ico|bmp|svg|woff2?|ttf|otf|eot)$/i;
+
 export interface ChangeSize {
+    /** Changed files other than assets. */
     files: number;
+    /** Changed image/font assets, which count toward neither `files` nor `lines`. */
+    assets: number;
     /** Added + deleted lines across text files. */
     lines: number;
     /** Some file has no line count (binary). */
@@ -43,25 +52,26 @@ export interface ChangeSize {
 
 /** Sizes a `git diff --numstat` listing. Renames (`a => b`, `{a => b}`) are judged by both names. */
 export function parseNumstat(numstat: string): ChangeSize {
-    const size: ChangeSize = { files: 0, lines: 0, binary: false, sensitive: [] };
+    const size: ChangeSize = { files: 0, assets: 0, lines: 0, binary: false, sensitive: [] };
     for (const line of numstat.split("\n")) {
         const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
         if (!m) continue;
-        size.files++;
-        if (m[1] === "-" || m[2] === "-") size.binary = true;
-        else size.lines += Number(m[1]) + Number(m[2]);
         const path = m[3]!.replace(/\\/g, "/");
         const names = path.includes("=>")
             ? [path.replace(/\{([^}]*?) => [^}]*\}/, "$1").replace(/^(.*) => .*$/, "$1"), path.replace(/\{[^}]*? => ([^}]*)\}/, "$1").replace(/^.* => (.*)$/, "$1")]
             : [path];
         if (names.some((n) => SENSITIVE_PATHS.some((re) => re.test(n)))) size.sensitive.push(path);
+        if (names.every((n) => ASSET_PATH.test(n))) { size.assets++; continue; }
+        size.files++;
+        if (m[1] === "-" || m[2] === "-") size.binary = true;
+        else size.lines += Number(m[1]) + Number(m[2]);
     }
     return size;
 }
 
 /** True when `size` is below the review threshold `maxLines` (0 disables the fast path). */
 export function isTrivial(size: ChangeSize, maxLines: number): boolean {
-    return maxLines > 0 && size.files > 0 && size.files <= MAX_TRIVIAL_FILES && !size.binary
+    return maxLines > 0 && size.files + size.assets > 0 && size.files <= MAX_TRIVIAL_FILES && !size.binary
         && size.sensitive.length === 0 && size.lines <= maxLines;
 }
 
@@ -87,5 +97,6 @@ export function parseTrivialLines(value: string): number {
 
 /** One line for the user: why the change counts as trivial. */
 export function describeTrivial(size: ChangeSize, maxLines: number): string {
-    return `${size.lines} changed line(s) in ${size.files} file(s), no sensitive paths (threshold ${maxLines})`;
+    const assets = size.assets ? ` plus ${size.assets} image/font asset(s)` : "";
+    return `${size.lines} changed line(s) in ${size.files} file(s)${assets}, no sensitive paths (threshold ${maxLines})`;
 }
