@@ -284,6 +284,78 @@ since stdout to a pipe is asynchronous on Windows.
 `readSession` takes its stream and timeout as parameters purely so this is testable without
 spawning a process; nothing but the tests passes them.
 
+## The orphans that are NOT that bug (the ones nothing in JS can reach)
+
+The streaming read fixed the renderers that hung *while running*. A second population survived
+it, and it looks identical from a process list until you ask what the thread is doing. Measured
+on Windows 11 (26200), one day, six-ish sessions:
+
+| | the readSession bug | this one |
+| - | - | - |
+| threads | several (a live Node) | **1** |
+| CPU consumed over 4 h | some | **0.000 s** |
+| modules loaded | all of them | **0** |
+| handles | hundreds | **15** |
+| thread wait reason | reading stdin | **Suspended** |
+
+Zero CPU with no module loaded is not a process that is stuck; it is a process that was
+**created and never started**. Windows creates a child suspended and resumes it at the end of
+the spawn, and a spawner that dies inside that window - the harness re-runs the bar on a timer,
+so a tick lands while the session is tearing down - leaves a child that is never resumed and
+whose parent is gone. It then survives until reboot.
+
+Nothing in `bin/statusline.mjs` can do anything about that, and it is worth being precise about
+why: no timeout, no `unref`, no signal handler and no `process.exit` runs in a thread that has
+never executed an instruction. The renderer's own code is not the fix and cannot be.
+
+What they cost is also worth stating honestly, because the obvious number is the wrong one. 65
+of them showed 2.8 GB of working set, but ~42 MB of each is the shared `node.exe` image counted
+once per process. The real bill was **86 MB of private memory, 990 handles and 65 PID slots**.
+
+So the cure is a sweep from a process that IS running, and the one process that always runs
+wherever the leak happens is the next render. `sweepAgentLeftovers` spawns
+`dist/leftovers.js` **detached**, at most once an hour per machine (an mtime stamp at
+`~/.enigma/leftovers-sweep`, written BEFORE the spawn so a reaper that cannot start still costs
+one attempt an hour rather than one per refresh). `ENIGMA_NO_LEFTOVER_SWEEP` turns it off.
+
+That sweep is not only about the bar any more: the same janitor clears the whole-machine `find`
+runs an agent starts and abandons, which are the same failure from the other end. The families
+and their thresholds are `LEFTOVER_KINDS` in `resources.ts`; system-resources.md has that half.
+
+Three placement decisions, each of which was the other way round first:
+
+- **After the bar is printed, never before.** `CreateProcess` runs synchronously inside
+  `spawn()`, and on a box where an antivirus rescans the runtime that costs whole seconds -
+  in front of the bar the user is waiting on.
+- **A detached child, not an inline call.** The probe takes seconds by itself (below), and the
+  renderer has to print now.
+- **Its own entry, not a branch of the post-edit hook.** The bar runs in sessions that never
+  edit a file, and a process enumeration has no business on a hook that answers in milliseconds.
+
+`reapAgentLeftovers` (`src/resources.ts`) is the engine, reachable as `enigma kill leftovers`
+(or `enigma kill statusline` for this family alone). Two rules keep it from being a foot-gun:
+
+- **Age is the whole rule**, per family: a render prints one line and exits, so anything alive
+  past `STATUSLINE_ORPHAN_MIN_AGE_SEC` (120 s) is garbage. The tempting second condition - "its
+  parent is gone" - needs a parent PID, and Windows recycles those: a reused id reads as a
+  live parent (skipping a real orphan) and a coincidence reads as proof (killing on bad
+  evidence). The clock needs neither.
+- **`isStatuslineCommand` is the only thing between the sweep and someone else's node
+  process**, so it anchors `enigma` immediately before the subcommand and has its own case
+  list in `tests/resources.test.ts`. The Windows probe matches on the *word* `statusline` and
+  the probe's own command line contains it, which is exactly the shape that regex refuses.
+
+The probe itself is one PowerShell CIM query: `wmic` is gone from Windows 11 24H2 on and no
+other builtin prints a command line. It measured ~4.5 s here, which is the whole reason the
+sweep is hourly and detached rather than something the bar does itself. The script is written
+without a single double quote so nothing depends on how the shell re-quotes it. POSIX uses
+`ps -eo pid=,etime=,args=`, whose `[[dd-]hh:]mm:ss` column `parseElapsed` converts.
+
+The kill is `process.kill(pid, "SIGKILL")` rather than `killPid`'s `taskkill`: a sweep carries
+dozens of pids and a spawn per pid costs seconds each here, and `process.kill` throws for a pid
+that is already gone, which is how `killPids` reports what it actually killed instead of parsing
+a localized `taskkill` transcript.
+
 ## Tests
 
 `tests/gate/statusline.test.ts` covers the round trip that no single runtime can

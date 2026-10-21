@@ -39,8 +39,8 @@ import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./pe
 import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha } from "./util";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeSearchGuard, setClaudeTrust } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -1231,6 +1231,9 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (!opts.noStatusline && conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
+        if (conf.readConfig().config.searchGuard && setClaudeSearchGuard(claudeScope, true).changed) {
+            reporter.info("Claude Code: a 'find' across the whole disk is now refused (undo with 'enigma config search-guard off').");
+        }
         // Workspace trust: pre-answer the "do you trust this folder" prompt (default on).
         // Only ever applied when the flag is on - a user who turned it off keeps the prompt,
         // and the workspaces they already trusted are left alone either way.
@@ -1681,6 +1684,13 @@ export function syncDeployed(agentNames?: string[]): string[] {
         if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.statusline
             && enableClaudeStatusline("global")) {
             notices.push("Status bar is on: Claude Code now shows the enigma badge, context and cost, plus live gate progress during a run. Turn off with 'enigma config statusline off'.");
+        }
+        // Same again for the whole-machine-search refusal: deny rules are settings.json wiring
+        // rather than a copied file, so an existing install only picks them up here. Gated on
+        // the flag, and the write touches nothing but enigma's own entries.
+        if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.searchGuard
+            && setClaudeSearchGuard("global", true).changed) {
+            notices.push("Whole-machine searches are refused: a 'find' from /, your home or a drive root is blocked before it starts. Turn off with 'enigma config search-guard off'.");
         }
         // Workspace trust, same reasoning again - and this is the path that makes the setting
         // hold for ANY directory: every `enigma <tool>` launch, `enigma update` and the hub's

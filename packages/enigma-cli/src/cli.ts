@@ -423,7 +423,7 @@ Commands:
                        keep detecting it; no argument shows what your profile holds
   doctor [hooks]       Time every hook wired into Claude Code (settings files and enabled
                        plugins) and name the slow one behind '<event> hook timed out'
-  resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
+  resources [action]   System cleanup: status, or wsl | docker | leftovers | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
   kill <target...>     Kill whatever the target names: a port (3000), a PID (pid 1234), a
                        process (app.exe), 'docker' (Docker Desktop + its WSL backend) or
@@ -773,6 +773,10 @@ Retrieval (refreshes the graph first, so answers include uncommitted edits):
 
 Shared flags: --in <path>  --limit N  --project <name>  --json  --no-refresh`,
 
+    design: DESIGN_HELP,
+    handoff: HANDOFF_HELP,
+    relay: RELAY_HELP,
+
     autoskills: `usage: enigma autoskills [path] [--dry-run] [-y]
 Detect the project's tech stack and install the matching community stack skills.
 Separate from the policy skills, which 'enigma install' owns.`,
@@ -788,12 +792,11 @@ Same subcommands as 'enigma agent':
 
   list | install <id> | remove <id> | update <id> | setup <id> | cli <id> -- <args> | use <id> <acct|-> | run <id> [account]`,
 
-    design: DESIGN_HELP,
-    handoff: HANDOFF_HELP,
-    relay: RELAY_HELP,
-
     resources: `usage: enigma resources [action]
-System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.
+System cleanup: status (the default), wsl, docker, leftovers, free-port <PORT>, kill <PID>.
+'leftovers' sweeps what closed agent sessions left running - abandoned status bars and
+whole-disk 'find' runs. The status bar does that sweep by itself once an hour, so this
+is for when you want them gone now.
 Here 'kill' takes a PID; the top-level 'enigma kill 3000' reads a plain number as a PORT.
 'enigma kill <target>' is the shortcut for the destructive half.`,
 
@@ -808,6 +811,9 @@ Kill what the target names. Typing the command is the confirmation - nothing pro
                   accepted only when it matches exactly one program)
   docker          quit Docker Desktop and shut its WSL backend down
   wsl             'wsl --shutdown', so vmmemWSL releases its RAM
+  leftovers       what the agent sessions left running: status bars the harness
+                  abandoned mid-spawn, and 'find' runs still walking the whole disk
+                  with nobody reading them ('statusline' sweeps only the first)
 
 A plain number is a port, since that is what it usually means; if nothing is listening
 there, the PID reading is offered instead of guessed. Several targets can be given at
@@ -1185,12 +1191,12 @@ async function runShimCli(args: string[]): Promise<number> {
 }
 
 /**
- * `enigma resources [wsl|docker|free-port PORT|kill PID]` - system cleanup. With no
+ * `enigma resources [wsl|docker|leftovers|free-port PORT|kill PID]` - system cleanup. With no
  * subcommand it prints a status snapshot; the subcommands run DESTRUCTIVE actions (typing
  * the command is the confirmation; the dashboard/TUI confirm interactively instead).
  */
 async function runResourcesCli(args: string[]): Promise<number> {
-    const { resourceStatus, freePort, killPid, shutdownWsl, quitDocker } = await import("./resources");
+    const { resourceStatus, freePort, killPid, shutdownWsl, quitDocker, reapAgentLeftovers } = await import("./resources");
     const [sub, arg] = args;
     const mb = (bytes: number): number => Math.round(bytes / 1048576);
     if (!sub) {
@@ -1201,15 +1207,16 @@ async function runResourcesCli(args: string[]): Promise<number> {
         for (const p of s.topProcesses.slice(0, 12)) console.log(`  ${String(p.pid).padStart(7)}  ${String(mb(p.memKB * 1024)).padStart(5)} MB  ${p.name}`);
         console.log("\nListening ports:");
         for (const p of s.ports.slice(0, 20)) console.log(`  :${String(p.port).padEnd(6)} pid ${String(p.pid).padEnd(7)} ${p.name}`);
-        console.log("\nActions: enigma resources <wsl | docker | free-port PORT | kill PID>");
+        console.log("\nActions: enigma resources <wsl | docker | leftovers | free-port PORT | kill PID>");
         return 0;
     }
     const r = sub === "wsl" ? shutdownWsl()
         : sub === "docker" ? quitDocker()
+        : sub === "leftovers" ? reapAgentLeftovers()
         : sub === "free-port" ? freePort(Number(arg))
         : sub === "kill" ? killPid(Number(arg))
         : null;
-    if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
+    if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | leftovers | free-port PORT | kill PID>`); return 1; }
     console.log(r.message);
     return r.ok ? 0 : 1;
 }
@@ -3350,6 +3357,18 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
+    if (opts.command === "design") {
+        const { runDesignCli } = await import("./design/cli");
+        process.exit(await runDesignCli(opts.positionals));
+    }
+    if (opts.command === "handoff") {
+        const { runHandoffCli } = await import("./handoff-cli");
+        process.exit(runHandoffCli(opts.positionals));
+    }
+    if (opts.command === "relay") {
+        const { runRelayCli } = await import("./relay");
+        process.exit(runRelayCli(opts.positionals));
+    }
     if (opts.command === "add" || opts.command === "components") { process.exit(await runAddCli(opts, interactive)); }
     if (opts.command === "api") { process.exit(await runApiCli(opts)); }
 
@@ -3372,18 +3391,6 @@ export async function run(argv: string[]): Promise<void> {
         p.outro(done ? "Git hooks configured." : "No changes made.");
         await notifyUpdate(version, interactive);
         return;
-    }
-    if (opts.command === "design") {
-        const { runDesignCli } = await import("./design/cli");
-        process.exit(await runDesignCli(opts.positionals));
-    }
-    if (opts.command === "handoff") {
-        const { runHandoffCli } = await import("./handoff-cli");
-        process.exit(runHandoffCli(opts.positionals));
-    }
-    if (opts.command === "relay") {
-        const { runRelayCli } = await import("./relay");
-        process.exit(runRelayCli(opts.positionals));
     }
 
     // No command: non-interactive default installs skills; a TTY gets the hub.

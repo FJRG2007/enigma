@@ -203,8 +203,13 @@ export class Executor {
      * with the checkout stranded on a dead branch.
      *
      * Never fatal: the run is already completed and reported, and a repository this
-     * cannot tidy (dirty tree, unreadable remote) is a repository it must leave alone
-     * anyway. Failures are logged, never thrown.
+     * cannot tidy (no resolvable default branch, an unreadable remote) is a repository it
+     * must leave alone anyway. Failures are logged, never thrown.
+     *
+     * A DIRTY WORKING TREE used to be on that list and no longer is, because it made this
+     * pass a no-op in practice: 95 of the 96 cleanups logged on the author's machine were
+     * skipped for exactly that, since a repository an agent is working in is dirty nearly
+     * all the time. Uncommitted changes now refuse only the branch that is checked out.
      */
     private async tidyFinishedBranches(repo: gateDb.Repo): Promise<void> {
         try {

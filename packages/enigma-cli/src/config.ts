@@ -172,6 +172,17 @@ export interface EnigmaConfig {
      */
     statuslineRefresh: number;
     /**
+     * Refuse whole-machine `find` runs (default on): deny rules in Claude Code's
+     * settings.json for a search rooted at /, a home directory or a drive root.
+     *
+     * The pathology it stops is not slowness, it is abandonment - an agent starts a search
+     * across the whole disk, the turn moves on, and the process is left walking millions of
+     * files until someone notices it. Same intent/effect split as `statusline`: this records
+     * the choice, settings.json carries it, and its limits are documented on
+     * SEARCH_GUARD_DENY in claude.ts.
+     */
+    searchGuard: boolean;
+    /**
      * Pre-answer Claude Code's "Is this a project you trust?" prompt (default on, Claude
      * Code only). Same intent/effect split as `statusline`: this records the choice and the
      * effect is written into Claude's own `.claude.json`, so a deliberate off is never
@@ -470,7 +481,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     gateTrivialLines: 20,
     subagentLimit: 2, compactWindow: 400_000, subagentTurns: 60, relay: true, relayAt: 300_000,

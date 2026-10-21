@@ -714,6 +714,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext; }): Promis
         if (resStatus) {
             if (resStatus.wslAvailable) resRows.push({ op: "wsl-shutdown", label: `Shut down WSL${resStatus.vmmemRunning ? " - vmmemWSL running, eating RAM" : ""}` });
             if (resStatus.dockerRunning) resRows.push({ op: "docker-quit", label: "Quit Docker Desktop (and WSL backend)" });
+            // Always offered: what it sweeps cannot be counted without a process enumeration
+            // that costs seconds, and the panel is not going to pay that on every open.
+            resRows.push({ op: "leftovers", label: "Sweep what closed sessions left running (status bars, whole-disk searches)" });
             for (const p of resStatus.ports) resRows.push({ op: "free-port", value: p.port, label: `Free port :${p.port}  (${p.name || "pid " + p.pid})` });
             for (const p of resStatus.topProcesses) resRows.push({ op: "kill", value: p.pid, label: `Kill ${p.name}  (pid ${p.pid}, ${Math.round(p.memKB / 1024)} MB)` });
         }

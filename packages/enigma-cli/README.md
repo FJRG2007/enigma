@@ -334,6 +334,7 @@ enigma account add personal       # create 'personal' (log in later)
 enigma account add acme -t codex  # create a Codex account
 enigma account list               # show all accounts (active one marked *)
 enigma claude work                # run Claude Code as 'work'
+enigma work                       # same: a managed account's name alone launches it
 enigma codex acme                 # run Codex as 'acme'
 enigma account use personal       # make 'personal' the active account
 enigma claude                     # run the resolved account (profile > active)

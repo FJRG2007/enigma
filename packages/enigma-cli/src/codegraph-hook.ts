@@ -183,6 +183,7 @@ async function sessionStart(dir: string): Promise<void> {
         "  - enigma_codegraph_trace: exact edges. Who calls a symbol, or what it calls with direction out. Run it BEFORE changing anything shared.",
         "  - enigma_codegraph_skeleton: a file's whole API surface, no bodies.",
         "  - enigma_codegraph_grep: every occurrence, grouped by enclosing symbol - when you need them ALL, not the top matches.",
+        "Looking for a FILE by name, not a symbol: the Glob tool, or `rg --files -g <pattern>` / `fd <pattern>` from the repo root. Scope every search to the repo or to the one directory you mean - a search rooted at /, ~, or a drive root walks the whole machine, takes minutes, and is refused.",
     ].join("\n");
 
     // The one-page report (functional areas, their key symbols and docs, the project's notes)

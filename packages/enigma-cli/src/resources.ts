@@ -10,8 +10,10 @@
  * spawning or killing anything.
  */
 
-import { totalmem, freemem } from "node:os";
 import { execFileSync } from "node:child_process";
+import { totalmem, freemem, tmpdir } from "node:os";
+import { readdirSync, rmSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 const isWin = process.platform === "win32";
 
@@ -277,10 +279,276 @@ export function killRefusalReason(pid: number, name: string): string | null {
     return null;
 }
 
+// --- processes the agents leave behind -------------------------------------------
+
+/**
+ * A family of process an agent session starts and then abandons, and the age past which
+ * one is provably garbage rather than busy.
+ *
+ * AGE IS THE WHOLE RULE, in every family, on purpose. The tempting second condition - "its
+ * spawner is gone" - needs a parent PID, and Windows recycles those: a reused id reads as a
+ * live parent and would make the sweep skip a real orphan, while a coincidence would make it
+ * kill on bad evidence. The clock needs neither, and each family's threshold is set from how
+ * long the work legitimately takes.
+ */
+export interface LeftoverKind {
+    /** How a report names one of these. */
+    label: string;
+    /** Plural for the report. */
+    plural: string;
+    minAgeSec: number;
+    matches(commandLine: string): boolean;
+}
+
+/** A leftover candidate and its age, as either platform's probe reports it. */
+export interface LeftoverProc { pid: number; ageSec: number; command: string; kind: LeftoverKind; }
+
+/**
+ * A status-bar render prints one line and exits - it reads the piped session under a 2 s
+ * ceiling - so two minutes is far past anything that is still working.
+ */
+export const STATUSLINE_ORPHAN_MIN_AGE_SEC = 120;
+
+/**
+ * A whole-machine search gets longer, because the ones a person starts deliberately are
+ * slow rather than abandoned. Fifteen minutes of walking every file on the disk is past
+ * both: an agent that started it has long since moved on, and nothing is reading the output.
+ */
+export const WHOLE_MACHINE_SEARCH_MIN_AGE_SEC = 900;
+
+/**
+ * Whether a command line is one of enigma's own status-bar processes: a render - the npm
+ * shim (`enigma statusline`), the launcher it expands to on Windows (`node ...\bin\enigma.mjs
+ * statusline`), or the binary called directly - or the janitor itself, which can get stuck the
+ * same way its subjects do (`node ...\dist\leftovers.js`).
+ *
+ * `enigma` is anchored immediately before the subcommand because the Windows probe matches on
+ * the WORD `statusline`, and the probe's own command line contains it.
+ */
+export function isStatuslineCommand(commandLine: string): boolean {
+    if (/[\\/]leftovers\.js(?:["']|\s|$)/i.test(commandLine)) return true;
+    return /(?:^|[\\/\s"'])enigma(?:-bin|-cli)?(?:\.mjs|\.cmd|\.exe|\.ps1)?["']?\s+statusline(?:\s|$)/i.test(commandLine);
+}
+
+/**
+ * Whether a command line is a `find` walking the whole machine: its first path argument is
+ * a filesystem root, a home directory, or a drive root in any of the spellings Windows makes
+ * available (`C:\`, Git Bash's `/c/`, WSL's `/mnt/c/`).
+ *
+ * The root has to be the WHOLE argument - followed by whitespace or the end of the command -
+ * which is what keeps `find /c/Users/me/project -name x` out of it. That search is scoped, and
+ * a scoped search is not what this is for.
+ *
+ * What it does NOT try to be is a parser. A search rooted somewhere unusual, or spelled
+ * through a variable this cannot resolve, is left alone: the sweep force-kills what it
+ * matches, so a miss costs one abandoned process and a false match costs someone's work.
+ */
+export function isWholeMachineSearch(commandLine: string): boolean {
+    const root = "\\/|~\\/?|\\$HOME\\/?|\\/c\\/?|\\/d\\/?|\\/e\\/?|\\/mnt\\/[a-z]\\/?|\\/home\\/?|\\/Users\\/?|[A-Za-z]:[\\\\\\/]?";
+    return new RegExp(String.raw`(?:^|[\\/\s"'])find(?:\.exe)?["']?\s+(?:-\S+\s+)*(?:${root})(?:\s|$)`, "i").test(commandLine);
+}
+
+/**
+ * An automation browser lives as long as the MCP server that launched it - the whole agent
+ * session, hours after the last test. Half an hour is past any single check, and reaping one
+ * costs nothing: the Chrome DevTools server relaunches its browser on the next tool call
+ * (`BrowserManager.ensureBrowser` re-inits when `browser.connected` is false).
+ */
+export const AUTOMATION_BROWSER_MIN_AGE_SEC = 1800;
+
+/** Throwaway profiles only automation creates: Puppeteer's `--isolated` profile and `enigma design`'s. */
+const AUTOMATION_PROFILE = /--user-data-dir=["']?([^"'\s]*?[\\/](?:puppeteer_dev_chrome_profile-|enigma-design-)[\w-]+)/i;
+
+/**
+ * Whether a command line is the MAIN process of a browser an agent's tooling launched: a
+ * Chromium-family executable (renderer/GPU children carry `--type=` and die with it) running
+ * on one of the automation-only temp profiles. The user's own browser never runs on those
+ * profiles, which is what makes this safe to force-kill.
+ */
+export function isAutomationBrowser(commandLine: string): boolean {
+    if (/\s--type=/.test(commandLine)) return false;
+    if (!/(?:chrome|chromium|msedge|brave)(?:\.exe)?["']?\s/i.test(commandLine)) return false;
+    return AUTOMATION_PROFILE.test(commandLine);
+}
+
+/** The temp profile directory of an automation browser's command line, or null. */
+export function automationProfileDir(commandLine: string): string | null {
+    return commandLine.match(AUTOMATION_PROFILE)?.[1] ?? null;
+}
+
+/**
+ * Delete a reaped browser's temp profile - only a directory directly under the OS temp dir
+ * with an automation profile name, whatever the command line claimed.
+ */
+export function removeTempProfile(dir: string, tempRoot: string = tmpdir()): boolean {
+    const full = resolve(dir);
+    if (resolve(dirname(full)).toLowerCase() !== resolve(tempRoot).toLowerCase()) return false;
+    if (!/^(?:puppeteer_dev_chrome_profile-|enigma-design-)[\w-]+$/.test(basename(full))) return false;
+    try { rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); return true; } catch { return false; }
+}
+
+/** Every family the sweep knows about. */
+export const LEFTOVER_KINDS: readonly LeftoverKind[] = [
+    { label: "status bar", plural: "status bars", minAgeSec: STATUSLINE_ORPHAN_MIN_AGE_SEC, matches: isStatuslineCommand },
+    { label: "whole-machine search", plural: "whole-machine searches", minAgeSec: WHOLE_MACHINE_SEARCH_MIN_AGE_SEC, matches: isWholeMachineSearch },
+    { label: "idle automation browser", plural: "idle automation browsers", minAgeSec: AUTOMATION_BROWSER_MIN_AGE_SEC, matches: isAutomationBrowser },
+];
+
+/** Parse the Windows probe's `pid|ageSeconds|commandLine` rows. */
+export function parseWinProcs(out: string): Omit<LeftoverProc, "kind">[] {
+    const procs: Omit<LeftoverProc, "kind">[] = [];
+    for (const line of out.split(/\r?\n/)) {
+        const m = line.match(/^(\d+)\|(-?\d+)\|(.*)$/);
+        if (!m) continue;
+        procs.push({ pid: Number(m[1]), ageSec: Number(m[2]), command: m[3]! });
+    }
+    return procs;
+}
+
+/** Parse `ps -eo pid=,etime=,args=`: pid, `[[dd-]hh:]mm:ss` elapsed, full command line. */
+export function parsePsProcs(out: string): Omit<LeftoverProc, "kind">[] {
+    const procs: Omit<LeftoverProc, "kind">[] = [];
+    for (const line of out.split(/\r?\n/)) {
+        const m = line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);
+        if (!m) continue;
+        const ageSec = parseElapsed(m[2]!);
+        if (ageSec < 0) continue;
+        procs.push({ pid: Number(m[1]), ageSec, command: m[3]! });
+    }
+    return procs;
+}
+
+/** `ps` ELAPSED (`[[dd-]hh:]mm:ss`) in seconds, or -1 when it is not that shape. */
+export function parseElapsed(text: string): number {
+    const m = text.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+    if (!m) return -1;
+    return Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3]) * 60 + Number(m[4]);
+}
+
+/** The processes worth reaping: matched by a family, past ITS age, and killable. */
+export function selectLeftovers(
+    procs: Omit<LeftoverProc, "kind">[],
+    kinds: readonly LeftoverKind[] = LEFTOVER_KINDS,
+): LeftoverProc[] {
+    const found: LeftoverProc[] = [];
+    for (const proc of procs) {
+        if (killRefusalReason(proc.pid, "")) continue;
+        const kind = kinds.find((k) => proc.ageSec >= k.minAgeSec && k.matches(proc.command));
+        if (kind) found.push({ ...proc, kind });
+    }
+    return found;
+}
+
+/**
+ * Every process on the machine that could be a leftover, with its age.
+ *
+ * Windows has no builtin left that prints a command line - `wmic` is gone from Windows 11
+ * 24H2 on - so the probe is one PowerShell CIM query, filtered server-side on the two words
+ * so it does not carry 800 processes back. The filter is deliberately loose and the matching
+ * is done here: a false positive in the query costs nothing, a miss costs a process nobody
+ * reaps. The script is written WITHOUT a single double quote, so nothing depends on how the
+ * shell re-quotes it on the way in.
+ */
+function leftoverCandidates(): Omit<LeftoverProc, "kind">[] {
+    if (!isWin) return parsePsProcs(run("ps", ["-eo", "pid=,etime=,args="]));
+    // `%find%` and not `%find %`: the real command line is `...inind.exe" /c/ -name x`,
+    // so the trailing space matched nothing. The pattern is meant to be loose - the regexes
+    // above do the deciding, and a row the query drops is a process nobody reaps.
+    const where = "CommandLine LIKE ''%statusline%'' OR CommandLine LIKE ''%find%'' OR CommandLine LIKE ''%puppeteer_dev_chrome_profile%'' OR CommandLine LIKE ''%enigma-design-%''";
+    const emit = "ForEach-Object { [string]$_.ProcessId + '|' + [string][int]((Get-Date) - $_.CreationDate).TotalSeconds + '|' + $_.CommandLine }";
+    const script = `Get-CimInstance Win32_Process -Filter '${where}' | ${emit}`;
+    return parseWinProcs(run("powershell", ["-NoProfile", "-NonInteractive", "-Command", script]));
+}
+
+/**
+ * Force-kill several pids at once, reporting which actually died.
+ *
+ * `killPid` is the primitive for a kill someone NAMED, and on Windows it spawns a `taskkill`
+ * per pid; a sweep can carry dozens, and on the box this was measured on a spawn costs
+ * seconds. `process.kill` is TerminateProcess on Windows and SIGKILL on POSIX - no spawn at
+ * all, and it throws when the pid is already gone, which is how this knows what it killed
+ * rather than parsing a localized `taskkill` transcript. The refusal rule is the same one.
+ */
+export function killPids(pids: number[]): { killed: number[]; refused: number[]; } {
+    const killed: number[] = [], refused: number[] = [];
+    for (const pid of pids) {
+        if (!Number.isInteger(pid) || pid <= 0) continue;
+        if (killRefusalReason(pid, "")) { refused.push(pid); continue; }
+        try { process.kill(pid, "SIGKILL"); killed.push(pid); } catch { /* already gone, or not ours */ }
+    }
+    return { killed, refused };
+}
+
+/**
+ * Sweep the processes an agent session started and walked away from. DESTRUCTIVE, over two
+ * families only, each past its own age (see `LEFTOVER_KINDS`).
+ *
+ * THE STATUS BARS are the ones nothing else could ever clean up. The harness re-runs the bar
+ * on a timer, and a tick that lands while the session tears down leaves a process that was
+ * CREATED AND NEVER STARTED - measured on Windows 11 as 66 in a day, every one with a single
+ * suspended thread, zero CPU over four hours, no module loaded and a dead parent. No timeout,
+ * `unref` or signal handler can reach that: none of it runs in a thread that never ran.
+ *
+ * THE SEARCHES are the same shape from the other end. An agent starts a `find` across the
+ * whole disk, the turn moves on, and nothing is left reading the output - so it keeps walking
+ * millions of files for hours. `search-guard` refuses the ones it can see coming (claude.ts);
+ * this is for the ones already running, and for the spellings a deny rule matched as written
+ * cannot catch.
+ *
+ * Both survive until reboot, so the only cure is a sweep from a process that IS running.
+ */
+export function reapAgentLeftovers(kinds: readonly LeftoverKind[] = LEFTOVER_KINDS): ActionResult {
+    const candidates = leftoverCandidates();
+    const leftovers = selectLeftovers(candidates, kinds);
+    const { killed } = killPids(leftovers.map((p) => p.pid));
+    // A killed browser never runs its own profile cleanup; remove the temp profile it was on.
+    for (const proc of leftovers) {
+        const profile = killed.includes(proc.pid) ? automationProfileDir(proc.command) : null;
+        if (profile) removeTempProfile(profile);
+    }
+    // Profiles of browsers that died some other way (a crash, a killed server) pile up in the
+    // temp dir - 139 of them, 640 MB, on the machine this was written on.
+    const live = candidates.filter((p) => !killed.includes(p.pid)).map((p) => p.command);
+    const profiles = kinds.some((k) => k.matches === isAutomationBrowser) ? sweepStaleProfiles(live) : 0;
+    const byKind = new Map<string, number>();
+    for (const proc of leftovers) {
+        if (!killed.includes(proc.pid)) continue;
+        const label = proc.kind.plural;
+        byKind.set(label, (byKind.get(label) ?? 0) + 1);
+    }
+    const profileNote = profiles ? ` Removed ${profiles} stale browser profile${profiles === 1 ? "" : "s"}.` : "";
+    if (!leftovers.length) return { ok: true, message: `No leftover agent processes.${profileNote}` };
+    if (!byKind.size) return { ok: false, message: `Found ${leftovers.length} leftover process(es); none of them could be killed.${profileNote}` };
+    const parts = [...byKind].map(([label, n]) => `${n} ${n === 1 ? label.replace(/e?s$/, "") : label}`);
+    return { ok: true, message: `Killed ${killed.length} leftover process${killed.length === 1 ? "" : "es"}: ${parts.join(", ")}.${profileNote}` };
+}
+
+/**
+ * Remove automation profile directories in the temp dir that no running process references and
+ * that have not been touched for the browser age limit. Returns how many were removed.
+ */
+export function sweepStaleProfiles(liveCommands: string[], tempRoot: string = tmpdir(), now: number = Date.now()): number {
+    let removed = 0;
+    let entries: string[];
+    try { entries = readdirSync(tempRoot); } catch { return 0; }
+    for (const name of entries) {
+        if (!/^(?:puppeteer_dev_chrome_profile-|enigma-design-)[\w-]+$/.test(name)) continue;
+        if (liveCommands.some((c) => c.includes(name))) continue;
+        const dir = join(tempRoot, name);
+        try {
+            if (!statSync(dir).isDirectory() || now - statSync(dir).mtimeMs < AUTOMATION_BROWSER_MIN_AGE_SEC * 1000) continue;
+        } catch { continue; }
+        if (removeTempProfile(dir, tempRoot)) removed++;
+    }
+    return removed;
+}
+
 /** What `enigma kill <target>` was asked to kill. */
 export type KillTarget =
     | { kind: "wsl"; }
     | { kind: "docker"; }
+    /** The sweep. `family` narrows it to one of LEFTOVER_KINDS; absent means all of them. */
+    | { kind: "leftovers"; family?: "statusline"; }
     /** `bare`: written as a plain number, so it may have been meant as a PID. */
     | { kind: "port"; port: number; bare: boolean; }
     | { kind: "pid"; pid: number; }
@@ -298,6 +566,8 @@ export function parseKillTarget(raw: string): KillTarget | null {
     const token = text.toLowerCase();
     if (/^(wsl|vmmem|vmmemwsl)$/.test(token)) return { kind: "wsl" };
     if (/^docker([ -]desktop)?$/.test(token)) return { kind: "docker" };
+    if (/^left-?overs?$/.test(token)) return { kind: "leftovers" };
+    if (/^status-?lines?$/.test(token)) return { kind: "leftovers", family: "statusline" };
     const pid = token.match(/^pid[:=\s]\s*(\d+)$/);
     if (pid) return { kind: "pid", pid: Number(pid[1]) };
     const port = token.match(/^(?::|port[:=\s]\s*)(\d+)$/);
@@ -368,6 +638,9 @@ export function killTarget(target: KillTarget, opts: { yes?: boolean; } = {}): A
     switch (target.kind) {
         case "wsl": return shutdownWsl();
         case "docker": return quitDocker();
+        case "leftovers": return reapAgentLeftovers(target.family === "statusline"
+            ? LEFTOVER_KINDS.filter((k) => k.matches === isStatuslineCommand)
+            : LEFTOVER_KINDS);
         case "name": return killByName(target.name, opts);
         case "pid": {
             const proc = snapshot().find((p) => p.pid === target.pid);
@@ -390,6 +663,7 @@ export function runResourceAction(op: string, value?: number): ActionResult {
     switch (op) {
         case "wsl-shutdown": return shutdownWsl();
         case "docker-quit": return quitDocker();
+        case "leftovers": return reapAgentLeftovers();
         case "free-port": return value != null ? freePort(value) : { ok: false, message: "Missing port." };
         case "kill": return value != null ? killPid(value) : { ok: false, message: "Missing PID." };
         default: return { ok: false, message: `Unknown action: ${op}` };

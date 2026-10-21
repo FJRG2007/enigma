@@ -17,8 +17,10 @@
  */
 
 import os from "node:os";
-import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** Snapshot schema this renderer understands; a newer file is ignored, not guessed at. */
 const SNAPSHOT_VERSION = 2;
@@ -193,6 +195,47 @@ export function readCodeGraphStatus(cwd) {
 export function snapshotPath() {
     const root = process.env.ENIGMA_GATE_HOME || join(os.homedir(), ".enigma", "gate");
     return join(root, "statusline.json");
+}
+
+/** How long the machine goes between sweeps of what the agent sessions left behind. */
+const REAP_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Stamp file holding the last sweep's time. Its mtime IS the record; the contents are not read. */
+function reapStampPath() {
+    return join(process.env.ENIGMA_CONFIG_HOME || os.homedir(), ".enigma", "leftovers-sweep");
+}
+
+/**
+ * Sweep what the agent sessions left running, at most once an hour per machine: the status
+ * bars a torn-down session abandoned, and the whole-machine searches nobody is reading.
+ *
+ * The bar is the only thing that reliably runs wherever this happens, so the janitor is
+ * triggered from here - but it is neither run here nor awaited.
+ * The probe it needs takes seconds (no Windows builtin prints a command line any more) and
+ * this function is on the path of a bar that has to print now, so the work goes to a
+ * DETACHED child with its stdio discarded and this process forgets about it. What is
+ * actually swept, and why nothing inside a leaked render could ever sweep itself, is in
+ * `src/leftovers.ts`.
+ *
+ * The stamp is written BEFORE the spawn, so a reaper that cannot start still costs one
+ * attempt an hour rather than one per refresh. Everything is best-effort: a status bar that
+ * throws displays the error until the next refresh.
+ */
+function sweepAgentLeftovers() {
+    try {
+        if (process.env.ENIGMA_NO_LEFTOVER_SWEEP) return;
+        const reaper = fileURLToPath(new URL("../dist/leftovers.js", import.meta.url));
+        if (!existsSync(reaper)) return; // an install from before the janitor shipped
+        const stamp = reapStampPath();
+        try {
+            if (Date.now() - statSync(stamp).mtimeMs < REAP_INTERVAL_MS) return;
+        } catch { /* no stamp yet: this is the first sweep */ }
+        // The stamp is the rate limit, so a directory that is not there yet has to be made
+        // rather than shrugged off: without the write, every refresh would sweep.
+        mkdirSync(dirname(stamp), { recursive: true });
+        writeFileSync(stamp, "");
+        spawn(process.execPath, [reaper], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    } catch { /* the bar never fails over its own housekeeping */ }
 }
 
 /** Reports whether a process is alive, used to discard a snapshot from a dead daemon. */
@@ -518,4 +561,8 @@ export async function printStatusline() {
         // A status bar must never error or emit noise.
     }
     await drain(text);
+    // Last, never first: spawning is where the seconds are on Windows (CreateProcess is
+    // synchronous inside spawn, and an antivirus rescanning the runtime makes it cost
+    // whole seconds), and none of that may land in front of the bar the user is waiting on.
+    sweepAgentLeftovers();
 }

@@ -25,6 +25,11 @@ import { defineConfig } from "tsup";
 // it kept losing to. Unlike the three above these are free to import across the source
 // tree - they are bundled whole - and post-edit is the one entry that also runs the
 // managed linter, which only a Node resolver can reach.
+//
+// And the status bar's janitor, which the renderer spawns DETACHED at most once an hour:
+//   src/leftovers.ts -> dist/leftovers.js
+// Not the binary and not a branch of a hook - leftovers.ts records what it sweeps
+// and why neither the renderer nor the post-edit hook can be the one to do it.
 export default defineConfig({
     entry: {
         guard: "src/guard.ts",
@@ -34,6 +39,7 @@ export default defineConfig({
         "codegraph-hook": "src/codegraph-hook.ts",
         // The CI notifier's hook and poller, answered by the launcher for the same reason.
         "ci-watch": "src/ci-watch.ts",
+        leftovers: "src/leftovers.ts",
     },
     format: ["esm"],
     target: "node18",

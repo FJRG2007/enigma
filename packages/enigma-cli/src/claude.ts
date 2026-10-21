@@ -343,6 +343,81 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
 }
 
 /**
+ * The whole-machine searches enigma refuses to let an agent start, as Claude Code deny
+ * rules. Every entry is a `find` rooted at something that means "the entire computer":
+ * the POSIX root, a home directory, a Windows drive root as the Git Bash and WSL mounts
+ * spell it, and the directory that holds every user's home.
+ *
+ * WHY A DENY RULE and not a hook or a memory line. It is the only gate here that is both
+ * deterministic and free: Claude Code evaluates it itself, with no process to start, and
+ * "deny rules block in every mode, including bypassPermissions" - which matters because
+ * enigma turns that mode ON by default. A `PreToolUse` hook would be a process start on
+ * EVERY shell command (112-874 ms for `node -e 0` on the author's box, seconds when the
+ * antivirus is cold), which is the one cost this project refuses to put on a hot path.
+ * The memory kernel was not an option either: it sits one byte under its 24 KB budget,
+ * and a rule about one tool is not the universal guidance that budget is reserved for.
+ *
+ * WHAT IT DOES NOT CATCH, said plainly: Claude Code matches a Bash rule AS WRITTEN, so
+ * `/usr/bin/find /` and `bash -c 'find / ...'` walk straight past it. This stops the form
+ * an agent actually emits, and the session-start directive (codegraph-hook.ts) is what
+ * tells it to scope the search in the first place. A backstop, not a sandbox.
+ *
+ * A trailing ` *` also matches the bare command, so `Bash(find / *)` covers `find /`.
+ */
+export const SEARCH_GUARD_DENY = [
+    "Bash(find / *)",
+    "Bash(find ~ *)",
+    "Bash(find ~/ *)",
+    "Bash(find $HOME *)",
+    "Bash(find $HOME/ *)",
+    "Bash(find /c/ *)",
+    "Bash(find /d/ *)",
+    "Bash(find /mnt/c/ *)",
+    "Bash(find /home/ *)",
+    "Bash(find /Users/ *)",
+];
+
+/**
+ * Add or remove the whole-machine-search deny rules in a scope's settings.json.
+ *
+ * Only enigma's own entries are touched - the user's other `deny` rules, and the rest of
+ * `permissions`, are preserved exactly. Removing the last one removes the empty `deny`
+ * array rather than leaving a husk behind, for the same reason `setClaudeBypass` removes
+ * an empty `permissions`. Returns the target path and whether anything changed.
+ */
+export function setClaudeSearchGuard(scope: "global" | "local", on: boolean, dryRun = false): { path: string; changed: boolean; } {
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const permissions = (typeof current.permissions === "object" && current.permissions !== null)
+        ? { ...current.permissions as Record<string, unknown> }
+        : {};
+    const deny = Array.isArray(permissions.deny) ? (permissions.deny as unknown[]).map(String) : [];
+
+    const mine = new Set(SEARCH_GUARD_DENY);
+    const kept = deny.filter((rule) => !mine.has(rule));
+    const next = on ? [...kept, ...SEARCH_GUARD_DENY] : kept;
+    if (next.length === deny.length && next.every((rule, i) => rule === deny[i])) return { path, changed: false };
+    if (dryRun) return { path, changed: true };
+
+    if (next.length) permissions.deny = next;
+    else delete permissions.deny;
+    const settings: Record<string, unknown> = { ...current };
+    if (Object.keys(permissions).length) settings.permissions = permissions;
+    else delete settings.permissions;
+
+    writeClaudeSettings(path, settings);
+    return { path, changed: true };
+}
+
+/** True when every whole-machine-search deny rule is present in a scope's settings.json. */
+export function getClaudeSearchGuard(scope: "global" | "local"): boolean {
+    const current = readJson<Record<string, unknown>>(claudeSettingsPath(scope)) || {};
+    const permissions = current.permissions as Record<string, unknown> | undefined;
+    const deny = Array.isArray(permissions?.deny) ? (permissions.deny as unknown[]).map(String) : [];
+    return SEARCH_GUARD_DENY.every((rule) => deny.includes(rule));
+}
+
+/**
  * Point Claude Code's statusline at `enigma statusline`: the [ENIGMA] badge (carrying the
  * token-efficient level when active), session context and cost, plus live gate progress
  * while a run is in flight. Only writes when no statusline is configured yet - it never

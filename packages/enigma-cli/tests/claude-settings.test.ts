@@ -21,6 +21,7 @@ const {
     enableClaudeStatusline, disableClaudeStatusline, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline,
     syncClaudeStatuslineRefresh,
     claudeWorkspaceKey, getClaudeTrust, trustClaudeWorkspaces, untrustClaudeWorkspaces, mirrorClaudeTrust,
+    setClaudeSearchGuard, getClaudeSearchGuard, SEARCH_GUARD_DENY,
 } = await import("../src/claude");
 
 const GLOBAL = join(HOME, ".claude", "settings.json");
@@ -373,4 +374,40 @@ test("mirror keeps the enigma statusline on an account that already has it", () 
     mirrorClaudeSettings(accountDir);
     const line = readJson(join(accountDir, "settings.json")).statusLine as Record<string, unknown> | undefined;
     expect(line?.command).toBe("enigma statusline");
+});
+
+test("the search guard adds its deny rules, and only its own", () => {
+    // Somebody else's rules and the bypass mode sit in the same object; both have to survive,
+    // because this writes into settings.json a user also edits by hand.
+    writeFileSync(GLOBAL, JSON.stringify({
+        permissions: { defaultMode: "bypassPermissions", deny: ["Bash(rm -rf /*)"], allow: ["Bash(npm test)"] },
+    }));
+
+    expect(getClaudeSearchGuard("global")).toBe(false);
+    expect(setClaudeSearchGuard("global", true).changed).toBe(true);
+    const on = JSON.parse(readFileSync(GLOBAL, "utf8"));
+    expect(on.permissions.deny).toContain("Bash(rm -rf /*)");
+    expect(on.permissions.deny).toContain("Bash(find / *)");
+    expect(on.permissions.allow).toEqual(["Bash(npm test)"]);
+    expect(on.permissions.defaultMode).toBe("bypassPermissions");
+    expect(getClaudeSearchGuard("global")).toBe(true);
+
+    // Idempotent: a second call is not a change, so a sync can run it on every launch.
+    expect(setClaudeSearchGuard("global", true).changed).toBe(false);
+
+    expect(setClaudeSearchGuard("global", false).changed).toBe(true);
+    const off = JSON.parse(readFileSync(GLOBAL, "utf8"));
+    expect(off.permissions.deny).toEqual(["Bash(rm -rf /*)"]);
+    expect(off.permissions.defaultMode).toBe("bypassPermissions");
+    expect(getClaudeSearchGuard("global")).toBe(false);
+});
+
+test("turning the search guard off on a file that had nothing else leaves no husk behind", () => {
+    writeFileSync(GLOBAL, JSON.stringify({}));
+    setClaudeSearchGuard("global", true);
+    expect(JSON.parse(readFileSync(GLOBAL, "utf8")).permissions.deny).toHaveLength(SEARCH_GUARD_DENY.length);
+    setClaudeSearchGuard("global", false);
+    // An empty `deny` array and an empty `permissions` object both read as configuration
+    // that is there, so neither is left behind.
+    expect(JSON.parse(readFileSync(GLOBAL, "utf8")).permissions).toBeUndefined();
 });

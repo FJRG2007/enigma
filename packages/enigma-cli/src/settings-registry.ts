@@ -12,10 +12,10 @@
 import * as conf from "./config";
 import { AGENTS } from "./agents";
 import { setKimiTrust } from "./kimi";
+import * as claudeCfg from "./claude";
 import { setTrim } from "./trim-deploy";
 import { setVerify } from "./verify-deploy";
 import { clampCapPercent } from "./governor";
-import { parseTrivialLines } from "./gate/triviality";
 import { applyMcpToggle } from "./mcp-deploy";
 import { setCiWatch } from "./ci-watch-deploy";
 import { applyDashboardMode } from "./dashboard";
@@ -24,14 +24,14 @@ import { isAutoLintOn, setAutoLint } from "./lint";
 import { applyGateToggle } from "./command-deploy";
 import { setGuardrails } from "./guardrails-deploy";
 import type { GuardListMeta } from "./guard-config";
+import { parseTrivialLines } from "./gate/triviality";
 import { TOOL_NAMES, accountExists } from "./accounts";
 import { applyCodeGraphWiring } from "./codegraph-deploy";
-import { applySubagentWiring, parseCompactWindow, parseSubagentTurns } from "./subagent-deploy";
 import { applyHandoffWiring, parseRelayAt, setRelay } from "./handoff-deploy";
 import { BYPASS_GLOBAL_ONLY, BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
+import { applySubagentWiring, parseCompactWindow, parseSubagentTurns } from "./subagent-deploy";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
-import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline, setClaudeTrust } from "./claude";
 
 export type Scope = "global" | "local";
 
@@ -244,11 +244,24 @@ function writeGhTelemetry(enabled: boolean): ApplyResult {
  * no-op every surface would render as success.
  */
 function setStatusline(on: boolean, scope: Scope): ApplyResult {
-    if (on && hasCustomClaudeStatusline(scope)) {
+    if (on && claudeCfg.hasCustomClaudeStatusline(scope)) {
         return { changed: false, error: "a different statusLine is already set in Claude Code's settings.json - remove it first" };
     }
     const path = conf.setEnigmaToggle("statusline", on, scope);
-    setClaudeStatusline(scope, on);
+    claudeCfg.setClaudeStatusline(scope, on);
+    return { path, changed: true };
+}
+
+/**
+ * Persist the whole-machine-search refusal and write it into Claude's settings.json now.
+ *
+ * Same intent/effect split as `setStatusline`, and needed for the same reason: the deny
+ * rules alone cannot say whether a user removed them on purpose, so `syncDeployed` would
+ * put back a guard they deliberately took out.
+ */
+function setSearchGuard(on: boolean, scope: Scope): ApplyResult {
+    const path = conf.setEnigmaToggle("searchGuard", on, scope);
+    claudeCfg.setClaudeSearchGuard(scope, on);
     return { path, changed: true };
 }
 
@@ -264,7 +277,7 @@ function setStatusline(on: boolean, scope: Scope): ApplyResult {
  */
 function setTrust(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("claudeTrust", on, scope);
-    setClaudeTrust(on);
+    claudeCfg.setClaudeTrust(on);
     return { path, changed: true };
 }
 
@@ -417,6 +430,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "show the [ENIGMA] badge, model, context and cost in Claude Code's status bar, plus live gate progress while a run is in flight",
                 read: () => conf.readConfig().config.statusline,
                 write: (value, scope) => setStatusline(value, scope),
+            },
+            {
+                key: "search-guard",
+                label: "Refuse whole-machine searches",
+                hint: "stop an agent starting a 'find' across the whole disk (from /, your home, or a drive root) - the ones nobody notices are still running",
+                read: () => conf.readConfig().config.searchGuard,
+                write: (value, scope) => setSearchGuard(value, scope),
             },
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             {
@@ -800,15 +820,15 @@ const RAW_CATEGORIES: Category[] = [
                 key: "claude-attribution",
                 label: "Claude commit attribution",
                 hint: "let Claude Code commit as its own contributor (Co-Authored-By, PR footer, session link); enigma default: off",
-                read: (scope) => getClaudeAttribution(scope),
-                write: (value, scope) => ({ changed: setClaudeAttribution(scope, value) }),
+                read: (scope) => claudeCfg.getClaudeAttribution(scope),
+                write: (value, scope) => ({ changed: claudeCfg.setClaudeAttribution(scope, value) }),
             },
             {
                 key: "claude-survey",
                 label: "Claude feedback survey",
                 hint: "let Claude Code show the 'How is Claude doing?' session quality survey; enigma default: off",
-                read: (scope) => getClaudeFeedbackSurvey(scope),
-                write: (value, scope) => ({ changed: setClaudeFeedbackSurvey(scope, value) }),
+                read: (scope) => claudeCfg.getClaudeFeedbackSurvey(scope),
+                write: (value, scope) => ({ changed: claudeCfg.setClaudeFeedbackSurvey(scope, value) }),
             },
             {
                 key: "gh-telemetry",

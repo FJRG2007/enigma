@@ -342,7 +342,10 @@ test.skipIf(!NODE)("the bar exits quietly when its reader is already gone", asyn
     // event-loop turn later, and an unhandled `error` event is an uncaught exception -
     // a stack trace on stderr and a nonzero exit, from a status bar.
     const { code, stderr } = await new Promise<{ code: number | null; stderr: string; }>((resolve) => {
-        const child = spawn(NODE as string, [join(import.meta.dir, "../../bin/enigma.mjs"), "statusline"], { stdio: ["pipe", "pipe", "pipe"] });
+        // The bar also spawns its own janitor once an hour; a test must not reach out and
+        // start sweeping the machine it happens to be running on.
+        const env = { ...process.env, ENIGMA_NO_LEFTOVER_SWEEP: "1" };
+        const child = spawn(NODE as string, [join(import.meta.dir, "../../bin/enigma.mjs"), "statusline"], { stdio: ["pipe", "pipe", "pipe"], env });
         let err = "";
         child.stderr.on("data", (chunk) => { err += chunk; });
         child.stdout.destroy();
