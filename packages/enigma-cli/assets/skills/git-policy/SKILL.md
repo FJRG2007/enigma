@@ -19,7 +19,7 @@ description: Commit, branch, and pull request standards - conventional commits, 
 ## Branching & Commit Timing
 
 - Commit or push only when the user asks for it; do not commit speculatively.
-- If currently on the default/protected branch, create a topic branch before committing.
+- A topic branch is for work that goes through review (a PR, a full gate run). A change below the gate's trivial threshold (`gate-trivial-lines`: a logo or icon swap, a copy or one-line visual fix) commits straight to the branch you are on - the default branch included, unless it is protected or the push is rejected - with no branch, no PR and no gate run. Anything larger on the default branch gets a topic branch first.
 - Use descriptive branch names scoped by type (e.g. feat/, fix/, chore/).
 - Keep branches focused on a single concern.
 

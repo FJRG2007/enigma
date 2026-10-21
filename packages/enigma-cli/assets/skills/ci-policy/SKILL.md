@@ -34,6 +34,7 @@ description: CI/CD pipeline policy for any provider (GitHub Actions, GitLab CI, 
 ## 2. One Pipeline per Commit
 
 - A commit should trigger the full suite once. The common duplicate is a pipeline triggered both by the branch push and by the pull/merge request for the same commit; the two runs have different refs, so concurrency grouping never merges them.
+- The other duplicate is the PR run plus the run on the merged commit: the PR already tested the change, and the push to the default branch re-runs the same suite on the same tree. Require the PR to be up to date with its base before merging (branch protection, or a merge queue's `merge_group` event, which tests the exact merged tree once), and give the default-branch push only post-merge work - deploy, release, cache warm-up.
 - Choose one trigger per context: pull/merge request events for proposed changes, push for the default branch (and release branches or tags) where post-merge work actually needs it, and a manual trigger for branches that have no pull request yet.
 - Cancel superseded runs of the same pull request or branch when a newer commit arrives. Never cancel runs on the default branch or release refs, where every commit's result matters (deploys, cache warm-up, status history).
 - Put a timeout on every job. A hung job holding a runner for the provider's default maximum is the most expensive failure there is.
