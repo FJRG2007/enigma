@@ -2655,11 +2655,12 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
     if (sub && sub !== "tidy") { console.error(`Unknown subcommand '${sub}'. Usage: enigma branches [tidy] [branch...]`); return 1; }
 
     if (sub !== "tidy") {
-        const plan = await tidyMod.planTidy(dir, remote, remote ? await tidyMod.prHeads(dir) : null);
+        const prs = remote ? await tidyMod.prHeads(dir) : null;
+        const plan = await tidyMod.planTidy(dir, remote, prs);
         if (plan.blocked) { console.log(`Nothing can be cleaned up here: ${plan.blocked}.`); return 0; }
         const ready = plan.verdicts.filter((v) => v.tidyable);
         for (const v of plan.verdicts) console.log(`  ${v.tidyable ? "x" : "-"} ${v.branch.padEnd(32)} ${v.detail}`);
-        const idle = await tidyMod.idleWorktrees(dir, plan.baseRef ?? plan.defaultBranch, plan.defaultBranch);
+        const idle = await tidyMod.idleWorktrees(dir, plan.baseRef ?? plan.defaultBranch, plan.defaultBranch, remote, prs);
         for (const wt of idle) console.log(`  x worktree ${wt.path} - clean, merged and idle; tidy removes it and frees ${wt.branch || "its commit"}`);
         console.log(ready.length || idle.length
             ? `\n${ready.length} branch(es) finished. Remove them with: enigma branches tidy`

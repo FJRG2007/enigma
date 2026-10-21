@@ -427,6 +427,56 @@ test("an idle, clean, merged worktree is removed and its branch freed; a dirty, 
     expect(git(dir, "branch", "--list", "dirty", "fresh", "open").split("\n").length).toBe(3);
 }, 120_000);
 
+// Containment alone kept every squash-merged worktree forever (263 of 333 branches pinned in one
+// repository). A worktree whose branch landed through a merged PR goes too - including one the
+// gate rebased, proved by equivalent patches - while a commit whose patch changed keeps it.
+test("an idle worktree whose branch landed by a squash-merged PR is removed; a changed patch keeps it", async () => {
+    const { dir } = repo("wt-squash");
+    const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    const age = (path: string): void => {
+        const gitDir = git(path, "rev-parse", "--absolute-git-dir");
+        for (const f of [path, join(gitDir, "HEAD"), join(gitDir, "index"), join(gitDir, "logs", "HEAD")]) {
+            try { utimesSync(f, old, old); } catch { /* absent */ }
+        }
+    };
+    const add = (name: string, file: string, body: string): string => {
+        const path = mkdtempSync(join(tmpdir(), `enigma-tidy-wt-${name}-`));
+        rmSync(path, { recursive: true, force: true });
+        dirs.push(path);
+        git(dir, "worktree", "add", "-q", "-b", name, path, "main");
+        commit(path, file, body);
+        return path;
+    };
+    const squashed = add("squashed", "a.txt", "mine");
+    const rewritten = add("rewritten", "b.txt", "mine");
+    commit(dir, "other.txt");
+    // Each PR head is the branch rebased onto the new main; `rewritten` changed its patch on the way.
+    const prHead = (name: string, file: string, body: string): string => {
+        git(dir, "checkout", "-q", "-b", `pr-${name}`, "main");
+        commit(dir, file, body);
+        const sha = git(dir, "rev-parse", "HEAD");
+        git(dir, "checkout", "-q", "main");
+        git(dir, "merge", "-q", "--squash", `pr-${name}`);
+        git(dir, "commit", "-q", "-m", `squash ${name}`);
+        git(dir, "branch", "-q", "-D", `pr-${name}`);
+        return sha;
+    };
+    const squashedHead = prHead("squashed", "a.txt", "mine");
+    const rewrittenHead = prHead("rewritten", "b.txt", "theirs");
+    commit(dir, "a.txt", "edited later on main");
+    git(dir, "push", "-q", "origin", "main");
+    for (const p of [squashed, rewritten]) age(p);
+
+    const listPRs = async () => ({ open: new Set<string>(), merged: new Map([["squashed", [{ sha: squashedHead, base: "main" }]], ["rewritten", [{ sha: rewrittenHead, base: "main" }]]]), bases: new Set(["main"]) });
+    const result = await tidy(dir, { listPRs });
+    const slashes = (p: string): string => p.split("\\").join("/");
+    expect(result.worktrees.map(slashes)).toEqual([slashes(squashed)]);
+    expect(existsSync(squashed)).toBe(false);
+    expect(result.deleted).toContain("squashed");
+    expect(existsSync(rewritten)).toBe(true);
+    expect(git(dir, "branch", "--list", "rewritten")).not.toBe("");
+}, 120_000);
+
 // The turn-end hook tidies in the background at most once an hour per repository.
 test("a background tidy is claimed once an hour per repository", async () => {
     const { claimBackgroundTidy } = await import("../src/git-tidy");
@@ -435,6 +485,15 @@ test("a background tidy is claimed once an hour per repository", async () => {
     expect(claimBackgroundTidy("C:/repo/a", now + 60_000)).toBe(false);
     expect(claimBackgroundTidy("C:/REPO/A", now + 60_000)).toBe(false);
     expect(claimBackgroundTidy("C:/repo/b", now)).toBe(true);
+
+    // Every linked worktree is the same repository: one claim covers them all.
+    const { dir } = repo("claim-wt");
+    const wt = mkdtempSync(join(tmpdir(), "enigma-tidy-claim-wt-"));
+    rmSync(wt, { recursive: true, force: true });
+    dirs.push(wt);
+    git(dir, "worktree", "add", "-q", "-b", "side", wt, "main");
+    expect(claimBackgroundTidy(dir, now)).toBe(true);
+    expect(claimBackgroundTidy(wt, now + 60_000)).toBe(false);
 });
 
 // A branch that exists only on the remote is deleted there only when it is merged, nothing is in

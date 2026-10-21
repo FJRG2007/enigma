@@ -25,7 +25,7 @@ import * as git from "./gate/git";
 import { enigmaHome } from "./util";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** Branch names never deleted, whatever the containment check says. */
@@ -196,10 +196,13 @@ async function lastTouched(path: string): Promise<number> {
 /**
  * Linked worktrees that are safe to remove: not locked, not the gate's own (it tears those
  * down itself), present on disk, clean (untracked files count as work), untouched for
- * WORKTREE_IDLE_MS, and holding nothing `base` lacks. Removing one loses no line of work by
- * construction, and `git worktree remove` without --force re-checks the clean half itself.
+ * WORKTREE_IDLE_MS, and holding nothing `base` lacks - contained in it, or landed by a merged PR
+ * (`landedByPR`). Containment alone kept every squash-merged one forever: measured in one
+ * repository, 263 worktrees pinned 263 of its 333 branches, 203 of them with a merged PR.
+ * Removing one loses no line of work by construction, and `git worktree remove` without --force
+ * re-checks the clean half itself.
  */
-export async function idleWorktrees(dir: string, base: string, defaultBranch: string, now = Date.now()): Promise<WorktreeEntry[]> {
+export async function idleWorktrees(dir: string, base: string, defaultBranch: string, remote = "", prs: PRHeads | null = null, now = Date.now()): Promise<WorktreeEntry[]> {
     const slashes = (p: string): string => p.split("\\").join("/").toLowerCase();
     const gateRoot = slashes(join(enigmaHome(), ".enigma", "gate"));
     const idle: WorktreeEntry[] = [];
@@ -210,7 +213,8 @@ export async function idleWorktrees(dir: string, base: string, defaultBranch: st
         const status = await git.run(wt.path, ["status", "--porcelain"]).catch(() => null);
         if (status === null || status !== "") continue;
         const tip = wt.branch || wt.head;
-        if (!tip || !await containedInAny(dir, base, defaultBranch, tip)) continue;
+        if (!tip) continue;
+        if (!await containedInAny(dir, base, defaultBranch, tip) && !(wt.branch && await landedByPR(dir, remote, wt.branch, wt.head, prs, defaultBranch))) continue;
         idle.push(wt);
     }
     return idle;
@@ -473,7 +477,7 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     // Abandoned worktrees first: each one pins its branch, so the plan is rebuilt once after
     // removing any, and the branches they held are judged like every other branch.
     const base = plan.baseRef ?? plan.defaultBranch;
-    for (const wt of await idleWorktrees(dir, base, plan.defaultBranch)) {
+    for (const wt of await idleWorktrees(dir, base, plan.defaultBranch, remote, prsNow)) {
         if (opts.dryRun) { result.worktrees.push(wt.path); continue; }
         try {
             await git.run(dir, ["worktree", "remove", wt.path]);
@@ -620,7 +624,24 @@ async function landedByPR(dir: string, remote: string, branch: string, sha: stri
     const head = heads[0]!.sha;
     if (head === sha) return true;
     if (!remote || !await fetchTip(dir, remote, branch, head)) return false;
-    return (await git.runRaw(dir, ["merge-base", "--is-ancestor", sha, head]).catch(() => ({ code: 1 }))).code === 0;
+    if ((await git.runRaw(dir, ["merge-base", "--is-ancestor", sha, head]).catch(() => ({ code: 1 }))).code === 0) return true;
+    return patchesLanded(dir, head, sha);
+}
+
+/**
+ * Whether every commit `sha` holds beyond `head` has an equivalent patch in `head` - the proof
+ * left when the gate REBASED the branch before merging, so the local commits were rewritten
+ * and are no longer ancestors of the PR head. Measured in one repository, 58 of 83 landed
+ * branches had only that proof. A merge commit is never vouched for this way (`git cherry`
+ * skips merges, and a conflict resolution inside one is work), nor a commit whose patch changed
+ * in the rebase: those keep the branch.
+ */
+async function patchesLanded(dir: string, head: string, sha: string): Promise<boolean> {
+    const merges = (await git.run(dir, ["rev-list", "--merges", "--count", `${head}..${sha}`]).catch(() => "")).trim();
+    if (merges !== "0") return false;
+    const cherry = await git.runRaw(dir, ["cherry", head, sha]).catch(() => null);
+    if (!cherry || cherry.code !== 0) return false;
+    return !cherry.stdout.split("\n").some((line) => line.startsWith("+"));
 }
 
 /**
@@ -713,6 +734,21 @@ export function restoreCommand(branch: string, sha: string): string {
     return `git branch ${branch} ${sha}`;
 }
 
+/**
+ * The repository a working tree belongs to: a linked worktree's `.git` FILE points into
+ * `<main>/.git/worktrees/<name>`, so every worktree maps to the same main repository. Keyed by
+ * the worktree instead, one repository with 42 worktrees ran 42 tidies an hour over the same
+ * refs. Read from the file, not `git rev-parse`, because this runs inside the turn-end hook.
+ */
+function sharedRepoKey(repoRoot: string): string {
+    try {
+        const pointer = /^gitdir:\s*(.+)$/m.exec(readFileSync(join(repoRoot, ".git"), "utf8"))?.[1]?.trim();
+        const at = pointer ? pointer.split("\\").join("/").lastIndexOf("/worktrees/") : -1;
+        if (pointer && at > 0) return dirname(resolve(repoRoot, pointer.slice(0, at)));
+    } catch { /* a directory `.git` (the main tree) or none: the root is the key */ }
+    return repoRoot;
+}
+
 /** How often a repository is tidied in the background, at most. */
 const BACKGROUND_TIDY_EVERY_MS = 60 * 60 * 1000;
 
@@ -722,7 +758,7 @@ const BACKGROUND_TIDY_EVERY_MS = 60 * 60 * 1000;
  * than one per turn; a marker dated in the future (a clock change) counts as expired.
  */
 export function claimBackgroundTidy(repoRoot: string, now = Date.now()): boolean {
-    const key = createHash("sha1").update(repoRoot.toLowerCase()).digest("hex").slice(0, 16);
+    const key = createHash("sha1").update(sharedRepoKey(repoRoot).toLowerCase()).digest("hex").slice(0, 16);
     const marker = join(enigmaHome(), ".enigma", "tidy", key);
     try {
         const age = now - statSync(marker).mtimeMs;
