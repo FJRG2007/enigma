@@ -1327,12 +1327,20 @@ function workCommittedAt(cwd: string, base: string): number | null {
         const at = Number(raw);
         return raw !== "" && Number.isFinite(at) && at > 0 ? at : null;
     };
-    let newest = stamp(gitOut(cwd, ["log", "-1", "--no-merges", "--format=%ct", `${base}..HEAD`, "--"]).trim());
-    for (const line of gitOut(cwd, ["log", "--merges", "--format=%H %ct", `${base}..HEAD`, "--"]).split("\n")) {
-        const [sha, raw] = line.trim().split(" ");
+    // One `git log` for both kinds - this runs at every turn end, where a process start can cost
+    // seconds. A merge is told apart by its second parent.
+    const merges: { sha: string; at: number; }[] = [];
+    let newest: number | null = null;
+    for (const line of gitOut(cwd, ["log", "--format=%ct %H %P", `${base}..HEAD`, "--"]).split("\n")) {
+        const [raw, sha, ...parents] = line.trim().split(" ");
         const at = stamp(raw ?? "");
-        if (!sha || at === null || (newest !== null && at <= newest)) continue;
-        if (gitOut(cwd, ["diff-tree", "--cc", "--no-commit-id", sha]).trim() !== "") newest = at;
+        if (!sha || at === null) continue;
+        if (parents.length > 1) merges.push({ sha, at });
+        else if (newest === null || at > newest) newest = at;
+    }
+    for (const merge of merges) {
+        if (newest !== null && merge.at <= newest) continue;
+        if (gitOut(cwd, ["diff-tree", "--cc", "--no-commit-id", merge.sha]).trim() !== "") newest = merge.at;
     }
     return newest;
 }
