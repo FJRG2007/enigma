@@ -1,0 +1,20 @@
+import { writeFileSync } from "node:fs";
+import { Browser } from "./src/design/browser/page";
+import { findBrowser } from "./src/design/browser/chrome";
+
+const exe = findBrowser();
+console.log("browser:", exe);
+const t0 = Date.now();
+const browser = await Browser.launch(exe!);
+console.log("launched in", Date.now() - t0, "ms");
+const page = await browser.newPage();
+await page.goto(process.env.URL ?? "https://www.google.com");
+console.log("title:", await page.title());
+console.log("ua:", await page.evaluate<string>("() => navigator.userAgent"));
+console.log("sum:", await page.evaluate<number>("(a) => a.x + a.y", { x: 2, y: 3 }));
+const shot = await page.fullPageScreenshot();
+writeFileSync(process.env.OUT!, shot);
+console.log("png bytes:", shot.length);
+await page.close();
+await browser.close();
+console.log("closed in", Date.now() - t0, "ms");
