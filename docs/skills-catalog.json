@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.66.3",
+  "cliVersion": "1.66.4",
   "count": 21,
   "skills": [
     {
@@ -32,7 +32,7 @@
       "version": "1.1.0",
       "description": "CI/CD pipelines on any provider: faster and cheaper without dropping a check - measure first, one pipeline per commit, input-hashed caches never saved from a failed build, no duplicate checks, sharding, change filters that keep required checks green, flakes fixed not retried, and workflow security.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-10T17:38:23+02:00",
+      "updated": "2026-10-21T14:10:41+02:00",
       "sha": "867d403190e057b828dde690999dc6d2bd0d7f589611a646522c65f9f79d5566"
     },
     {
@@ -112,7 +112,7 @@
       "version": "1.8.0",
       "description": "Git & contribution policy (senior engineering standards).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-05T14:00:39+02:00",
+      "updated": "2026-10-21T14:10:41+02:00",
       "sha": "60a6db8a88cf43e92d0b4761a39ea32bb0e16d0bada42dda5c96f8a22de74148"
     },
     {
