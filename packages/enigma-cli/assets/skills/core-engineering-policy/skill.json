@@ -6,7 +6,7 @@
   "config": [
     "codeGraph"
   ],
-  "updated": "2026-10-10T17:38:23+02:00",
-  "cliVersion": "1.66.4",
+  "updated": "2026-10-21T16:15:11+02:00",
+  "cliVersion": "1.67.0",
   "sha": "05ca63e9c23fb3fb7f4e4efab7794e839a5e094eef9c4b2d9de0a50c7541fcd0"
 }
