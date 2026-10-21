@@ -1313,6 +1313,31 @@ function headCommittedAt(cwd: string): number | null {
 }
 
 /**
+ * Unix seconds of the newest commit since `base` that carries work of its own, or null when
+ * there is none.
+ *
+ * Not HEAD's time: pulling the integration branch in makes a merge commit stamped now, and
+ * charging it would order a run over code that is already upstream - and re-charge the backlog
+ * the watch exempted, because the merge is newer than the watch. A merge counts only when it
+ * resolved something by hand (`diff-tree --cc` prints nothing for a clean one), and only merges
+ * newer than the newest plain commit are inspected, since an older one cannot move the answer.
+ */
+function workCommittedAt(cwd: string, base: string): number | null {
+    const stamp = (raw: string): number | null => {
+        const at = Number(raw);
+        return raw !== "" && Number.isFinite(at) && at > 0 ? at : null;
+    };
+    let newest = stamp(gitOut(cwd, ["log", "-1", "--no-merges", "--format=%ct", `${base}..HEAD`, "--"]).trim());
+    for (const line of gitOut(cwd, ["log", "--merges", "--format=%H %ct", `${base}..HEAD`, "--"]).split("\n")) {
+        const [sha, raw] = line.trim().split(" ");
+        const at = stamp(raw ?? "");
+        if (!sha || at === null || (newest !== null && at <= newest)) continue;
+        if (gitOut(cwd, ["diff-tree", "--cc", "--no-commit-id", sha]).trim() !== "") newest = at;
+    }
+    return newest;
+}
+
+/**
  * Whether a run recorded for this repository (`gate-ledger.ts`) is at least as new as its
  * newest commit - the one fact that stands both gate checks down, because it says the
  * pipeline already saw this work.
@@ -1331,7 +1356,18 @@ function headCommittedAt(cwd: string): number | null {
  * `git log` rather than two.
  */
 function gateValidatedHead(cwd: string, gate: GateContext, committedAt?: number): boolean {
-    const at = committedAt ?? headCommittedAt(cwd);
+    let at: number | null = committedAt ?? null;
+    if (committedAt === undefined) {
+        // Same clock as unvalidatedCommits: a merge of upstream code is not work of this branch.
+        const base = branchPoint(cwd);
+        const ahead = base === null ? 0 : Number(gitOut(cwd, ["rev-list", "--count", `${base}..HEAD`, "--"]).trim());
+        if (base !== null && Number.isInteger(ahead) && ahead > 0) {
+            at = workCommittedAt(cwd, base);
+            if (at === null) return true;
+        } else {
+            at = headCommittedAt(cwd);
+        }
+    }
     if (at === null) return false;
     const last = validatingRun(lastGateRun(cwd));
     if (last === null || last.at < at) return false;
@@ -1362,7 +1398,7 @@ function unvalidatedCommits(cwd: string, gate: GateContext): { count: number; si
     const ahead = Number(gitOut(cwd, ["rev-list", "--count", `${base}..HEAD`, "--"]).trim());
     if (!Number.isInteger(ahead) || ahead <= 0) return null;
     if (trivialWork(cwd, gate)) return null;
-    const committedAt = headCommittedAt(cwd);
+    const committedAt = workCommittedAt(cwd, base);
     if (committedAt === null) return null;
     if (gateValidatedHead(cwd, gate, committedAt)) return null;
     return { count: ahead, since: committedAt };

@@ -966,6 +966,49 @@ test("keeps the gate's watch anchor when the block-counter state is pruned", () 
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
 });
 
+test("pulling the integration branch in is not work the gate has to see", () => {
+    // A merge from upstream is stamped now, so judging by HEAD's time charged code that is
+    // already on main and re-charged the backlog the watch had exempted.
+    recordGateRun({ repoPath: join(tmpdir(), "a-sixth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    const main = branchOf(dir);
+    const hourAgo = `${Math.floor(Date.now() / 1000) - 3600} +0000`;
+    const commit = (file: string, content: string, backdated = false): void => {
+        write(dir, file, content);
+        git(dir, "add", "-A");
+        const env = backdated ? { ...process.env, GIT_AUTHOR_DATE: hourAgo, GIT_COMMITTER_DATE: hourAgo } : process.env;
+        execFileSync("git", ["commit", "-qm", "work"], { cwd: dir, stdio: "ignore", env });
+    };
+    const done = (): number => runVerifyHook(payload(dir, "All done, everything is implemented."));
+
+    git(dir, "checkout", "-q", "-b", "feature");
+    commit("src/one.ts", "export const one = 1;\n", true);
+    commit("src/app.ts", "export const a = 2;\n", true);
+    expect(done()).toBe(0);
+    // A run saw this branch's own commits; only the merge below is newer than it.
+    recordGateRun({ repoPath: dir, branch: "feature", headSha: "abc1234", status: "completed", at: Math.floor(Date.now() / 1000) - 1800 });
+
+    // A clean merge of upstream work adds nothing of this branch's own: nothing to run over.
+    git(dir, "checkout", "-q", main);
+    commit("src/upstream.ts", "export const up = 1;\n");
+    git(dir, "checkout", "-q", "feature");
+    git(dir, "merge", "-q", "--no-edit", main);
+    expect(done()).toBe(0);
+    // Saying so is true, not a skipped gate.
+    expect(runVerifyHook(payload(dir, "I didn't run the gate because the merge only brings in code that's already on main."))).toBe(0);
+
+    // A merge whose conflict was resolved by hand is work of this branch, and it is charged.
+    git(dir, "checkout", "-q", main);
+    commit("src/app.ts", "export const a = 3;\n");
+    git(dir, "checkout", "-q", "feature");
+    try { git(dir, "merge", "-q", "--no-edit", main); } catch { /* the conflict is the point */ }
+    write(dir, "src/app.ts", "export const a = 4;\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "--no-edit");
+    expect(done()).toBe(2);
+    expect(runVerifyHook(payload(dir, "I didn't run the gate because the merge only brings in code that's already on main."))).toBe(2);
+}, 120_000);
+
 test("does not order a run the gate CLI would refuse over a dirty tree", () => {
     recordGateRun({ repoPath: join(tmpdir(), "another-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
     const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
