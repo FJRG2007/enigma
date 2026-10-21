@@ -82,6 +82,27 @@ test("a merged branch is tidied, locally and on the remote", async () => {
     expect(existsSync(join(dir, "done.txt"))).toBe(true);
 });
 
+// The undo ledger was capped at 200 entries, so one large cleanup evicted every other
+// repository's restore points. It now keeps 90 days, however many that is.
+test("the undo ledger keeps every deletion from the last 90 days, not the last 200", async () => {
+    const ledger = join(HOME, ".enigma", "deleted-branches.json");
+    const recent = Array.from({ length: 250 }, (_, i) => ({ at: new Date(Date.now() - i * 60_000).toISOString(), repo: "C:/other", branch: `old/${i}`, sha: "0".repeat(40), remote: false }));
+    const expired = { at: new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString(), repo: "C:/other", branch: "expired", sha: "0".repeat(40), remote: false };
+    mkdirSync(dirname(ledger), { recursive: true });
+    writeFileSync(ledger, JSON.stringify([...recent, expired]));
+
+    const { dir } = repo("ledger");
+    branchWithWork(dir, "feat/kept-restore", "kept.txt");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge", "feat/kept-restore");
+    git(dir, "push", "-q", "origin", "main");
+    expect((await tidy(dir)).deleted).toContain("feat/kept-restore");
+
+    const entries = readLedger();
+    expect(entries[0]!.branch).toBe("feat/kept-restore");
+    expect(entries.filter((e) => e.branch.startsWith("old/")).length).toBe(250);
+    expect(entries.some((e) => e.branch === "expired")).toBe(false);
+}, 120_000);
+
 test("a squash-merged branch is recognised, which ancestry alone gets wrong", async () => {
     const { dir } = repo("squash");
     branchWithWork(dir, "feat/squashed", "squashed.txt");

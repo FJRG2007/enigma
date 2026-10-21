@@ -31,8 +31,14 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 /** Branch names never deleted, whatever the containment check says. */
 const PROTECTED = new Set(["main", "master", "develop", "development", "trunk", "release", "stable", "HEAD"]);
 
-/** How many deletions the undo ledger keeps. */
-const LEDGER_LIMIT = 200;
+/**
+ * How long the undo ledger keeps a deletion: git's own reflog window, past which `gc` may
+ * collect the commits anyway. A count was the bound before, and one large cleanup (183
+ * branches in one repository) filled all 200 slots and evicted every other repository's
+ * restore points. The count stays only as a hard ceiling on the file.
+ */
+const LEDGER_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
+const LEDGER_LIMIT = 20_000;
 
 export type SkipReason =
     | "protected-name"
@@ -143,7 +149,9 @@ export function readLedger(): LedgerEntry[] {
  * never deleted while it cannot be written down.
  */
 function recordDeletion(repo: string, entry: Omit<LedgerEntry, "at" | "repo">): void {
-    const next = [{ at: new Date().toISOString(), repo, ...entry }, ...readLedger()].slice(0, LEDGER_LIMIT);
+    const now = Date.now();
+    const kept = readLedger().filter((e) => !(now - Date.parse(e.at) > LEDGER_KEEP_MS));
+    const next = [{ at: new Date(now).toISOString(), repo, ...entry }, ...kept].slice(0, LEDGER_LIMIT);
     mkdirSync(join(enigmaHome(), ".enigma"), { recursive: true });
     writeFileSync(ledgerPath(), `${JSON.stringify(next, null, 2)}\n`);
 }
@@ -543,6 +551,9 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
             // repository and by the same proof the plan used, and only force the delete if it holds.
             const base = plan.baseRef ?? plan.defaultBranch;
             const tip = await git.resolveRef(dir, target.branch).catch(() => "");
+            // Gone already: another tidy (the gate's pass, a second session) got there first.
+            // The outcome asked for holds, so it is not a problem to report.
+            if (!tip && !await branchExists(dir, target.branch)) { result.notes.push(`${target.branch} was already deleted`); continue; }
             if (tip !== target.sha) {
                 result.problems.push(`kept ${target.branch}: it moved since it was checked`);
                 continue;
@@ -560,6 +571,7 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
                 await git.run(dir, ["branch", "-D", target.branch]);
                 result.deleted.push(target.branch);
             } catch (err) {
+                if (!await branchExists(dir, target.branch)) { result.notes.push(`${target.branch} was already deleted`); continue; }
                 result.problems.push(`kept ${target.branch}: git refused to delete it (${(err as Error).message})`);
                 continue;
             }
@@ -727,6 +739,12 @@ async function tidyOrphanRefs(dir: string, plan: TidyPlan, result: TidyResult, d
             result.problems.push(`kept ${ref}: ${(err as Error).message.split("\n")[0]}`);
         }
     }
+}
+
+/** Whether a local branch still exists; an unreadable answer counts as existing. */
+async function branchExists(dir: string, branch: string): Promise<boolean> {
+    const res = await git.runRaw(dir, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).catch(() => null);
+    return res === null || res.code !== 1;
 }
 
 /** The command that puts a deleted branch back, for the report. */
