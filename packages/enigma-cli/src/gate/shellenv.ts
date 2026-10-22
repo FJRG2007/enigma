@@ -18,6 +18,7 @@
 
 import { log } from "./log";
 import { readConfig } from "../config";
+import * as jail from "../browser-jail";
 import { watchIdle } from "./agent/proc";
 import { withRunAccountEnv } from "./account-env";
 import { userInfo, type UserInfo } from "node:os";
@@ -101,7 +102,17 @@ export function spawnConfigured(
     // A child inside a run's worktree authenticates as the account that pushed the
     // run, never as whichever session started this daemon (see account-env.ts).
     if (typeof rest.cwd === "string") rest.env = withRunAccountEnv(rest.cwd, rest.env ?? process.env);
+    // Agents and the test step run code that can start a browser; it stays headless (browser-jail.ts).
+    rest.env = { ...(rest.env ?? process.env) };
+    jail.applyAgentBrowserEnv(rest.env);
     const child = spawn(command, args, configureSpawnOptions(rest));
+    if (child.pid !== undefined) {
+        void jail.startBrowserJail(child.pid).then((browsers) => {
+            if (!browsers) return;
+            if (child.exitCode !== null || child.signalCode !== null) browsers.close();
+            else child.once("exit", () => browsers.close());
+        }, () => { /* the command guard still applies */ });
+    }
     // A gate agent is background work on someone's workstation: it gets a share of the
     // machine, not all of it. Applied after spawn and never fatal - a refused scheduling
     // hint must not fail the step (see governor.ts).

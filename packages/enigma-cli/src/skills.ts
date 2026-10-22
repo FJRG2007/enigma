@@ -21,6 +21,7 @@ import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { ensureClaudeBypassGuard } from "./claude";
 import { applyBrowserGuard } from "./browser-guard";
+import { applyBrowserGuardGlobal, CODEX_TRUST_NOTICE, mirrorBrowserGuardWiring } from "./browser-guard-deploy";
 import { claudeGlobalSettings } from "./claude-hooks";
 import { applyPostEditWiring } from "./post-edit-deploy";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
@@ -1323,6 +1324,11 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         const enabled = cfg.compress || cfg.recall || cfg.codeGraph;
         const changed: string[] = [];
         for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
+        // The browser guard for the agents Claude's settings.json does not cover (applyClaudeConfig wires Claude).
+        for (const agent of chosenAgents) {
+            if (agent.name === "claude" || opts.dryRun || !applyBrowserGuardGlobal(agent.name)) continue;
+            reporter.info(agent.name === "codex" ? CODEX_TRUST_NOTICE : `${agent.label}: a shell command that would open a visible browser window is now refused (agents test headless).`);
+        }
         if (changed.length) {
             const tools = [cfg.compress && "compress", cfg.recall && "recall", cfg.codeGraph && "code graph"].filter(Boolean).join(" + ");
             reporter.info(`enigma MCP server ${enabled ? "registered in" : "removed from"} ${changed.join(", ")}${tools ? ` (tools: ${tools})` : ""}.`);
@@ -1670,9 +1676,10 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // The browser guard, same reasoning: an install from before it existed only gains it here.
         // Account dirs too: a launch only syncs an already-deployed account when autoSync is on,
         // so without this an account could stay unguarded indefinitely.
-        if (agent.name === "claude" && hasDeployment(agent, "global")) {
-            applyBrowserGuard(claudeGlobalSettings(), true);
-            for (const a of listAccounts("claude")) if (existsSync(join(a.dir, "settings.json"))) applyBrowserGuard(join(a.dir, "settings.json"), true);
+        if (hasDeployment(agent, "global")) {
+            let wired = applyBrowserGuardGlobal(agent.name);
+            try { for (const a of listAccounts(agent.name)) wired = mirrorBrowserGuardWiring(agent.name, a.dir) || wired; } catch { /* a tool without accounts */ }
+            if (wired && agent.name === "codex") notices.push(CODEX_TRUST_NOTICE);
         }
         // A project's own `.mcp.json` (or opencode/kimi file) wins over the global entry, and one an
         // older enigma wrote starts Chrome directly: frozen flags, never closed when idle. Point every
@@ -1848,6 +1855,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorCodeGraphWiring(toolName, dir);
     mirrorTrimWiring(toolName, dir);
     mirrorCiWatchWiring(toolName, dir);
+    mirrorBrowserGuardWiring(toolName, dir);
     mirrorSubagentWiring(toolName, dir);
     mirrorHandoffWiring(toolName, dir);
     mirrorVerifyWiring(toolName, dir);

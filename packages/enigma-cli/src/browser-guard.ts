@@ -24,11 +24,12 @@ import { applyClaudeHook } from "./claude-hooks";
 import { parseGuardPayload } from "./attribution-guard";
 import type { HookGroup, HookWrite } from "./claude-hooks";
 
-/** Marker identifying enigma's handlers in settings.json (see applyClaudeHook). */
-const MARKER = "__browser-guard";
+/** Marker identifying enigma's handlers in settings.json (see applyClaudeHook), and the hidden command itself. */
+export const BROWSER_GUARD_MARKER = "__browser-guard";
+const MARKER = BROWSER_GUARD_MARKER;
 
 /** Executable names of desktop browsers, without a `.exe` suffix. */
-const BROWSER_EXE = /^(?:chrome|google-chrome(?:-stable|-beta|-unstable)?|google chrome|chromium(?:-browser)?|msedge|microsoft-edge(?:-stable|-beta|-dev)?|microsoft edge|brave|brave-browser|brave browser|firefox)$/i;
+export const BROWSER_EXE = /^(?:chrome|google-chrome(?:-stable|-beta|-unstable)?|google chrome|chromium(?:-browser)?|msedge|microsoft-edge(?:-stable|-beta|-dev)?|microsoft edge|brave|brave-browser|brave browser|firefox)$/i;
 
 /** Commands whose job is to hand a URL or file to the default browser. */
 const OPENERS = new Set(["start", "start-process", "saps", "explorer", "xdg-open", "open", "wslview", "sensible-browser", "x-www-browser", "www-browser", "open-cli"]);
@@ -95,7 +96,7 @@ function words(segment: string): string[] {
 }
 
 /** A path or command word reduced to its program name: `C:\...\chrome.exe` -> `chrome`. */
-function programName(word: string): string {
+export function programName(word: string): string {
     return (word.split(/[\\/]/).pop() ?? word).replace(/\.(?:exe|cmd|bat|ps1)$/i, "").toLowerCase();
 }
 
@@ -103,7 +104,7 @@ function programName(word: string): string {
 const BROWSER_PROBE = /^--?(?:version|help|h)$/i;
 
 /** Whether a segment starts its browser headless (`--headless`, `--headless=new`, Firefox's `-headless`). */
-function hasHeadless(segment: string): boolean {
+export function hasHeadless(segment: string): boolean {
     return /(?:^|\s|["'=,])--?headless\b/i.test(segment);
 }
 
@@ -180,7 +181,9 @@ function segmentReason(segment: string, platform: NodeJS.Platform): string {
         return "";
     }
     if (program === "python" || program === "python3" || program === "py") {
-        return args[0] === "-m" && args[1] === "webbrowser" ? "python -m webbrowser opens the default browser" : "";
+        if (args[0] === "-m" && args[1] === "webbrowser") return "python -m webbrowser opens the default browser";
+        const code = args[args.indexOf("-c") + 1];
+        return args.includes("-c") && code && /\bwebbrowser\b/.test(code) ? "python's webbrowser module opens the default browser" : "";
     }
     if (program === "playwright") {
         if (args[0] === "test" && args.some((a) => /^--(?:headed|ui|debug)\b/.test(a))) return `playwright test ${args.find((a) => /^--(?:headed|ui|debug)\b/.test(a))} runs a visible browser`;

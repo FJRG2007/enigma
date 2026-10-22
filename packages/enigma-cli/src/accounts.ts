@@ -32,6 +32,7 @@
 
 import { homedir } from "node:os";
 import { readConfig } from "./config";
+import * as jail from "./browser-jail";
 import { randomUUID } from "node:crypto";
 import { startMeasuringProxy } from "./proxy";
 import { readGlobalGuard } from "./guard-config";
@@ -806,7 +807,7 @@ export function resolveConfigDir(toolName: string, name: string): string {
  * The env-injection + child spawn is what makes account switching OS-agnostic:
  * the same call works identically on macOS, Linux and Windows.
  */
-export async function launchTool(toolName: string, name: string | null, passthrough: string[] = []): Promise<number> {
+export async function launchTool(toolName: string, name: string | null, passthrough: string[] = [], opts: { login?: boolean; } = {}): Promise<number> {
     const tool = getTool(toolName);
     // Explicit account wins; otherwise the active profile's mapping, then the
     // tool's own active account (see resolveLaunchAccount).
@@ -834,11 +835,14 @@ export async function launchTool(toolName: string, name: string | null, passthro
 
     touchLastUsed(toolName, account);
 
+    // A login opens the vendor's sign-in page on purpose, so it runs outside the browser jail.
+    const browsers = opts.login ? null : await startAgentJail(env);
     const proxy = await maybeStartProxy(toolName, env, cfg);
     try {
         return await spawnInherit(binary, passthrough, env);
     } finally {
         if (proxy) proxy.close();
+        browsers?.close();
         // Hand back whatever token the session refreshed, or the account that lent the login
         // keeps a refresh token Anthropic has already invalidated - a silent logout.
         if (store) leaveSharedStore(toolName, dir);
@@ -894,12 +898,24 @@ export async function launchInDir(toolName: string, dir: string, passthrough: st
     const cfg = readConfig().config;
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
     const env: NodeJS.ProcessEnv = { ...process.env, ...tool.envFor(dir) };
+    const browsers = await startAgentJail(env);
     const proxy = await maybeStartProxy(toolName, env, cfg);
     try {
         return await spawnInherit(binary, passthrough, env);
     } finally {
         if (proxy) proxy.close();
+        browsers?.close();
     }
+}
+
+/**
+ * Keep the agent about to be spawned from showing a browser: the env its dev servers and test
+ * reporters read, and the jail that closes any visible browser it starts anyway (browser-jail.ts).
+ * Never fails a launch: no jail just means the command guard is the only stop.
+ */
+async function startAgentJail(env: NodeJS.ProcessEnv): Promise<jail.BrowserJail | null> {
+    jail.applyAgentBrowserEnv(env);
+    try { return await jail.startBrowserJail(); } catch { return null; }
 }
 
 /**
@@ -911,7 +927,7 @@ export async function launchInDir(toolName: string, dir: string, passthrough: st
 export async function loginTool(toolName: string, name: string): Promise<number> {
     const tool = getTool(toolName);
     if (tool.loginHint) process.stdout.write(`${tool.loginHint}\n`);
-    return launchTool(toolName, name, tool.loginArgs ?? []);
+    return launchTool(toolName, name, tool.loginArgs ?? [], { login: true });
 }
 
 /**

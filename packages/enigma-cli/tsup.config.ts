@@ -40,6 +40,8 @@ export default defineConfig({
         // The CI notifier's hook and poller, answered by the launcher for the same reason.
         "ci-watch": "src/ci-watch.ts",
         leftovers: "src/leftovers.ts",
+        // The browser guard, answered by the launcher: Kimi, Codex and OpenCode run it before every shell command.
+        "browser-guard": "src/browser-guard.ts",
     },
     format: ["esm"],
     target: "node18",

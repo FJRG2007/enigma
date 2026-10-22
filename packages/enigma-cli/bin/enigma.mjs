@@ -132,6 +132,29 @@ if ((process.argv[2] === "__ci-hook" || process.argv[2] === "__ci-watch") && exi
     }
 }
 
+/**
+ * Fast path: the browser guard, for the same reason as the hooks above. Claude Code filters it
+ * with `if` patterns, but Kimi, Codex and OpenCode run it before every shell command, so a Bun
+ * start there is seconds of delay on each one. The guard is pure string work over the payload.
+ *
+ * Bundle missing -> fall through untouched and let the binary answer as it always did.
+ */
+const browserGuardBundle = join(pkgRoot, "dist", "browser-guard.js");
+if (process.argv[2] === "__browser-guard" && existsSync(browserGuardBundle)) {
+    // Read SYNCHRONOUSLY, before any await, as above.
+    let payload = "";
+    try { payload = readFileSync(0, "utf8"); } catch { /* no stdin; the guard lets the call through */ }
+    try {
+        const { runBrowserGuardHook } = await import(pathToFileURL(browserGuardBundle).href);
+        // Exit 2 is the refusal; it is never swallowed.
+        process.exit(runBrowserGuardHook(payload));
+    } catch (error) {
+        // Said out loud: a guard that stops running looks exactly like a command that was allowed.
+        process.stderr.write(`enigma: the browser guard could not run: ${error.message}\n`);
+        process.exit(0);
+    }
+}
+
 /** Resolve the binary, downloading it on first run if the postinstall was skipped. */
 async function resolveBinary() {
     if (process.env.ENIGMA_BIN_PATH && existsSync(process.env.ENIGMA_BIN_PATH)) return process.env.ENIGMA_BIN_PATH;

@@ -45,6 +45,7 @@ const URL_OPENS = [
     "open coverage/index.html",
     "start coverage/index.html",
     "python -m webbrowser http://localhost:8000",
+    "python -c \"import webbrowser; webbrowser.open('http://localhost:8000')\"",
     "gh pr view 12 --web",
     "gh browse",
     "powershell -NoProfile -Command \"Start-Process http://localhost:3000\"",
@@ -167,4 +168,13 @@ test("installs filtered PreToolUse handlers idempotently and removes them", () =
     expect(ours.hooks.every((h: { if?: string; }) => /^(?:Bash|PowerShell)\(.+\)$/.test(h.if ?? ""))).toBe(true);
     expect(applyBrowserGuard(file, false)).toBe("changed");
     expect(JSON.parse(readFileSync(file, "utf8")).hooks?.PreToolUse ?? []).toEqual([]);
+});
+
+test("Kimi's and Codex's PreToolUse payloads are read like Claude's", () => {
+    // Kimi snake-cases its hook input (hook_event_name, session_id, tool_call_id); Codex adds turn_id and model.
+    const kimi = JSON.stringify({ hook_event_name: "PreToolUse", session_id: "s", cwd: process.cwd(), tool_name: "Bash", tool_input: { command: "start http://localhost:3000", timeout: 60 }, tool_call_id: "c" });
+    const codex = JSON.stringify({ session_id: "s", turn_id: "t", transcript_path: null, cwd: process.cwd(), hook_event_name: "PreToolUse", model: "m", permission_mode: "default", tool_name: "Bash", tool_use_id: "u", tool_input: { command: "Start-Process http://localhost:3000" } });
+    expect(runBrowserGuardHook(kimi, headlessOn)).toBe(2);
+    expect(runBrowserGuardHook(codex, headlessOn)).toBe(2);
+    expect(runBrowserGuardHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: "python -c \"print(1)\"" } }), headlessOn)).toBe(0);
 });
