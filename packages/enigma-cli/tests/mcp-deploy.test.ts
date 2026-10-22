@@ -17,7 +17,7 @@ process.env.HOME = HOME;
 // it this file would inherit whatever temp dir a test file that ran earlier left behind.
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
-const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation, browserInvocation, applyContextServer, hasContextServer } = await import("../src/mcp-deploy");
+const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation, browserInvocation, applyContextServer, hasContextServer, repairProjectBrowserEntries, isStaleBrowserEntry } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -254,6 +254,35 @@ test("old npx browser entries are upgraded to the launcher", () => {
     expect(read().at(-1)).toBe("__browser-mcp");
     expect(read().join(" ")).not.toContain("chrome-devtools-mcp");
     expect(applyMcpForAccount("claude", dir)).toBe(false);
+});
+
+// A project's .mcp.json wins over the global entry. One written before the launcher existed
+// started Chrome itself (cmd /c npx ...), which nothing ever closed; the sync repoints it.
+test("stale browser entries in known projects are repointed at the launcher, nothing else is touched", () => {
+    setEnigmaValue("browser", true, "global");
+    const project = join(HOME, "work", "stale-project");
+    const other = join(HOME, "work", "upstream-repo");
+    mkdirSync(join(project, ".kimi-code"), { recursive: true });
+    mkdirSync(other, { recursive: true });
+    const stale = { type: "stdio", command: "cmd", args: ["/c", "npx", "-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--headless"] };
+    writeFileSync(join(project, ".mcp.json"), JSON.stringify({ mcpServers: { enigma: { command: "x" }, "chrome-devtools": stale } }));
+    writeFileSync(join(project, "opencode.json"), JSON.stringify({ mcp: { "chrome-devtools": { type: "local", command: ["npx", "-y", "chrome-devtools-mcp@1.10.1"], enabled: true } } }));
+    writeFileSync(join(project, ".kimi-code", "mcp.json"), JSON.stringify({ mcpServers: { "chrome-devtools": { command: "npx", args: ["chrome-devtools-mcp@1.10.1"] } } }));
+    // An upstream project's own browser server under another name is theirs, not enigma's.
+    const upstream = JSON.stringify({ mcpServers: { playwright: { command: "npx", args: ["@playwright/mcp@latest", "--headless"] } } });
+    writeFileSync(join(other, ".mcp.json"), upstream);
+    const config = join(HOME, "projects-claude.json");
+    writeFileSync(config, JSON.stringify({ projects: { [project]: {}, [other]: {}, [join(HOME, "gone")]: {} } }));
+    const fixed = repairProjectBrowserEntries([config, join(HOME, "missing.json")]);
+    expect(fixed.sort()).toEqual([join(project, ".kimi-code", "mcp.json"), join(project, ".mcp.json"), join(project, "opencode.json")].sort());
+    const claude = readJson(join(project, ".mcp.json")).mcpServers;
+    expect(claude.enigma).toEqual({ command: "x" });
+    expect(claude["chrome-devtools"].args.at(-1)).toBe("__browser-mcp");
+    expect(readJson(join(project, "opencode.json")).mcp["chrome-devtools"].command.at(-1)).toBe("__browser-mcp");
+    expect(readJson(join(project, ".kimi-code", "mcp.json")).mcpServers["chrome-devtools"].args.at(-1)).toBe("__browser-mcp");
+    expect(readFileSync(join(other, ".mcp.json"), "utf8")).toBe(upstream);
+    expect(repairProjectBrowserEntries([config])).toEqual([]);
+    expect(isStaleBrowserEntry(undefined)).toBe(false);
 });
 
 // With two managed tables, re-appending each in turn moved one behind the other on every sync.

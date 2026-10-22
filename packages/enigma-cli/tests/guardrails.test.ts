@@ -532,9 +532,29 @@ test("never flags a scroll region that contains its own scroll", () => {
     }
 });
 
+test("flags a browser launched with a visible window, in scripts and configs alike", () => {
+    for (const [file, src] of [
+        ["scratch/shots.mjs", "const browser = await chromium.launch({ headless: false });\n"], // enigma:allow-headed-browser fixture
+        ["e2e/playwright.config.ts", "export default defineConfig({ use: { headless: false } });\n"], // enigma:allow-headed-browser fixture
+        ["tools/capture.ts", "const b = await puppeteer.launch({ executablePath: chrome, \"headless\": false });\n"],
+        ["scripts/shot.py", "browser = p.chromium.launch(headless=False)\n"], // enigma:allow-headed-browser fixture
+    ] as const) {
+        const f = checkFile(file, src, null);
+        expect(f.map((x) => x.ruleId), file).toEqual(["proc-headed-browser"]);
+        expect(f[0]!.severity).toBe("block");
+    }
+    for (const src of [
+        "const browser = await chromium.launch({ headless: true });\n",
+        "const browser = await chromium.launch();\n",
+        "// headless: false would open a window\n", // enigma:allow-headed-browser fixture
+        "const browser = await chromium.launch({ headless: false }); // enigma:allow-headed-browser - the recorder IS the feature\n",
+        "const o = { headless: falsey };\n",
+    ]) expect(checkFile("scratch/shots.mjs", src, null).map((x) => x.ruleId), src).not.toContain("proc-headed-browser");
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "fe-icon-shrink", "fe-scroll-chaining", "ts-import-namespace", "ts-alias-paths", "ts-alias-deep-relative", "ts-import-extension", "ts-legacy-module-resolution", "proc-windows-hide"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "fe-icon-shrink", "fe-scroll-chaining", "ts-import-namespace", "ts-alias-paths", "ts-alias-deep-relative", "ts-import-extension", "ts-legacy-module-resolution", "proc-windows-hide", "proc-headed-browser"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

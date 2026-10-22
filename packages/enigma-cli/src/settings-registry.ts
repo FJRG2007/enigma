@@ -525,7 +525,7 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "browser-headless",
                 label: "Headless browser",
-                hint: "run the agents' Chrome without a window, so testing never pops up on your screen; turn off only to watch an agent drive it; applies the next time an agent's browser starts; enigma default: on",
+                hint: "run the agents' Chrome without a window, and refuse any command of theirs that would open one (a browser without --headless, a link sent to your browser, a headed test run), so testing never pops up on your screen; turn off only to watch an agent drive it; enigma default: on",
                 read: () => conf.readConfig().config.browserHeadless,
                 write: (value, scope) => setBrowserHeadless(value, scope),
             },

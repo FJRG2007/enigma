@@ -3224,6 +3224,15 @@ export async function run(argv: string[]): Promise<void> {
         const { runAttributionGuardHook } = await import("./attribution-guard");
         process.exit(runAttributionGuardHook(payload));
     }
+    // Hidden: the PreToolUse guard that refuses a shell command opening a visible browser window
+    // (a browser started without --headless, a URL handed to the default browser, a headed test
+    // run). Spawned only for commands naming one (the handlers carry `if` filters).
+    if (argv[0] === "__browser-guard") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runBrowserGuardHook } = await import("./browser-guard");
+        process.exit(runBrowserGuardHook(payload));
+    }
     // Hidden: the subagent budget (PreToolUse on Agent, SubagentStart, SubagentStop). Spawned only
     // around a subagent launch, never for other tool calls (the PreToolUse entry matches Agent).
     // Hidden: hands a saved handoff to a session that starts fresh (Claude Code, Codex, Kimi, OpenCode).

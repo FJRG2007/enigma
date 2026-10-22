@@ -219,6 +219,18 @@ test("isAutomationBrowser takes only the main process of an automation profile, 
     expect(res.automationProfileDir(MCP_BROWSER)).toBe("C:\\Users\\me\\AppData\\Local\\Temp\\puppeteer_dev_chrome_profile-oEi2DK");
 });
 
+// Playwright's own launch (a script an agent wrote) runs on its temp profile, and a script that
+// crashed or forgot `browser.close()` leaves it running exactly like the MCP server's.
+test("a browser on Playwright's temp profile is an automation browser too", () => {
+    const pw = String.raw`"C:\Users\me\AppData\Local\ms-playwright\chromium-1200\chrome-win\chrome.exe" --no-first-run --user-data-dir=C:\Users\me\AppData\Local\Temp\playwright_chromiumdev_profile-AbC123 --remote-debugging-pipe about:blank`;
+    expect(res.isAutomationBrowser(pw)).toBe(true);
+    expect(res.automationProfileDir(pw)).toBe("C:\\Users\\me\\AppData\\Local\\Temp\\playwright_chromiumdev_profile-AbC123");
+    const root = mkdtempSync(join(tmpdir(), "enigma-res-pw-"));
+    const profile = join(root, "playwright_chromiumdev_profile-AbC123");
+    mkdirSync(profile);
+    expect(res.removeTempProfile(profile, root)).toBe(true);
+});
+
 test("an automation browser is reaped only past its age", () => {
     const young = res.selectLeftovers([{ pid: 4_000_001, ageSec: res.AUTOMATION_BROWSER_MIN_AGE_SEC - 1, command: MCP_BROWSER }]);
     const old = res.selectLeftovers([{ pid: 4_000_002, ageSec: res.AUTOMATION_BROWSER_MIN_AGE_SEC, command: MCP_BROWSER }]);

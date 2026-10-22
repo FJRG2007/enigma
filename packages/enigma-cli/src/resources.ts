@@ -356,8 +356,11 @@ export function isWholeMachineSearch(commandLine: string): boolean {
  */
 export const AUTOMATION_BROWSER_MIN_AGE_SEC = 1800;
 
-/** Throwaway profiles only automation creates: Puppeteer's `--isolated` profile and `enigma design`'s. */
-const AUTOMATION_PROFILE = /--user-data-dir=["']?([^"'\s]*?[\\/](?:puppeteer_dev_chrome_profile-|enigma-design-)[\w-]+)/i;
+/** Name of a throwaway profile only automation creates: Puppeteer's (`--isolated`), Playwright's and `enigma design`'s. */
+const AUTOMATION_PROFILE_NAME = "(?:puppeteer_dev_chrome_profile-|playwright_chromiumdev_profile-|enigma-design-)[\\w-]+";
+
+/** The automation profile directory in a browser command line. */
+const AUTOMATION_PROFILE = new RegExp(String.raw`--user-data-dir=["']?([^"'\s]*?[\\/]${AUTOMATION_PROFILE_NAME})`, "i");
 
 /**
  * Whether a command line is the MAIN process of a browser an agent's tooling launched: a
@@ -383,7 +386,7 @@ export function automationProfileDir(commandLine: string): string | null {
 export function removeTempProfile(dir: string, tempRoot: string = tmpdir()): boolean {
     const full = resolve(dir);
     if (resolve(dirname(full)).toLowerCase() !== resolve(tempRoot).toLowerCase()) return false;
-    if (!/^(?:puppeteer_dev_chrome_profile-|enigma-design-)[\w-]+$/.test(basename(full))) return false;
+    if (!new RegExp(`^${AUTOMATION_PROFILE_NAME}$`).test(basename(full))) return false;
     try { rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); return true; } catch { return false; }
 }
 
@@ -454,7 +457,7 @@ function leftoverCandidates(): Omit<LeftoverProc, "kind">[] {
     // `%find%` and not `%find %`: the real command line is `...inind.exe" /c/ -name x`,
     // so the trailing space matched nothing. The pattern is meant to be loose - the regexes
     // above do the deciding, and a row the query drops is a process nobody reaps.
-    const where = "CommandLine LIKE ''%statusline%'' OR CommandLine LIKE ''%find%'' OR CommandLine LIKE ''%puppeteer_dev_chrome_profile%'' OR CommandLine LIKE ''%enigma-design-%''";
+    const where = "CommandLine LIKE ''%statusline%'' OR CommandLine LIKE ''%find%'' OR CommandLine LIKE ''%puppeteer_dev_chrome_profile%'' OR CommandLine LIKE ''%playwright_chromiumdev_profile%'' OR CommandLine LIKE ''%enigma-design-%''";
     const emit = "ForEach-Object { [string]$_.ProcessId + '|' + [string][int]((Get-Date) - $_.CreationDate).TotalSeconds + '|' + $_.CommandLine }";
     const script = `Get-CimInstance Win32_Process -Filter '${where}' | ${emit}`;
     return parseWinProcs(run("powershell", ["-NoProfile", "-NonInteractive", "-Command", script]));
@@ -532,7 +535,7 @@ export function sweepStaleProfiles(liveCommands: string[], tempRoot: string = tm
     let entries: string[];
     try { entries = readdirSync(tempRoot); } catch { return 0; }
     for (const name of entries) {
-        if (!/^(?:puppeteer_dev_chrome_profile-|enigma-design-)[\w-]+$/.test(name)) continue;
+        if (!new RegExp(`^${AUTOMATION_PROFILE_NAME}$`).test(name)) continue;
         if (liveCommands.some((c) => c.includes(name))) continue;
         const dir = join(tempRoot, name);
         try {

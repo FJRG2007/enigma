@@ -228,6 +228,51 @@ const SERVERS: ManagedServer[] = [
     { name: "chrome-devtools", enabled: () => readConfig().config.browser, invocation: (tool) => browserInvocation(tool) },
 ];
 
+/** Project-local files that can hold a browser server entry: tool, path in the project, parent key. */
+const PROJECT_MCP_FILES: Array<[tool: string, rel: string, parentKey: string]> = [
+    ["claude", ".mcp.json", "mcpServers"],
+    ["opencode", "opencode.json", "mcp"],
+    ["kimi", join(".kimi-code", "mcp.json"), "mcpServers"],
+];
+
+/**
+ * Whether a browser server entry starts `chrome-devtools-mcp` itself instead of enigma's launcher.
+ * Such an entry (written by an enigma from before the launcher) runs Chrome with whatever flags
+ * it was frozen with and is never closed when idle; on Windows its `cmd /c npx` chain orphans the
+ * browser when the session ends.
+ */
+export function isStaleBrowserEntry(entry: unknown): boolean {
+    const text = JSON.stringify(entry ?? null);
+    return text.includes("chrome-devtools-mcp") && !text.includes("__browser-mcp");
+}
+
+/**
+ * Point every stale `chrome-devtools` entry in the projects' own config files at the launcher.
+ * `enigma install --local` is the only writer of those files and runs once per project, so an
+ * entry it wrote before the launcher existed stayed behind forever - and a project entry wins
+ * over the global one. Projects are the ones the given Claude config files (`.claude.json`) list.
+ * Returns the files rewritten.
+ */
+export function repairProjectBrowserEntries(claudeConfigs: string[]): string[] {
+    const projects = new Set<string>();
+    for (const file of claudeConfigs) {
+        const listed = readJson<{ projects?: Record<string, unknown>; }>(file)?.projects;
+        if (listed && typeof listed === "object") for (const dir of Object.keys(listed)) projects.add(dir);
+    }
+    const server = SERVERS.find((s) => s.name === "chrome-devtools")!;
+    const fixed: string[] = [];
+    for (const dir of projects) {
+        for (const [tool, rel, parentKey] of PROJECT_MCP_FILES) {
+            const file = join(dir, rel);
+            if (!existsSync(file)) continue;
+            const parent = readJson<Record<string, unknown>>(file)?.[parentKey];
+            const entry = parent && typeof parent === "object" ? (parent as Record<string, unknown>)[server.name] : undefined;
+            if (isStaleBrowserEntry(entry) && writeEntry(tool, file, server, server.enabled())) fixed.push(file);
+        }
+    }
+    return fixed;
+}
+
 /** Write/remove one managed MCP entry in `file` for `tool`, per `enabled`. */
 function writeEntry(tool: string, file: string, server: ManagedServer, enabled: boolean): boolean {
     const inv = server.invocation(tool);

@@ -6,7 +6,7 @@
 
 import * as conf from "./config";
 import * as p from "@clack/prompts";
-import { getTool } from "./accounts";
+import { getTool, listAccounts } from "./accounts";
 import { setKimiTrust } from "./kimi";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { ensureClaudeBypassGuard } from "./claude";
+import { applyBrowserGuard } from "./browser-guard";
 import { claudeGlobalSettings } from "./claude-hooks";
 import { applyPostEditWiring } from "./post-edit-deploy";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
@@ -28,7 +29,7 @@ import { applyAttributionGuard } from "./attribution-guard";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
-import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
+import { applyMcpForAgent, applyMcpForAccount, repairProjectBrowserEntries } from "./mcp-deploy";
 import { applyHandoffWiring, mirrorHandoffWiring } from "./handoff-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applySubagentWiring, mirrorSubagentWiring } from "./subagent-deploy";
@@ -40,7 +41,7 @@ import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha }
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeSearchGuard, setClaudeTrust } from "./claude";
+import { claudeSettingsPath, disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeSearchGuard, setClaudeTrust } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -1225,6 +1226,9 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (disableClaudeAttribution(claudeScope)) {
             reporter.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
         }
+        if (applyBrowserGuard(claudeSettingsPath(claudeScope), true) === "changed") {
+            reporter.info("Claude Code: a shell command that would open a visible browser window is now refused (agents test headless).");
+        }
         if (disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
@@ -1663,6 +1667,15 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // before the guard existed only gains it here. Always on - its attribution check reads
         // the setting at run time, its home-path check applies either way.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
+        // The browser guard, same reasoning: an install from before it existed only gains it here.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) applyBrowserGuard(claudeGlobalSettings(), true);
+        // A project's own `.mcp.json` (or opencode/kimi file) wins over the global entry, and one an
+        // older enigma wrote starts Chrome directly: frozen flags, never closed when idle. Point every
+        // project Claude knows about back at the launcher.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) {
+            const configs = [join(enigmaHome(), ".claude.json"), ...listAccounts("claude").map((a) => join(a.dir, ".claude.json"))];
+            for (const file of repairProjectBrowserEntries(configs)) notices.push(`the browser server entry in ${file}`);
+        }
         // The subagent budget, same reasoning: hook wiring plus autoCompactWindow that an install from
         // before it existed only gains here. Said once, since a refused launch is new behavior.
         // Handoff delivery and the relay mod, same reasoning: settings wiring an existing install gains here.

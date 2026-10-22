@@ -115,6 +115,15 @@ export function isHeadless(): boolean {
 }
 
 /**
+ * Whether this process runs inside an agent's tool call (Claude Code sets `CLAUDECODE=1` in the
+ * environment of every command it runs). An agent that starts `enigma dashboard` to check its
+ * work must not open a tab in the user's browser that nobody closes; the URL is printed instead.
+ */
+export function insideAgent(): boolean {
+    return process.env.CLAUDECODE === "1";
+}
+
+/**
  * Open a URL in the default browser, detached and best-effort; returns false when
  * no browser could be launched so the caller can print the URL instead. The URL is
  * built by us from constants + URL-encoded params (never untrusted input). Windows
@@ -127,7 +136,7 @@ export function isHeadless(): boolean {
  * try/catch cannot see it, and it would take the whole CLI down.
  */
 export function openUrl(url: string): boolean {
-    if (isHeadless()) return false;
+    if (isHeadless() || insideAgent()) return false;
     try {
         const [bin, args] = process.platform === "win32"
             ? ["rundll32", ["url.dll,FileProtocolHandler", url]] as const
