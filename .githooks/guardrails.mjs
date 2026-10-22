@@ -1989,6 +1989,21 @@ var BUILTIN_RULES = [
     message: "Process spawned without windowsHide. On Windows a console child started by a process that has no console of its own - a daemon, an editor hook, a detached background task - pops a real console window on screen and closes it again, which reads as something crashing. Add `windowsHide: true` to the options object; it is inert on macOS and Linux, and inert on Windows when the parent already has a console, so it is safe on every call that is not deliberately opening a terminal for the user. For one that IS (a login flow that must show a terminal), mark the call with an `enigma:` note.",
     severity: "block"
   },
+  {
+    id: "proc-headed-browser",
+    label: "An automated browser runs headless",
+    files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs", "*.jsx", "*.py"],
+    excludeFiles: ["*.min.js", "*.d.ts", "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**", "dist/**", "build/**", "node_modules/**", "vendor/**"],
+    scope: "file",
+    // Puppeteer, Playwright and Selenium all default to headless, so turning it off is the one
+    // file-local signal of a window opening on the user's screen. Tests and configs are NOT
+    // excluded: a `playwright.config.ts` with `headless: false` is exactly a run that shows one.
+    // The shell form (`--headed`, a browser started without --headless) is browser-guard.ts.
+    pattern: `^(?!.*enigma:allow-headed-browser).*\\bheadless["']?\\s*[:=]\\s*(?:false|False)\\b`,
+    flags: "",
+    message: "This launches a browser with a visible window, which opens on the user's screen and is left there. Run it headless (`headless: true`, or leave the option out - Puppeteer and Playwright default to headless) and close the browser when the check is done. Mark the line `enigma:allow-headed-browser` only when showing the window IS the feature.",
+    severity: "block"
+  },
   // NOTE: no rule for "render the cached snapshot, then patch only what changed". Whether a
   // fresh response REPLACES the rendered list or is reconciled into it is a property of the
   // state update, which normally lives in a store, a query library's cache or a parent - and
