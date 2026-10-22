@@ -236,14 +236,14 @@ const PROJECT_MCP_FILES: Array<[tool: string, rel: string, parentKey: string]> =
 ];
 
 /**
- * Whether a browser server entry starts `chrome-devtools-mcp` itself instead of enigma's launcher.
- * Such an entry (written by an enigma from before the launcher) runs Chrome with whatever flags
- * it was frozen with and is never closed when idle; on Windows its `cmd /c npx` chain orphans the
- * browser when the session ends.
+ * Whether a browser server entry is one an enigma from before the launcher wrote: it starts
+ * `chrome-devtools-mcp` itself with enigma's own flag set, runs Chrome with whatever flags it was
+ * frozen with and is never closed when idle; on Windows its `cmd /c npx` chain orphans the
+ * browser when the session ends. An entry without enigma's flags is the project's own.
  */
 export function isStaleBrowserEntry(entry: unknown): boolean {
     const text = JSON.stringify(entry ?? null);
-    return text.includes("chrome-devtools-mcp") && !text.includes("__browser-mcp");
+    return ["chrome-devtools-mcp", "--isolated", "--no-usage-statistics", "--no-performance-crux"].every((s) => text.includes(s)) && !text.includes("__browser-mcp");
 }
 
 /**
@@ -261,6 +261,7 @@ export function repairProjectBrowserEntries(claudeConfigs: string[]): string[] {
     }
     const server = SERVERS.find((s) => s.name === "chrome-devtools")!;
     const fixed: string[] = [];
+    if (!server.enabled()) return fixed;
     for (const dir of projects) {
         for (const [tool, rel, parentKey] of PROJECT_MCP_FILES) {
             const file = join(dir, rel);

@@ -264,12 +264,13 @@ test("stale browser entries in known projects are repointed at the launcher, not
     const other = join(HOME, "work", "upstream-repo");
     mkdirSync(join(project, ".kimi-code"), { recursive: true });
     mkdirSync(other, { recursive: true });
-    const stale = { type: "stdio", command: "cmd", args: ["/c", "npx", "-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--headless"] };
+    const flags = ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux"];
+    const stale = { type: "stdio", command: "cmd", args: ["/c", "npx", ...flags, "--headless"] };
     writeFileSync(join(project, ".mcp.json"), JSON.stringify({ mcpServers: { enigma: { command: "x" }, "chrome-devtools": stale } }));
-    writeFileSync(join(project, "opencode.json"), JSON.stringify({ mcp: { "chrome-devtools": { type: "local", command: ["npx", "-y", "chrome-devtools-mcp@1.10.1"], enabled: true } } }));
-    writeFileSync(join(project, ".kimi-code", "mcp.json"), JSON.stringify({ mcpServers: { "chrome-devtools": { command: "npx", args: ["chrome-devtools-mcp@1.10.1"] } } }));
-    // An upstream project's own browser server under another name is theirs, not enigma's.
-    const upstream = JSON.stringify({ mcpServers: { playwright: { command: "npx", args: ["@playwright/mcp@latest", "--headless"] } } });
+    writeFileSync(join(project, "opencode.json"), JSON.stringify({ mcp: { "chrome-devtools": { type: "local", command: ["npx", ...flags], enabled: true } } }));
+    writeFileSync(join(project, ".kimi-code", "mcp.json"), JSON.stringify({ mcpServers: { "chrome-devtools": { command: "npx", args: [...flags, "--headless"] } } }));
+    // An upstream project's own browser server is theirs, not enigma's, under any name.
+    const upstream = JSON.stringify({ mcpServers: { playwright: { command: "npx", args: ["@playwright/mcp@latest", "--headless"] }, "chrome-devtools": { command: "npx", args: ["chrome-devtools-mcp@latest"] } } });
     writeFileSync(join(other, ".mcp.json"), upstream);
     const config = join(HOME, "projects-claude.json");
     writeFileSync(config, JSON.stringify({ projects: { [project]: {}, [other]: {}, [join(HOME, "gone")]: {} } }));
@@ -283,6 +284,20 @@ test("stale browser entries in known projects are repointed at the launcher, not
     expect(readFileSync(join(other, ".mcp.json"), "utf8")).toBe(upstream);
     expect(repairProjectBrowserEntries([config])).toEqual([]);
     expect(isStaleBrowserEntry(undefined)).toBe(false);
+});
+
+// With the browser server turned off the repair has nothing to point at, and removing an entry is not its job.
+test("the project repair never removes an entry when the browser server is off", () => {
+    setEnigmaValue("browser", false, "global");
+    const project = join(HOME, "work", "browser-off-project");
+    mkdirSync(project, { recursive: true });
+    const stale = JSON.stringify({ mcpServers: { "chrome-devtools": { command: "npx", args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux", "--headless"] } } });
+    writeFileSync(join(project, ".mcp.json"), stale);
+    const config = join(HOME, "browser-off-claude.json");
+    writeFileSync(config, JSON.stringify({ projects: { [project]: {} } }));
+    expect(repairProjectBrowserEntries([config])).toEqual([]);
+    expect(readFileSync(join(project, ".mcp.json"), "utf8")).toBe(stale);
+    setEnigmaValue("browser", true, "global");
 });
 
 // With two managed tables, re-appending each in turn moved one behind the other on every sync.

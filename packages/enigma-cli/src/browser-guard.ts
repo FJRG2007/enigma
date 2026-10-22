@@ -50,9 +50,10 @@ const PLAYWRIGHT_WINDOWS = new Set(["show-report", "show-trace", "codegen", "ope
  * purpose: Claude Code runs EVERY handler of a command it cannot evaluate against the filters
  * (measured: anything with `$(...)` or `$VAR`), so each pattern here is one more process for
  * those. `*hrom*` is chrome, Chrome and chromium; `*http*` is any URL handed to an opener,
- * lighthouse or a browser; `*open*` is open, xdg-open, `--open` and `cypress open`.
+ * lighthouse or a browser; `*open*` is open, xdg-open, `--open` and `cypress open`; `*rave*` is
+ * brave and Brave.
  */
-export const COMMAND_PATTERNS = ["*hrom*", "*msedge*", "*http*", "*open*", "*.htm*", "*playwright*", "*--web*", "*browse*", "*--ui*", "*storybook*", "*ng serve*"];
+export const COMMAND_PATTERNS = ["*hrom*", "*msedge*", "*irefox*", "*rave*", "*http*", "*open*", "*.htm*", "*playwright*", "*--web*", "*browse*", "*--ui*", "*storybook*", "*ng serve*"];
 
 /**
  * The command without heredoc and here-string bodies: they are data written to a file or a
@@ -97,6 +98,9 @@ function words(segment: string): string[] {
 function programName(word: string): string {
     return (word.split(/[\\/]/).pop() ?? word).replace(/\.(?:exe|cmd|bat|ps1)$/i, "").toLowerCase();
 }
+
+/** Flags a browser answers on the console and exits, except on Windows where Chrome ignores them and opens a window. */
+const BROWSER_PROBE = /^--?(?:version|help|h)$/i;
 
 /** Whether a segment starts its browser headless (`--headless`, `--headless=new`, Firefox's `-headless`). */
 function hasHeadless(segment: string): boolean {
@@ -146,22 +150,26 @@ function openerTarget(opener: string, args: string[]): string | null {
 }
 
 /** Why one segment would show a browser window, or "" when it would not. */
-function segmentReason(segment: string): string {
+function segmentReason(segment: string, platform: NodeJS.Platform): string {
     const all = words(segment);
     if (all.some((w) => /^PWDEBUG=(?!0\b)/i.test(w))) return "PWDEBUG opens the Playwright inspector and a headed browser";
     const cmd = commandWords(segment);
     if (!cmd.length) return "";
     const program = programName(cmd[0]!);
     const args = cmd.slice(1);
-    if (BROWSER_EXE.test(program)) return hasHeadless(segment) ? "" : `${program} started without --headless`;
+    if (BROWSER_EXE.test(program)) {
+        if (platform !== "win32" && args.length && args.every((a) => BROWSER_PROBE.test(a))) return "";
+        return hasHeadless(segment) ? "" : `${program} started without --headless`;
+    }
     // A command handed to another shell as text is judged as the command it is:
     // `powershell -Command "Start-Process http://..."`, `bash -c "..."`, and `cmd /c "start ..."`,
     // where the wrappers are already gone and one quoted word holding spaces is left.
     if (NESTING_SHELLS.has(program)) {
-        const at = args.findIndex((a) => /^-(?:c|command)$/i.test(a));
-        return at === -1 ? "" : visibleBrowserReason(args.slice(at + 1).join(" "));
+        const flag = program === "powershell" || program === "pwsh" ? /^-(?:c|command)$/i : /^-[a-z]*c$/;
+        const at = args.findIndex((a) => flag.test(a));
+        return at === -1 ? "" : visibleBrowserReason(args.slice(at + 1).join(" "), platform);
     }
-    if (cmd.length === 1 && /\s/.test(cmd[0]!)) return visibleBrowserReason(cmd[0]!);
+    if (cmd.length === 1 && /\s/.test(cmd[0]!)) return visibleBrowserReason(cmd[0]!, platform);
     if (program === "rundll32" && args.some((a) => /url\.dll|FileProtocolHandler|shell32\.dll,ShellExec_RunDLL/i.test(a))) return "rundll32 hands the URL to the default browser";
     if (program === "gio" && args[0] === "open" && args[1] && BROWSER_TARGET.test(args[1])) return "gio open hands the URL to the default browser";
     if (OPENERS.has(program)) {
@@ -192,9 +200,9 @@ function segmentReason(segment: string): string {
 }
 
 /** Why `command` would put a browser window on the user's screen, or "" when it would not. */
-export function visibleBrowserReason(command: string): string {
+export function visibleBrowserReason(command: string, platform: NodeJS.Platform = process.platform): string {
     for (const segment of commandSegments(command)) {
-        const reason = segmentReason(segment);
+        const reason = segmentReason(segment, platform);
         if (reason) return reason;
     }
     return "";

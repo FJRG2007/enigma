@@ -20,6 +20,11 @@ const BROWSER_STARTS = [
     "& \"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --new-window about:blank",
     "google-chrome-stable --app=http://localhost:5173",
     "firefox http://localhost:8080",
+    "firefox",
+    "firefox about:blank",
+    "brave-browser",
+    "Start-Process firefox",
+    "start brave",
     "Start-Process chrome http://localhost:3000",
     "Start-Process -FilePath \"msedge.exe\" -ArgumentList \"http://localhost:3000\"",
     "cmd /c start chrome http://localhost:3000",
@@ -46,6 +51,7 @@ const URL_OPENS = [
     "pwsh -c Start-Process http://localhost:3000",
     "bash -c \"xdg-open http://localhost:3000\"",
     "cmd /c \"start http://localhost:3000\"",
+    "bash -lc \"xdg-open http://localhost:3000\"",
 ];
 
 const HEADED_TOOLS = [
@@ -115,7 +121,17 @@ test("lets through headless launches and commands that only name a browser", () 
         "powershell -NoProfile -Command \"Get-Process chrome\"",
         "bash scripts/open-report.sh",
         "bash -c \"npm run build\"",
+        "bash -lc \"npm run build\"",
     ]) expect(visibleBrowserReason(command), command).toBe("");
+});
+
+// A version or help probe prints and exits, except Chrome on Windows, which ignores the flag and opens a window.
+test("a browser version probe passes except on Windows", () => {
+    for (const command of ["google-chrome --version", "chromium --help", "firefox --version"]) {
+        expect(visibleBrowserReason(command, "linux"), command).toBe("");
+        expect(visibleBrowserReason(command, "win32"), command).not.toBe("");
+    }
+    expect(visibleBrowserReason("google-chrome --version http://localhost:3000", "linux")).not.toBe("");
 });
 
 test("heredoc and here-string bodies are data, not commands", () => {
