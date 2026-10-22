@@ -1668,7 +1668,12 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // the setting at run time, its home-path check applies either way.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
         // The browser guard, same reasoning: an install from before it existed only gains it here.
-        if (agent.name === "claude" && hasDeployment(agent, "global")) applyBrowserGuard(claudeGlobalSettings(), true);
+        // Account dirs too: a launch only syncs an already-deployed account when autoSync is on,
+        // so without this an account could stay unguarded indefinitely.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) {
+            applyBrowserGuard(claudeGlobalSettings(), true);
+            for (const a of listAccounts("claude")) if (existsSync(join(a.dir, "settings.json"))) applyBrowserGuard(join(a.dir, "settings.json"), true);
+        }
         // A project's own `.mcp.json` (or opencode/kimi file) wins over the global entry, and one an
         // older enigma wrote starts Chrome directly: frozen flags, never closed when idle. Point every
         // project Claude knows about back at the launcher.
