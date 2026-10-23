@@ -109,8 +109,8 @@ export function spawnConfigured(
     if (child.pid !== undefined) {
         void jail.startBrowserJail(child.pid).then((browsers) => {
             if (!browsers) return;
-            if (child.exitCode !== null || child.signalCode !== null) browsers.close();
-            else child.once("exit", () => browsers.close());
+            if (child.exitCode !== null || child.signalCode !== null) void browsers.close();
+            else child.once("exit", () => void browsers.close());
         }, () => { /* the command guard still applies */ });
     }
     // A gate agent is background work on someone's workstation: it gets a share of the

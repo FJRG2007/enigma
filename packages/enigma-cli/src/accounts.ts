@@ -842,7 +842,7 @@ export async function launchTool(toolName: string, name: string | null, passthro
         return await spawnInherit(binary, passthrough, env);
     } finally {
         if (proxy) proxy.close();
-        browsers?.close();
+        await browsers?.close();
         // Hand back whatever token the session refreshed, or the account that lent the login
         // keeps a refresh token Anthropic has already invalidated - a silent logout.
         if (store) leaveSharedStore(toolName, dir);
@@ -904,7 +904,7 @@ export async function launchInDir(toolName: string, dir: string, passthrough: st
         return await spawnInherit(binary, passthrough, env);
     } finally {
         if (proxy) proxy.close();
-        browsers?.close();
+        await browsers?.close();
     }
 }
 

@@ -16,8 +16,9 @@
  * has drawn a window and, measured, before a console child printed its first line. When the
  * agent exits, every browser still in the job is closed, headless ones included.
  *
- * Linux and macOS: the launcher polls `ps` for its own descendants (on Linux it also becomes the
- * subreaper, so an orphaned browser is re-parented to it instead of to init). macOS `open` starts
+ * Linux and macOS: the launcher polls `ps` for its own descendants, and keeps following one it
+ * has seen after its parent exits (on Linux it also becomes the subreaper, so an orphaned browser
+ * is re-parented to it instead of to init, and it reaps the ones it adopted). macOS `open` starts
  * an app through launchd, outside the tree: the command guard is the only stop for that one.
  *
  * What this cannot stop: a URL handed to a browser the user already has open. The new process
@@ -25,20 +26,22 @@
  * otherwise the tab opens in the user's window. The command guard and BROWSER=none (which Vite
  * and Create React App honor) are what cover that case.
  *
- * A sign-in page an agent opens for its own login (Claude's /login, `codex login`) is let through:
- * it is the user's action, and its URL names the vendor's authorize endpoint.
+ * A sign-in page is let through, and left open when the session ends: an agent's own login
+ * (Claude's /login, `codex login`), whose URL names the vendor's authorize endpoint, or an MCP
+ * server's OAuth sign-in, whose URL is an authorization request (`client_id` and `response_type`).
+ * Both are the user's action, and the browser they start may become the user's own.
  */
 
 import { join } from "node:path";
 import { enigmaHome } from "./util";
 import { readConfig } from "./config";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { BROWSER_EXE, hasHeadless, programName } from "./browser-guard";
 
 /** A running jail; `close` stops watching and closes every browser the session left behind. */
 export interface BrowserJail {
-    close(): void;
+    close(): Promise<void>;
 }
 
 /** Browsers BROWSER_EXE does not name. */
@@ -62,18 +65,28 @@ export function isBrowserImage(image: string): boolean {
     return BROWSER_EXE.test(name) || EXTRA_BROWSER_IMAGE.test(name) || PLAYWRIGHT_WEBKIT.test(image);
 }
 
-/** Whether every URL in a command line is a vendor sign-in page (and there is at least one). */
+/** An OAuth 2.0 authorization request (RFC 6749 4.1.1) over https: how any provider's sign-in page opens. */
+function isAuthorizationRequest(url: URL): boolean {
+    return url.protocol === "https:" && url.searchParams.has("client_id") && url.searchParams.has("response_type");
+}
+
+/** Whether every URL in a command line is a sign-in page (and there is at least one). */
 export function opensOnlyLogin(commandLine: string): boolean {
     const urls = commandLine.match(/https?:\/\/[^\s"']+/gi) ?? [];
     if (!urls.length) return false;
     return urls.every((raw) => {
         try {
             const url = new URL(raw);
-            return LOGIN_HOST.test(url.hostname) && LOGIN_PATH.test(url.pathname);
+            return (LOGIN_HOST.test(url.hostname) && LOGIN_PATH.test(url.pathname)) || isAuthorizationRequest(url);
         } catch {
             return false;
         }
     });
+}
+
+/** Whether a browser still running when the session ends is closed: not a helper (it dies with its main process) nor a sign-in. */
+export function closedAtExit(commandLine: string): boolean {
+    return !HELPER_PROCESS.test(` ${commandLine}`) && !opensOnlyLogin(commandLine);
 }
 
 /** Whether a process is a browser's main process that will put a window on screen. */
@@ -272,41 +285,52 @@ function windowsJail(ffi: typeof import("bun:ffi"), root: number): BrowserJail |
     timer.unref?.();
 
     return {
-        close(): void {
+        async close(): Promise<void> {
             clearInterval(timer);
             drain();
             sweepEscaped();
+            const leftBehind = (_: string, commandLine: string): boolean => closedAtExit(commandLine);
             const list = new BigUint64Array(1 + 4096);
             if (k32.QueryInformationJobObject(job, JOB_BASIC_PROCESS_ID_LIST, ptr(list), list.byteLength, null)) {
                 const count = new Uint32Array(list.buffer, 0, 2)[1]!;
-                for (const pid of list.subarray(1, 1 + count)) inspect(Number(pid), () => true, "closed-at-exit");
+                for (const pid of list.subarray(1, 1 + count)) inspect(Number(pid), leftBehind, "closed-at-exit");
             }
-            for (const pid of escaped) inspect(pid, () => true, "closed-at-exit");
+            for (const pid of escaped) inspect(pid, leftBehind, "closed-at-exit");
             k32.CloseHandle(port);
             k32.CloseHandle(job);
         },
     };
 }
 
-/** One `ps` row: pid, parent pid, full command line. */
-export function parsePsTree(out: string): Array<{ pid: number; ppid: number; args: string; }> {
-    const rows: Array<{ pid: number; ppid: number; args: string; }> = [];
+/** One `ps` row: pid, parent pid, state (`Z...` for a zombie), full command line. */
+export interface PsRow {
+    pid: number;
+    ppid: number;
+    stat: string;
+    args: string;
+}
+
+/** Parse `ps -o pid=,ppid=,stat=,args=`. */
+export function parsePsTree(out: string): PsRow[] {
+    const rows: PsRow[] = [];
     for (const line of out.split("\n")) {
-        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
-        if (match) rows.push({ pid: Number(match[1]), ppid: Number(match[2]), args: match[3]!.trim() });
+        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+        if (match) rows.push({ pid: Number(match[1]), ppid: Number(match[2]), stat: match[3]!, args: match[4]!.trim() });
     }
     return rows;
 }
 
-/** The descendants of `root` in a process listing. */
-export function descendantsOf(root: number, rows: Array<{ pid: number; ppid: number; args: string; }>): Array<{ pid: number; ppid: number; args: string; }> {
-    const children = new Map<number, Array<{ pid: number; ppid: number; args: string; }>>();
+/** The descendants of `roots` in a process listing, the roots themselves left out. */
+export function descendantsOf(roots: number | Iterable<number>, rows: PsRow[]): PsRow[] {
+    const children = new Map<number, PsRow[]>();
     for (const row of rows) children.set(row.ppid, [...(children.get(row.ppid) ?? []), row]);
-    const found: Array<{ pid: number; ppid: number; args: string; }> = [];
-    const queue = [root];
+    const seen = new Set<number>(typeof roots === "number" ? [roots] : roots);
+    const queue = [...seen];
+    const found: PsRow[] = [];
     while (queue.length) {
         for (const child of children.get(queue.shift()!) ?? []) {
-            if (child.pid === root || found.includes(child)) continue;
+            if (seen.has(child.pid)) continue;
+            seen.add(child.pid);
             found.push(child);
             queue.push(child.pid);
         }
@@ -314,27 +338,76 @@ export function descendantsOf(root: number, rows: Array<{ pid: number; ppid: num
     return found;
 }
 
-/** The Linux/macOS jail: poll the descendants of `root`. */
+/** Every process on the machine, or null when `ps` fails. Asynchronous: the gate daemon runs a jail per child it spawns. */
+function listProcesses(): Promise<PsRow[] | null> {
+    return new Promise((resolve) => {
+        execFile("ps", ["-A", "-o", "pid=,ppid=,stat=,args="], { encoding: "utf8", windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
+            resolve(error ? null : parsePsTree(stdout));
+        });
+    });
+}
+
+const PR_SET_CHILD_SUBREAPER = 36;
+const WNOHANG = 1;
+
+/**
+ * The Linux/macOS jail: poll the descendants of `root`. A process once seen in the tree is
+ * followed after its parent exits, so the gate's jail (rooted at a child, not at this process)
+ * still finds what the agent left behind once the agent itself is gone.
+ */
 function posixJail(ffi: typeof import("bun:ffi") | null, root: number): BrowserJail {
+    let reap: ((pid: number) => void) | null = null;
     if (process.platform === "linux" && ffi && root === process.pid) {
-        // PR_SET_CHILD_SUBREAPER: an orphaned descendant is re-parented here, so it stays in the tree.
-        try { ffi.dlopen("libc.so.6", { prctl: { args: [ffi.FFIType.i32, ffi.FFIType.u64, ffi.FFIType.u64, ffi.FFIType.u64, ffi.FFIType.u64], returns: ffi.FFIType.i32 } }).symbols.prctl(36, 1, 0, 0, 0); } catch { /* polling still sees direct descendants */ }
+        // An orphaned descendant is re-parented here, so it stays in the tree. The runtime waits only
+        // for what it spawned, so an adopted process that exits would stay a zombie unless reaped here.
+        try {
+            const { FFIType: T } = ffi;
+            const libc = ffi.dlopen("libc.so.6", {
+                prctl: { args: [T.i32, T.u64, T.u64, T.u64, T.u64], returns: T.i32 },
+                waitpid: { args: [T.i32, T.ptr, T.i32], returns: T.i32 },
+            }).symbols;
+            if (libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) === 0) reap = (pid) => { libc.waitpid(pid, null, WNOHANG); };
+        } catch { /* polling still sees direct descendants */ }
     }
-    const sweep = (judge: (image: string, commandLine: string) => boolean, action: string): void => {
-        const ps = spawnSync("ps", ["-A", "-o", "pid=,ppid=,args="], { encoding: "utf8", windowsHide: true });
-        if (ps.status !== 0) return;
-        for (const row of descendantsOf(root, parsePsTree(ps.stdout))) {
+    /** Every process of the session seen so far: its command line, and its parent when first seen. */
+    const known = new Map<number, { args: string; parent: number; }>();
+    const sweep = async (judge: (image: string, commandLine: string) => boolean, action: string): Promise<void> => {
+        const rows = await listProcesses();
+        if (!rows) return;
+        const byPid = new Map(rows.map((row) => [row.pid, row]));
+        for (const [pid, seen] of known) {
+            const row = byPid.get(pid);
+            // Gone, or the pid now belongs to another program.
+            if (!row || (!row.stat.startsWith("Z") && row.args !== seen.args)) known.delete(pid);
+        }
+        const tree = descendantsOf([root, ...known.keys()], rows);
+        for (const pid of known.keys()) tree.push(byPid.get(pid)!);
+        for (const row of tree) {
+            if (!known.has(row.pid)) known.set(row.pid, { args: row.args, parent: row.ppid });
+            if (row.stat.startsWith("Z")) {
+                // Only one adopted after its parent exited: what this process spawned is the runtime's to wait for.
+                if (reap && row.ppid === process.pid && known.get(row.pid)!.parent !== process.pid) {
+                    reap(row.pid);
+                    known.delete(row.pid);
+                }
+                continue;
+            }
             const image = commandImage(row.args);
             if (!isBrowserImage(image) || !judge(image, row.args)) continue;
             try { process.kill(row.pid, "SIGTERM"); record(action, row.pid, row.args); } catch { /* already gone */ }
         }
     };
-    const timer = setInterval(() => sweep((image, commandLine) => isVisibleBrowser(image, commandLine) && headlessWanted(), "closed-visible"), 300);
+    let running: Promise<void> | null = null;
+    const timer = setInterval(() => {
+        if (running) return;
+        running = sweep((image, commandLine) => isVisibleBrowser(image, commandLine) && headlessWanted(), "closed-visible").finally(() => { running = null; });
+    }, 300);
     timer.unref?.();
     return {
-        close(): void {
+        async close(): Promise<void> {
             clearInterval(timer);
-            sweep((image, commandLine) => !HELPER_PROCESS.test(` ${commandLine}`), "closed-at-exit");
+            await running;
+            await sweep((_, commandLine) => closedAtExit(commandLine), "closed-at-exit");
         },
     };
 }

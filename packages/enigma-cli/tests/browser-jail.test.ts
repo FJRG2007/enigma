@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { applyAgentBrowserEnv, commandImage, descendantsOf, isVisibleBrowser, opensOnlyLogin, parsePsTree, startBrowserJail } from "@/browser-jail";
+import { applyAgentBrowserEnv, closedAtExit, commandImage, descendantsOf, isVisibleBrowser, opensOnlyLogin, parsePsTree, startBrowserJail } from "@/browser-jail";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-browser-jail-"));
 let priorHome: string | undefined;
@@ -44,7 +44,7 @@ test("a browser main process without a headless flag is visible; helpers, headle
     expect(isVisibleBrowser("C:\\pw\\webkit-2100\\Playwright.exe", "C:\\pw\\webkit-2100\\Playwright.exe --inspector-pipe")).toBe(true);
 });
 
-test("only a vendor's sign-in endpoint counts as a login page", () => {
+test("a vendor's sign-in endpoint or an OAuth authorization request counts as a login page", () => {
     expect(opensOnlyLogin("chrome https://platform.claude.com/oauth/authorize?x=1")).toBe(true);
     expect(opensOnlyLogin("chrome https://auth.openai.com/oauth/authorize?client_id=x")).toBe(true);
     expect(opensOnlyLogin("chrome https://github.com/login/device")).toBe(true);
@@ -54,6 +54,18 @@ test("only a vendor's sign-in endpoint counts as a login page", () => {
     expect(opensOnlyLogin("chrome https://platform.claude.com/oauth/authorize http://localhost:3000")).toBe(false);
     expect(opensOnlyLogin("chrome about:blank")).toBe(false);
     expect(opensOnlyLogin("chrome https://github.com/acme/device-tree")).toBe(false);
+    expect(opensOnlyLogin("chrome https://linear.app/oauth/authorize?client_id=abc&response_type=code&redirect_uri=http://localhost:3118/callback")).toBe(true);
+    expect(opensOnlyLogin("chrome https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=x.apps.googleusercontent.com")).toBe(true);
+    expect(opensOnlyLogin("chrome https://example.com/authorize?client_id=x")).toBe(false);
+    expect(opensOnlyLogin("chrome http://localhost:3000/authorize?client_id=x&response_type=code")).toBe(false);
+});
+
+test("at session end a browser is closed unless it is a helper or a sign-in", () => {
+    expect(closedAtExit(`"${CHROME}" --headless=new about:blank`)).toBe(true);
+    expect(closedAtExit(`"${CHROME}" http://localhost:3000`)).toBe(true);
+    expect(closedAtExit(`"${CHROME}" --type=renderer`)).toBe(false);
+    expect(closedAtExit(`"${CHROME}" --single-argument https://claude.com/cai/oauth/authorize?code=true`)).toBe(false);
+    expect(closedAtExit(`"${CHROME}" https://mcp.notion.com/authorize?response_type=code&client_id=x`)).toBe(false);
 });
 
 test("macOS app bundles and plain commands resolve to the program that runs", () => {
@@ -63,9 +75,14 @@ test("macOS app bundles and plain commands resolve to the program that runs", ()
 });
 
 test("descendants are found through every generation and nothing outside the tree", () => {
-    const rows = parsePsTree("  10     1 /bin/launcher\n  20    10 node agent.js\n  30    20 bash -c x\n  40    30 chromium http://x\n  50     1 chromium --mine\n");
+    const rows = parsePsTree("  10     1 Ss   /bin/launcher\n  20    10 S+   node agent.js\n  30    20 S    bash -c x\n  40    30 Sl   chromium http://x\n  50     1 Sl   chromium --mine\n  60     1 Z    [chromium] <defunct>\n");
     expect(descendantsOf(10, rows).map((r) => r.pid)).toEqual([20, 30, 40]);
     expect(rows.find((r) => r.pid === 40)?.args).toBe("chromium http://x");
+    expect(rows.find((r) => r.pid === 60)?.stat).toBe("Z");
+    // An orphan the jail saw before its parent exited is followed through its own pid.
+    const orphaned = parsePsTree("  10     1 Ss   /bin/launcher\n  40     1 Sl   chromium http://x\n  41    40 Sl   chromium --type=renderer\n");
+    expect(descendantsOf(10, orphaned)).toEqual([]);
+    expect(descendantsOf([10, 40], orphaned).map((r) => r.pid)).toEqual([41]);
 });
 
 test("the agent environment tells dev servers and the Playwright report not to open a browser", () => {
@@ -128,10 +145,15 @@ test.skipIf(!windowsBun)("on Windows a visible browser started in the session is
         expect(Date.now() - looseStarted).toBeLessThan(3000);
         expect(await daemonExit).toBe(0);
     } finally {
+        const login = spawn(fake, ["/d", "/c", "echo https://claude.com/cai/oauth/authorize >nul & ping -n 30 127.0.0.1 >nul"], { stdio: "ignore", windowsHide: true });
         const left = spawn(fake, ["/d", "/c", "echo --headless >nul & ping -n 30 127.0.0.1 >nul"], { stdio: "ignore", windowsHide: true });
         const exited = new Promise<number | null>((resolve) => left.on("exit", resolve));
         await new Promise((resolve) => setTimeout(resolve, 500));
-        jail?.close();
+        await jail?.close();
         expect(await exited).toBe(1);
+        // A sign-in started in the session may be the user's browser from now on: it is left running.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        expect(login.exitCode).toBeNull();
+        login.kill();
     }
 }, 30000);
