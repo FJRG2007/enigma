@@ -39,7 +39,7 @@ Architecture and doctrine:
 
 Subsystems (read the one you are touching):
 
-- `compression-and-mcp.md` - the native compression engine (including the command-aware output filters behind `compress --command`), the hand-rolled MCP server (`enigma compress`, `enigma mcp`), and keeping agents from putting a visible browser on the user's screen (the headless MCP launcher, the `__browser-guard` shell hook, the `proc-headed-browser` guardrail, and stale project MCP entries).
+- `compression-and-mcp.md` - the native compression engine (including the command-aware output filters behind `compress --command`), the hand-rolled MCP server (`enigma compress`, `enigma mcp`), and keeping agents from putting a visible browser on the user's screen (the headless MCP launcher, the `__browser-guard` shell hook deployed to every agent, the process-level browser jail backstop (`browser-jail.ts`), the `proc-headed-browser` guardrail, and stale project MCP entries).
 - `gate.md` - the AI quality gate: the nine steps, where a run's time and tokens actually go (review and its fix rounds), the two config files and their Bun-only validator, and the dashboard bridge. Read before touching anything under `src/gate/` or the gate view.
 - `dashboard.md` - the loopback dashboard: server, daemon, hosts entry, on-demand `@enigmax/dashboard` UI package, charts, settings bridge, UI conventions (brand logos for agents, one dropdown component, toasts). Read before touching any dashboard panel.
 - `dashboard-exposure.md` - bind modes, token auth, the fragment bootstrap, the single auth gate.
