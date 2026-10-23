@@ -163,7 +163,7 @@ test("an argument survives the Windows command line it is quoted into, and the e
     expect(browserJail.quoteWindowsArg("")).toBe("\"\"");
     expect(browserJail.quoteWindowsArg("two words")).toBe("\"two words\"");
     expect(browserJail.quoteWindowsArg("say \"hi\"")).toBe("\"say \\\"hi\\\"\"");
-    expect(browserJail.quoteWindowsArg("C:\dir with space\\")).toBe("\"C:\dir with space\\\\\"");
+    expect(browserJail.quoteWindowsArg("C:\\dir with space\\")).toBe("\"C:\\dir with space\\\\\"");
     expect(browserJail.quoteWindowsArg("a\\\\\"b c")).toBe("\"a\\\\\\\\\\\"b c\"");
     expect(browserJail.environmentBlock({ b: "2", A: "1", skip: undefined, "=C:": "x" })).toBe("A=1\0b=2\0\0");
 });
@@ -187,7 +187,7 @@ test.skipIf(!windowsBun)("on Windows an agent the jail spawns gets its arguments
     ].join("\n"));
     // The launcher process the npm wrapper starts: in libuv's kill-on-close job, as in a real session.
     const launcher = join(HOME, "launcher.ts");
-    const args = ["two words", "say \"hi\"", "C:\dir with space\\", ""];
+    const args = ["two words", "say \"hi\"", "C:\\dir with space\\", ""];
     writeFileSync(launcher, [
         `import { startAgentBrowserJail } from ${JSON.stringify(join(import.meta.dir, "..", "src", "browser-jail.ts"))};`,
         `import { spawnInherit } from ${JSON.stringify(join(import.meta.dir, "..", "src", "accounts.ts"))};`,
@@ -210,4 +210,41 @@ test.skipIf(!windowsBun)("on Windows an agent the jail spawns gets its arguments
     try { process.kill(pid, 0); } catch { alive = false; }
     expect(alive).toBe(true);
     try { process.kill(pid); } catch { /* already gone */ }
+}, 60000);
+
+test.skipIf(!windowsBun)("on Windows an agent the jail spawns ends when its launcher is killed, and a daemon it started does not", async () => {
+    writeFileSync(join(HOME, ".enigma.json"), "{}\n");
+    const node = Bun.which("node");
+    expect(node).not.toBeNull();
+    const pids = join(HOME, "orphan.json");
+    const agent = join(HOME, "orphan-agent.cjs");
+    writeFileSync(agent, [
+        "const { spawn } = require(\"node:child_process\");",
+        "const { writeFileSync } = require(\"node:fs\");",
+        "const d = spawn(process.execPath, [\"-e\", \"setTimeout(() => {}, 20000)\"], { stdio: \"ignore\", detached: true, windowsHide: true });",
+        "d.unref();",
+        `writeFileSync(${JSON.stringify(pids)}, JSON.stringify({ agent: process.pid, daemon: d.pid }));`,
+        "setTimeout(() => {}, 20000);",
+    ].join("\n"));
+    const launcher = join(HOME, "orphan-launcher.ts");
+    writeFileSync(launcher, [
+        `import { startAgentBrowserJail } from ${JSON.stringify(join(import.meta.dir, "..", "src", "browser-jail.ts"))};`,
+        `import { spawnInherit } from ${JSON.stringify(join(import.meta.dir, "..", "src", "accounts.ts"))};`,
+        "const browsers = await startAgentBrowserJail();",
+        "if (!browsers?.spawn) process.exit(90);",
+        `process.exit(await spawnInherit(${JSON.stringify(node)}, [${JSON.stringify(agent)}], process.env, browsers));`,
+    ].join("\n"));
+    const run = spawn(process.execPath, [launcher], { stdio: "ignore", windowsHide: true });
+    const exited = new Promise((resolve) => run.on("exit", resolve));
+    const deadline = Date.now() + 20000;
+    while (!existsSync(pids) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+    const { agent: agentPid, daemon } = JSON.parse(readFileSync(pids, "utf8")) as { agent: number; daemon: number };
+    run.kill();
+    await exited;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    expect(alive(agentPid)).toBe(false);
+    expect(alive(daemon)).toBe(true);
+    try { process.kill(daemon); } catch { /* already gone */ }
+    try { process.kill(agentPid); } catch { /* already gone */ }
 }, 60000);

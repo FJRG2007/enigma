@@ -144,6 +144,8 @@ const JOB_ASSOCIATE_COMPLETION_PORT = 7;
 const JOB_EXTENDED_LIMIT_INFORMATION = 9;
 const EXTENDED_LIMIT_SIZE = 144;
 const JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x0800;
+const JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x1000;
+const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
 const PROCESS_COMMAND_LINE_INFORMATION = 60;
 const CREATE_SUSPENDED = 0x4;
 const CREATE_UNICODE_ENVIRONMENT = 0x400;
@@ -151,6 +153,7 @@ const CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
 const STARTF_USESTDHANDLES = 0x100;
 const DUPLICATE_SAME_ACCESS = 0x2;
 const WAIT_OBJECT_0 = 0;
+const WAIT_FAILED = 0xffffffff;
 /** STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE as the unsigned values GetStdHandle takes. */
 const STD_HANDLES = [0xfffffff6, 0xfffffff5, 0xfffffff4];
 /** sizeof(STARTUPINFOW) on 64-bit Windows, and where its fields sit. */
@@ -368,7 +371,8 @@ function windowsJail(ffi: typeof import("bun:ffi"), initialRoot: number | null):
         stdio.forEach((handle, i) => view.setBigUint64(STARTUP_STDIO + i * 8, handle, true));
         const info = new BigUint64Array(3);
         const block = wide(environmentBlock(env));
-        const create = (flags: number): boolean => !!k32.CreateProcessW(null, ptr(wide(commandLine)), null, null, 1, flags, ptr(block), null, ptr(startup), ptr(info));
+        const line = wide(commandLine);
+        const create = (flags: number): boolean => !!k32.CreateProcessW(null, ptr(line), null, null, 1, flags, ptr(block), null, ptr(startup), ptr(info));
         const flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
         // Breakaway leaves a job this process is in when that job allows it; one that does not
         // refuses the flag, and the agent is then created inside it, this job nested under that one.
@@ -386,6 +390,13 @@ function windowsJail(ffi: typeof import("bun:ffi"), initialRoot: number | null):
         root = new Uint32Array(info.buffer, 16, 1)[0]!;
         members.set(root, Infinity);
         if (!k32.AssignProcessToJobObject(job, handle)) record("jail-unavailable", root, "the agent could not be put in the job");
+        // The agent alone dies with the launcher, as under spawnInherit: a kill-on-close job nested in the
+        // jail, which whatever the agent starts leaves silently and so stays in the jail and survives.
+        const tether = k32.CreateJobObjectW(null, null);
+        const tetherLimits = new BigUint64Array(EXTENDED_LIMIT_SIZE / 8);
+        new DataView(tetherLimits.buffer).setUint32(16, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK, true);
+        if (!tether || !k32.SetInformationJobObject(tether, JOB_EXTENDED_LIMIT_INFORMATION, ptr(tetherLimits), tetherLimits.byteLength)
+            || !k32.AssignProcessToJobObject(tether, handle)) record("jail-untethered", root, "the agent will not end with the launcher");
         k32.ResumeThread(thread);
         k32.CloseHandle(thread);
 
@@ -395,12 +406,14 @@ function windowsJail(ffi: typeof import("bun:ffi"), initialRoot: number | null):
         for (const sig of signals) process.on(sig, forward);
         return new Promise<number>((resolve) => {
             const wait = setInterval(() => {
-                if (k32.WaitForSingleObject(handle, 0) !== WAIT_OBJECT_0) return;
+                const state = k32.WaitForSingleObject(handle, 0);
+                if (state !== WAIT_OBJECT_0 && state !== WAIT_FAILED) return;
                 clearInterval(wait);
                 for (const sig of signals) process.off(sig, forward);
-                const code = new Uint32Array(1);
-                k32.GetExitCodeProcess(handle, ptr(code));
+                const code = new Uint32Array([1]);
+                if (state === WAIT_OBJECT_0) k32.GetExitCodeProcess(handle, ptr(code));
                 k32.CloseHandle(handle);
+                if (tether) k32.CloseHandle(tether);
                 resolve(code[0]! | 0);
             }, 50);
         });
