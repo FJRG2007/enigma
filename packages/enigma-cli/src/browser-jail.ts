@@ -8,10 +8,12 @@
  * every agent without a PreToolUse hook all get past it. What they have in common is the process
  * they end up creating, so this watches processes instead of commands.
  *
- * Windows: the launcher puts ITSELF in a job object before it spawns the agent. Job membership is
- * inherited and survives the parent's exit, so every process the session creates is in it - also
- * one started through `start`, `Start-Process` or ShellExecute, whose parent is gone by the time
- * anyone looks. The job reports each new process on an I/O completion port, which is drained
+ * Windows: the launcher creates the agent itself, suspended, puts it in a job object and only then
+ * lets it run. Job membership is inherited and survives the parent's exit, so every process the
+ * session creates is in it - also one started through `start`, `Start-Process` or ShellExecute,
+ * whose parent is gone by the time anyone looks. The agent is created outside the job libuv keeps
+ * the launcher in: that job kills everything in it when the npm launcher exits, and a job nested
+ * under it would take every daemon the session started down with it. The job reports each new process on an I/O completion port, which is drained
  * every 15 ms; a browser main process without a headless flag is terminated on sight, before it
  * has drawn a window and, measured, before a console child printed its first line. When the
  * agent exits, every browser still in the job is closed, headless ones included.
@@ -42,6 +44,12 @@ import { BROWSER_EXE, hasHeadless, programName } from "./browser-guard";
 /** A running jail; `close` stops watching and closes every browser the session left behind. */
 export interface BrowserJail {
     close(): Promise<void>;
+    /**
+     * Windows, a jail started for an agent: run `commandLine` inside it, inheriting this process's
+     * stdio and console, resolving with its exit code. Null when the process could not be created
+     * that way; the jail then holds this process instead, and the caller spawns as usual.
+     */
+    spawn?(commandLine: string, env: NodeJS.ProcessEnv): Promise<number> | null;
 }
 
 /** Browsers BROWSER_EXE does not name. */
@@ -137,6 +145,18 @@ const JOB_EXTENDED_LIMIT_INFORMATION = 9;
 const EXTENDED_LIMIT_SIZE = 144;
 const JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x0800;
 const PROCESS_COMMAND_LINE_INFORMATION = 60;
+const CREATE_SUSPENDED = 0x4;
+const CREATE_UNICODE_ENVIRONMENT = 0x400;
+const CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
+const STARTF_USESTDHANDLES = 0x100;
+const DUPLICATE_SAME_ACCESS = 0x2;
+const WAIT_OBJECT_0 = 0;
+/** STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE as the unsigned values GetStdHandle takes. */
+const STD_HANDLES = [0xfffffff6, 0xfffffff5, 0xfffffff4];
+/** sizeof(STARTUPINFOW) on 64-bit Windows, and where its fields sit. */
+const STARTUP_INFO_SIZE = 104;
+const STARTUP_FLAGS = 60;
+const STARTUP_STDIO = 80;
 const TH32CS_SNAPPROCESS = 0x2;
 /** sizeof(PROCESSENTRY32W) on 64-bit Windows, and where its fields sit. */
 const PROCESS_ENTRY_SIZE = 568;
@@ -146,12 +166,44 @@ const ENTRY_EXE = 44;
 /** How long an exited member still vouches for a process it started: a detached child is often seen after its parent is gone. */
 const EXITED_MEMBER_GRACE_MS = 10_000;
 
-/** The Windows jail: a job object around `root` and everything it starts. */
-function windowsJail(ffi: typeof import("bun:ffi"), root: number): BrowserJail | null {
+/** A Windows environment block: `KEY=value\0` pairs sorted by key, ending in an empty one. */
+export function environmentBlock(env: NodeJS.ProcessEnv): string {
+    const pairs = Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== "" && !entry[0].includes("="));
+    pairs.sort(([a], [b]) => (a.toUpperCase() < b.toUpperCase() ? -1 : a.toUpperCase() > b.toUpperCase() ? 1 : 0));
+    return `${pairs.map(([k, v]) => `${k}=${v}\0`).join("")}\0`;
+}
+
+/** Quote one argument the way the C runtime splits a command line back into argv. */
+export function quoteWindowsArg(arg: string): string {
+    if (arg && !/[\s"]/.test(arg)) return arg;
+    let quoted = "\"";
+    let slashes = 0;
+    for (const ch of arg) {
+        if (ch === "\\") { slashes++; continue; }
+        quoted += "\\".repeat(ch === "\"" ? slashes * 2 + 1 : slashes) + ch;
+        slashes = 0;
+    }
+    return `${quoted}${"\\".repeat(slashes * 2)}"`;
+}
+
+/** UTF-16LE, NUL-terminated, in a buffer the callee may write to (CreateProcessW edits its command line). */
+function wide(text: string): Uint16Array {
+    const buf = new Uint16Array(text.length + 1);
+    for (let i = 0; i < text.length; i++) buf[i] = text.charCodeAt(i);
+    return buf;
+}
+
+/**
+ * The Windows jail: a job object around `root` and everything it starts, or, with no root, around
+ * the agent that `spawn` creates.
+ */
+function windowsJail(ffi: typeof import("bun:ffi"), initialRoot: number | null): BrowserJail | null {
+    let root = initialRoot ?? 0;
     const { dlopen, FFIType: T, ptr } = ffi;
     let k32: Record<string, (...args: any[]) => any>;
     let ntdll: Record<string, (...args: any[]) => any>;
     let snapshotClose: (handle: bigint | number) => number;
+    let raw: Record<string, (...args: any[]) => any>;
     try {
         k32 = dlopen("kernel32.dll", {
             CreateJobObjectW: { args: [T.ptr, T.ptr], returns: T.ptr },
@@ -166,10 +218,21 @@ function windowsJail(ffi: typeof import("bun:ffi"), root: number): BrowserJail |
             CloseHandle: { args: [T.ptr], returns: T.i32 },
             // The snapshot handle is INVALID_HANDLE_VALUE (-1) on failure, which a pointer type cannot carry.
             CreateToolhelp32Snapshot: { args: [T.u32, T.u32], returns: T.i64 },
+            CreateProcessW: { args: [T.ptr, T.ptr, T.ptr, T.ptr, T.i32, T.u32, T.ptr, T.ptr, T.ptr, T.ptr], returns: T.i32 },
+            ResumeThread: { args: [T.ptr], returns: T.u32 },
+            WaitForSingleObject: { args: [T.ptr, T.u32], returns: T.u32 },
+            GetExitCodeProcess: { args: [T.ptr, T.ptr], returns: T.i32 },
+            GetLastError: { args: [], returns: T.u32 },
             Process32FirstW: { args: [T.i64, T.ptr], returns: T.i32 },
             Process32NextW: { args: [T.i64, T.ptr], returns: T.i32 },
         }).symbols;
-        snapshotClose = dlopen("kernel32.dll", { CloseHandle: { args: [T.i64], returns: T.i32 } }).symbols.CloseHandle;
+        // Pseudo and invalid handles are -1, which a pointer type cannot carry.
+        raw = dlopen("kernel32.dll", {
+            CloseHandle: { args: [T.i64], returns: T.i32 },
+            GetStdHandle: { args: [T.u32], returns: T.i64 },
+            DuplicateHandle: { args: [T.i64, T.i64, T.i64, T.ptr, T.u32, T.i32, T.u32], returns: T.i32 },
+        }).symbols;
+        snapshotClose = raw.CloseHandle!;
         ntdll = dlopen("ntdll.dll", {
             NtQueryInformationProcess: { args: [T.ptr, T.i32, T.ptr, T.u32, T.ptr], returns: T.i32 },
         }).symbols;
@@ -187,17 +250,21 @@ function windowsJail(ffi: typeof import("bun:ffi"), root: number): BrowserJail |
     // parent instead (see sweepEscaped).
     const limits = new BigUint64Array(EXTENDED_LIMIT_SIZE / 8);
     new DataView(limits.buffer).setUint32(16, JOB_OBJECT_LIMIT_BREAKAWAY_OK, true);
-    const target = k32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, root);
+    /** Put a running process in the job. */
+    const assign = (pid: number): boolean => {
+        const target = k32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+        if (!target) return false;
+        try { return !!k32.AssignProcessToJobObject(job, target); } finally { k32.CloseHandle(target); }
+    };
     // The port first, so the job reports every process from the very first one.
     const ready = port && k32.SetInformationJobObject(job, JOB_ASSOCIATE_COMPLETION_PORT, ptr(association), 16)
         && k32.SetInformationJobObject(job, JOB_EXTENDED_LIMIT_INFORMATION, ptr(limits), limits.byteLength)
-        && target && k32.AssignProcessToJobObject(job, target);
-    if (target) k32.CloseHandle(target);
+        && (initialRoot === null || assign(initialRoot));
     if (!ready) {
         if (port) k32.CloseHandle(port);
         k32.CloseHandle(job);
         // Said in the log: a jail that silently does not start looks exactly like one that found nothing.
-        record("jail-unavailable", root, "the job object could not be set up");
+        record("jail-unavailable", initialRoot ?? process.pid, "the job object could not be set up");
         return null;
     }
 
@@ -234,7 +301,7 @@ function windowsJail(ffi: typeof import("bun:ffi"), root: number): BrowserJail |
 
     const visible = (image: string, commandLine: string): boolean => isVisibleBrowser(image, commandLine) && headlessWanted();
     /** Every process of the session, in the job or escaped from it: pid -> when it stops vouching for its children. */
-    const members = new Map<number, number>([[root, Infinity]]);
+    const members = new Map<number, number>(initialRoot === null ? [] : [[initialRoot, Infinity]]);
     const escaped = new Set<number>();
 
     const message = new Uint32Array(1);
@@ -284,7 +351,63 @@ function windowsJail(ffi: typeof import("bun:ffi"), root: number): BrowserJail |
     }, 15);
     timer.unref?.();
 
+    /** Duplicate one of this process's standard handles as inheritable, or 0 when it has none. */
+    const inheritable = (which: number): bigint => {
+        const handle = raw.GetStdHandle!(which) as bigint;
+        if (!handle || handle === -1n) return 0n;
+        const copy = new BigUint64Array(1);
+        return raw.DuplicateHandle!(-1n, handle, -1n, ptr(copy), 0, 1, DUPLICATE_SAME_ACCESS) ? copy[0]! : 0n;
+    };
+    /** Create the agent suspended, outside any job that lets it leave, put it in this one, then let it run. */
+    const spawnInJob = (commandLine: string, env: NodeJS.ProcessEnv): Promise<number> | null => {
+        const stdio = STD_HANDLES.map(inheritable);
+        const startup = new Uint8Array(STARTUP_INFO_SIZE);
+        const view = new DataView(startup.buffer);
+        view.setUint32(0, STARTUP_INFO_SIZE, true);
+        view.setUint32(STARTUP_FLAGS, STARTF_USESTDHANDLES, true);
+        stdio.forEach((handle, i) => view.setBigUint64(STARTUP_STDIO + i * 8, handle, true));
+        const info = new BigUint64Array(3);
+        const block = wide(environmentBlock(env));
+        const create = (flags: number): boolean => !!k32.CreateProcessW(null, ptr(wide(commandLine)), null, null, 1, flags, ptr(block), null, ptr(startup), ptr(info));
+        const flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
+        // Breakaway leaves a job this process is in when that job allows it; one that does not
+        // refuses the flag, and the agent is then created inside it, this job nested under that one.
+        const created = create(flags | CREATE_BREAKAWAY_FROM_JOB) || create(flags);
+        const error = created ? 0 : k32.GetLastError();
+        for (const handle of stdio) if (handle) raw.CloseHandle!(handle);
+        if (!created) {
+            record("jail-spawn-failed", process.pid, `CreateProcessW error ${error}`);
+            // The jail still holds the session through this process; the caller spawns as usual.
+            if (assign(process.pid)) members.set(process.pid, Infinity);
+            return null;
+        }
+        const handle = Number(info[0]);
+        const thread = Number(info[1]);
+        root = new Uint32Array(info.buffer, 16, 1)[0]!;
+        members.set(root, Infinity);
+        if (!k32.AssignProcessToJobObject(job, handle)) record("jail-unavailable", root, "the agent could not be put in the job");
+        k32.ResumeThread(thread);
+        k32.CloseHandle(thread);
+
+        // As spawnInherit: a termination signal to the launcher ends the agent.
+        const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+        const forward = (): void => { k32.TerminateProcess(handle, 1); };
+        for (const sig of signals) process.on(sig, forward);
+        return new Promise<number>((resolve) => {
+            const wait = setInterval(() => {
+                if (k32.WaitForSingleObject(handle, 0) !== WAIT_OBJECT_0) return;
+                clearInterval(wait);
+                for (const sig of signals) process.off(sig, forward);
+                const code = new Uint32Array(1);
+                k32.GetExitCodeProcess(handle, ptr(code));
+                k32.CloseHandle(handle);
+                resolve(code[0]! | 0);
+            }, 50);
+        });
+    };
+
     return {
+        ...(initialRoot === null ? { spawn: spawnInJob } : {}),
         async close(): Promise<void> {
             clearInterval(timer);
             drain();
@@ -416,13 +539,25 @@ function posixJail(ffi: typeof import("bun:ffi") | null, root: number): BrowserJ
  * Start the jail around `root`: this process, before it spawns the agent (so nothing the agent
  * starts escapes it), or a child that is already running (the gate's agents, whose daemon cannot
  * jail itself). Null when headless is off or the platform gives no hold on the process tree (a
- * Node dev run on Windows).
+ * Node dev run on Windows). An interactive agent launch uses startAgentBrowserJail instead.
  */
 export async function startBrowserJail(root: number = process.pid): Promise<BrowserJail | null> {
     if (!headlessWanted()) return null;
     const ffi = await loadFfi();
     if (process.platform === "win32") return ffi ? windowsJail(ffi, root) : null;
     return posixJail(ffi, root);
+}
+
+/**
+ * Start the jail for an agent this process is about to launch. On Windows the agent is created by
+ * the jail's `spawn`, so the job is not nested under the one libuv keeps this process in: that one
+ * kills its members when the npm launcher exits, which would end every daemon the session started.
+ */
+export async function startAgentBrowserJail(): Promise<BrowserJail | null> {
+    if (!headlessWanted()) return null;
+    const ffi = await loadFfi();
+    if (process.platform === "win32") return ffi ? windowsJail(ffi, null) : null;
+    return posixJail(ffi, process.pid);
 }
 
 /**

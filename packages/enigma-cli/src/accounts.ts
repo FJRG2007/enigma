@@ -839,7 +839,7 @@ export async function launchTool(toolName: string, name: string | null, passthro
     const browsers = opts.login ? null : await startAgentJail(env);
     const proxy = await maybeStartProxy(toolName, env, cfg);
     try {
-        return await spawnInherit(binary, passthrough, env);
+        return await spawnInherit(binary, passthrough, env, browsers);
     } finally {
         if (proxy) proxy.close();
         await browsers?.close();
@@ -901,7 +901,7 @@ export async function launchInDir(toolName: string, dir: string, passthrough: st
     const browsers = await startAgentJail(env);
     const proxy = await maybeStartProxy(toolName, env, cfg);
     try {
-        return await spawnInherit(binary, passthrough, env);
+        return await spawnInherit(binary, passthrough, env, browsers);
     } finally {
         if (proxy) proxy.close();
         await browsers?.close();
@@ -915,7 +915,7 @@ export async function launchInDir(toolName: string, dir: string, passthrough: st
  */
 async function startAgentJail(env: NodeJS.ProcessEnv): Promise<jail.BrowserJail | null> {
     jail.applyAgentBrowserEnv(env);
-    try { return await jail.startBrowserJail(); } catch { return null; }
+    try { return await jail.startAgentBrowserJail(); } catch { return null; }
 }
 
 /**
@@ -997,10 +997,20 @@ function touchLastUsed(toolName: string, name: string): void {
  * Spawn a command inheriting the parent's stdio and forwarding termination
  * signals, resolving with its exit code. On Windows a non-.exe target (a `.cmd`
  * shim like Claude's, or a bare name) must run through the shell; arguments are
- * quoted to avoid a shell-injection surface.
+ * quoted to avoid a shell-injection surface. With a browser jail that can spawn (Windows), the
+ * jail creates the process, the same command line Node would have built.
  */
-export function spawnInherit(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
+export function spawnInherit(command: string, args: string[], env: NodeJS.ProcessEnv, browsers?: jail.BrowserJail | null): Promise<number> {
     const useShell = process.platform === "win32" && !command.toLowerCase().endsWith(".exe");
+    if (browsers?.spawn) {
+        // What child_process builds for shell: true on Windows, and for a plain executable.
+        const shell = env.ComSpec ?? process.env.ComSpec ?? "cmd.exe";
+        const line = useShell
+            ? `${jail.quoteWindowsArg(shell)} /d /s /c "${[command, ...args].map(quoteWinArg).join(" ")}"`
+            : [command, ...args].map(jail.quoteWindowsArg).join(" ");
+        const jailed = browsers.spawn(line, env);
+        if (jailed) return jailed;
+    }
     const child = useShell
         ? spawn([command, ...args].map(quoteWinArg).join(" "), { stdio: "inherit", env, shell: true })
         : spawn(command, args, { stdio: "inherit", env });
