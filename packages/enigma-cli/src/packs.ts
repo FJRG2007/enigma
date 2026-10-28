@@ -21,6 +21,7 @@
  */
 
 import { homedir } from "node:os";
+import * as acct from "./accounts";
 import { isDir, readJson, resolveBin } from "./util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -31,7 +32,6 @@ import { engineBin, engineNodeRange, ensureEngine, ensureEngineAsync, installedE
 import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import * as acct from "./accounts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

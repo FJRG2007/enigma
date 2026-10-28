@@ -238,7 +238,7 @@ test.skipIf(!windowsBun)("on Windows an agent the jail spawns ends when its laun
     const exited = new Promise((resolve) => run.on("exit", resolve));
     const deadline = Date.now() + 20000;
     while (!existsSync(pids) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-    const { agent: agentPid, daemon } = JSON.parse(readFileSync(pids, "utf8")) as { agent: number; daemon: number };
+    const { agent: agentPid, daemon } = JSON.parse(readFileSync(pids, "utf8")) as { agent: number; daemon: number; };
     run.kill();
     await exited;
     await new Promise((resolve) => setTimeout(resolve, 500));

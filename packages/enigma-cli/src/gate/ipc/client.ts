@@ -146,7 +146,7 @@ export class Client {
     }
 
     /** `call` for a request carrying an account snapshot, dropping each variable the daemon does not know. */
-    private async callWithAccountEnv<P extends { accountEnv?: AccountEnv }>(method: string, params: P, encode: (p: P) => unknown): Promise<unknown> {
+    private async callWithAccountEnv<P extends { accountEnv?: AccountEnv; }>(method: string, params: P, encode: (p: P) => unknown): Promise<unknown> {
         for (;;) {
             try {
                 return await this.call(method, encode(params));
