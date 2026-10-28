@@ -297,6 +297,19 @@ old daemon anyway. The replacement refreshes every bare repo's hook to its own b
 startup (`migrateGateConfigs`). Git passing the pusher's environment to `post-receive` was
 checked on Windows, value set and unset.
 
+`accountEnvKeys()` is not pinned to a fixed set - it is every key `TOOLS[*].envFor()` injects for a
+managed dir (probed in `accounts.ts`), so a new one (e.g. the per-account Console store's
+`ANTHROPIC_CONFIG_DIR`, see `multi-account.md`) appears in `account_env` the moment the CLI that
+sends it knows about it, even against a daemon that is otherwise current and already advertises
+`account_env: true`. That daemon rejects the unknown key with `account_env: unsupported variable
+"<key>"` rather than refusing the whole snapshot, so replacing it would be wrong - the daemon
+supports account_env, it is one key behind. `Client.callWithAccountEnv` (`gate/ipc/client.ts`)
+catches that specific `RPCError`, drops the named variable with `withoutUnsupportedKey`
+(`gate/account-env.ts`) and resends `push_received`/`rerun` without it, looping until the
+daemon accepts or a different error surfaces. `encodeAccountEnv` only puts SET variables on the
+wire, so an unset one an older daemon never heard of is never sent in the first place and cannot
+trigger this at all.
+
 ## `fix_policy`: who answers a gate (an enigma extension)
 
 Upstream's pipeline only knows "park and wait for a response"; WHO produces that response was
