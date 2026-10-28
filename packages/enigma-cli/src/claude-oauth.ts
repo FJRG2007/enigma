@@ -20,7 +20,9 @@
  *
  * This module also owns detecting an Anthropic Console (API billing) sign-in: Claude Code keeps
  * that login OUTSIDE any `CLAUDE_CONFIG_DIR`, in a machine-wide profile store, and falls back to
- * it for any config dir with no claude.ai login of its own - see `consoleLogin`.
+ * it for any config dir with no claude.ai login of its own - see `consoleLogin`. That fallback
+ * ran a signed-out account as whoever held the Console login, so a managed account gets its own
+ * store instead (`consoleStoreDir`, migrated by `seedConsoleStore`).
  *
  * Leaf module: Node builtins only, imports nothing from enigma, never logs a token value.
  */
@@ -155,6 +157,26 @@ function readJsonFile<T>(file: string): T | null {
     try { return JSON.parse(readFileSync(file, "utf8")) as T; } catch { return null; }
 }
 
+interface ConsoleConfig { authentication?: { type?: string; credentials_path?: string; }; }
+interface ConsoleCredentials { access_token?: string; refresh_token?: string; expires_at?: number; account_email?: string; organization_name?: string; }
+
+/** The active OAuth profile of a Console profile store, with its files, or null when there is none. */
+function resolveConsoleProfile(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): { profile: string; config: ConsoleConfig; cred: ConsoleCredentials; } | null {
+    const root = anthropicConfigDir(env, platform);
+    if (!root) return null;
+    let active = "";
+    try { active = readFileSync(join(root, "active_config"), "utf8").trim(); } catch { /* no pointer: default */ }
+    const profile = env.ANTHROPIC_PROFILE?.trim() || active || "default";
+    if (!PROFILE_NAME.test(profile) || profile === "." || profile === "..") return null;
+    const config = readJsonFile<ConsoleConfig>(join(root, "configs", `${profile}.json`));
+    if (config?.authentication?.type !== "user_oauth") return null;
+    const custom = config.authentication.credentials_path?.trim();
+    const credFile = custom ? (isAbsolute(custom) ? custom : join(root, custom)) : join(root, "credentials", `${profile}.json`);
+    const cred = readJsonFile<ConsoleCredentials>(credFile);
+    if (!cred || (!cred.access_token && !cred.refresh_token)) return null;
+    return { profile, config, cred };
+}
+
 /**
  * The Console sign-in Claude Code would use, or null when there is none. The profile is
  * ANTHROPIC_PROFILE, else the store's `active_config`, else "default" - the same order Claude
@@ -162,31 +184,85 @@ function readJsonFile<T>(file: string): T | null {
  * never returned.
  */
 export function consoleLogin(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, now: number = Date.now()): ConsoleLogin | null {
-    const root = anthropicConfigDir(env, platform);
-    if (!root) return null;
-    let active = "";
-    try { active = readFileSync(join(root, "active_config"), "utf8").trim(); } catch { /* no pointer: default */ }
-    const profile = env.ANTHROPIC_PROFILE?.trim() || active || "default";
-    if (!PROFILE_NAME.test(profile) || profile === "." || profile === "..") return null;
-    const config = readJsonFile<{ authentication?: { type?: string; credentials_path?: string; }; }>(join(root, "configs", `${profile}.json`));
-    if (config?.authentication?.type !== "user_oauth") return null;
-    const custom = config.authentication.credentials_path?.trim();
-    const credFile = custom ? (isAbsolute(custom) ? custom : join(root, custom)) : join(root, "credentials", `${profile}.json`);
-    const cred = readJsonFile<{ access_token?: string; refresh_token?: string; expires_at?: number; account_email?: string; organization_name?: string; }>(credFile);
-    if (!cred || (!cred.access_token && !cred.refresh_token)) return null;
+    const found = resolveConsoleProfile(env, platform);
+    if (!found) return null;
+    const { profile, cred } = found;
     // expires_at is in SECONDS here, unlike the milliseconds of `.credentials.json`.
     const live = Boolean(cred.access_token) && (typeof cred.expires_at !== "number" || cred.expires_at * 1000 > now);
     const state = live ? "ok" : cred.refresh_token ? "refreshable" : "expired";
     return { state, profile, email: cred.account_email || undefined, organization: cred.organization_name || undefined };
 }
 
+/**
+ * The Console profile store owned by one config dir. A managed account launches with
+ * ANTHROPIC_CONFIG_DIR pointed here, so a signed-out account shows Claude Code's login screen
+ * instead of silently falling back to the machine-wide Console sign-in of ANOTHER identity
+ * (the "enigma claude runs as the wrong email" bug).
+ */
+export function consoleStoreDir(dir: string): string {
+    return join(dir, "anthropic");
+}
+
+function sameEmail(a: string | undefined, b: string | undefined): boolean {
+    return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+}
+
+/**
+ * Whether `dir` is a Console-only account that has not been given its own store yet and whose
+ * identity is the machine-wide Console sign-in: no claude.ai login was EVER recorded in it (a
+ * signed-out subscription keeps its `claudeAiOauth` block with blanked tokens, and must not be
+ * moved onto API billing), and its `.claude.json` email is the Console login's.
+ */
+function inheritsSharedConsole(dir: string, shared: ConsoleCredentials): boolean {
+    if (existsSync(consoleStoreDir(dir)) || readOAuth(dir)) return false;
+    return sameEmail(shared.account_email, sessionEmail(dir));
+}
+
+/**
+ * The Console sign-in a managed account's launch will use: its own store's, or - before its
+ * first launch migrates it - the machine-wide one when `seedConsoleStore` would carry it over.
+ * `env` is the user's own environment, whose store is the machine-wide one.
+ */
+export function accountConsoleLogin(dir: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, now: number = Date.now()): ConsoleLogin | null {
+    const own = consoleLogin({ ...env, ANTHROPIC_CONFIG_DIR: consoleStoreDir(dir) }, platform, now);
+    if (own || existsSync(consoleStoreDir(dir))) return own;
+    const shared = resolveConsoleProfile(env, platform);
+    return shared && inheritsSharedConsole(dir, shared.cred) ? consoleLogin(env, platform, now) : null;
+}
+
+/**
+ * One-time migration for an account that was signed in through the Console before accounts had
+ * their own store: copy the machine-wide profile into `consoleStoreDir(dir)` so the account keeps
+ * working once its launch stops reading the shared store. Only for the identity rule of
+ * `inheritsSharedConsole`; any other account is left to sign in on its own. The copy drops a
+ * custom `credentials_path` (it would point back at the shared file). The machine-wide store is
+ * never modified. Returns whether it wrote. Best-effort, never throws.
+ */
+export function seedConsoleStore(dir: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): boolean {
+    try {
+        const shared = resolveConsoleProfile(env, platform);
+        if (!shared || !inheritsSharedConsole(dir, shared.cred)) return false;
+        const store = consoleStoreDir(dir);
+        const authentication = { ...shared.config.authentication };
+        delete authentication.credentials_path;
+        // Credentials first, then the config that activates them: a crash in between leaves no
+        // profile pointing at a missing file. The pointer goes last.
+        atomicWrite(join(store, "credentials", `${shared.profile}.json`), `${JSON.stringify(shared.cred, null, 2)}\n`, 0o600);
+        atomicWrite(join(store, "configs", `${shared.profile}.json`), `${JSON.stringify({ ...shared.config, authentication }, null, 2)}\n`);
+        atomicWrite(join(store, "active_config"), shared.profile);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** Atomically write `content` to `file` (temp + rename), creating the parent dir. */
-function atomicWrite(file: string, content: string): void {
+function atomicWrite(file: string, content: string, mode?: number): void {
     const dir = dirname(file);
     mkdirSync(dir, { recursive: true });
     const tmp = join(dir, `.${randomUUID()}.tmp`);
     try {
-        writeFileSync(tmp, content);
+        writeFileSync(tmp, content, mode === undefined ? undefined : { mode });
         renameSync(tmp, file);
     } catch (err) {
         try { if (existsSync(tmp)) unlinkSync(tmp); } catch { /* leftover temp is harmless */ }

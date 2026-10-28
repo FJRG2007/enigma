@@ -20,7 +20,7 @@ import { tokenMatches } from "./dashboard-token";
 import { apiRotationOf, readConfig, type ApiRotation } from "./config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AccountRotator, classifyAccountError, poolOrder, type WindowUsage } from "./api-rotation";
-import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles, listAccounts } from "./accounts";
+import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles, listAccounts, migrateConsoleLogin, DEFAULT_NAME } from "./accounts";
 import { runSessionTurn, closeAllSessions, isSessionBusy, SessionError, DEFAULT_SESSION_CONFIG, type SessionSpec } from "./session-runtime";
 import {
     resolveAdapter,
@@ -167,7 +167,10 @@ async function resolveContextDir(tool: string, opts: CompletionOptions): Promise
         account = listProfiles().find((p) => p.name === opts.profile)?.accounts[tool] ?? null;
     }
     if (!account) account = resolveLaunchAccount(tool);
-    return resolveConfigDir(tool, account);
+    const dir = resolveConfigDir(tool, account);
+    // A managed account no longer reads the machine-wide Console store, so carry a legacy login over.
+    if (tool === "claude" && account !== DEFAULT_NAME) migrateConsoleLogin(dir);
+    return dir;
 }
 
 async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionOptions, onText?: (t: string) => Promise<void> | void): Promise<RunResult> {

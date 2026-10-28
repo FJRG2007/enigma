@@ -117,9 +117,14 @@ test("every account carries the command that opens it", () => {
     for (const a of d.accounts) expect(a.launch).toBe(`enigma ${a.tool} ${a.name}`);
 });
 
-test("a Claude account with no claude.ai login is signed in through the Console sign-in", async () => {
+test("a Claude account with no claude.ai login is signed in through its own Console sign-in", async () => {
     const acc = addAccount("claude", "apikey");
     writeFileSync(join(acc.dir, ".credentials.json"), "{}");
+    writeFileSync(join(acc.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "dev@example.com" } }));
+    // Another identity with no login of its own must NOT be shown on that Console sign-in.
+    const other = addAccount("claude", "otherid");
+    writeFileSync(join(other.dir, ".credentials.json"), "{}");
+    writeFileSync(join(other.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "someone@example.com" } }));
     let a = serializeAccounts().accounts.find((x) => x.name === "apikey")!;
     expect(a.loggedIn).toBe(false);
 
@@ -132,6 +137,9 @@ test("a Claude account with no claude.ai login is signed in through the Console 
     expect(a.loginMethod).toBe("console");
     expect(a.organization).toBe("Example Org");
     expect(a.email).toBe("dev@example.com");
+    const o = serializeAccounts().accounts.find((x) => x.name === "otherid")!;
+    expect(o.loggedIn).toBe(false);
+    expect(o.loginMethod).toBeUndefined();
 
     // An account on another provider runs on that provider's token, never the Console.
     addAccount("claude", "proxied");

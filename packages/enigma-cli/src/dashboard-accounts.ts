@@ -15,7 +15,7 @@
 
 import * as acct from "./accounts";
 import { accountTokenState, packSessionSources } from "./packs";
-import { sessionState, sessionEmail, sessionPlan, consoleLogin, isUsableSession, transferSession, type SessionState } from "./claude-oauth";
+import { sessionState, sessionEmail, sessionPlan, consoleLogin, accountConsoleLogin, isUsableSession, transferSession, type SessionState } from "./claude-oauth";
 
 export interface DashAccount {
     tool: string;
@@ -115,10 +115,13 @@ function sessionSourceDir(id: string): string | null {
 
 /** Snapshot every tool's accounts and all profiles for the browser. */
 export function serializeAccounts(): AccountsPayload {
-    // Read once per snapshot: it is machine-wide, not per account.
-    const consoleSignIn = consoleLogin();
+    // The machine-wide store is read once per snapshot; only the user's own account still uses it,
+    // a managed one has its own (see consoleStoreDir).
+    const userEnv = acct.userConsoleEnv();
+    const sharedConsole = consoleLogin(userEnv);
     const accounts: DashAccount[] = acct.TOOL_NAMES.flatMap((tool) =>
         acct.listAccounts(tool).map((a) => {
+            const consoleSignIn = tool !== "claude" ? null : a.name === acct.DEFAULT_NAME ? sharedConsole : accountConsoleLogin(a.dir, userEnv);
             // For Claude, "logged in" means a USABLE token, not just a cached email - so a stale
             // account (e.g. its token expired) is shown as such and can be re-authenticated.
             let loginState = tool === "claude" ? accountTokenState(tool, a.name) : undefined;

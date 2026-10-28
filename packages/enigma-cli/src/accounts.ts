@@ -43,6 +43,7 @@ import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
 import { enterSharedStore, leaveSharedStore } from "./session-store";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { accountConsoleLogin, consoleStoreDir, isUsableSession, seedConsoleStore, sessionEmail, sessionState } from "./claude-oauth";
 
 /**
  * A coding agent enigma can manage accounts for. `envFor` maps an account's
@@ -90,6 +91,7 @@ export interface AccountTarget {
     commands?: string;
 }
 
+const CLAUDE_DEFAULT_DIR = join(homedir(), ".claude");
 const OPENCODE_DEFAULT_DIR = join(homedir(), ".local", "share", "opencode");
 
 /** Registry of supported tools. Add an entry here to support a new agent. */
@@ -99,8 +101,13 @@ const TOOLS: Record<string, ToolSpec> = {
         label: "Claude Code",
         bin: "claude",
         binEnv: "ENIGMA_CLAUDE_BIN",
-        defaultDir: join(homedir(), ".claude"),
-        envFor: (dir) => ({ CLAUDE_CONFIG_DIR: dir }),
+        defaultDir: CLAUDE_DEFAULT_DIR,
+        // Any dir but the user's own ~/.claude also gets its own Console sign-in store: Claude
+        // Code otherwise falls back to the machine-wide one, so a signed-out account would run as
+        // whoever holds that login instead of asking to sign in (see consoleStoreDir).
+        envFor: (dir): Record<string, string> => resolve(dir) === resolve(CLAUDE_DEFAULT_DIR)
+            ? { CLAUDE_CONFIG_DIR: dir }
+            : { CLAUDE_CONFIG_DIR: dir, ANTHROPIC_CONFIG_DIR: consoleStoreDir(dir) },
         // CLAUDE_CONFIG_DIR relocates ~/.claude entirely: skills, the CLAUDE.md
         // user memory and settings.json are all read from the account dir.
         accountTarget: (dir) => ({ skills: join(dir, "skills"), memory: dir, commands: join(dir, "commands") }),
@@ -826,12 +833,14 @@ export async function launchTool(toolName: string, name: string | null, passthro
     // pauses, and an unexplained pause reads as a hang. A rename is instant and says nothing.
     if (store?.seeded === "copied") process.stdout.write("enigma: seeded this account's history into the shared session store.\n");
     const env = { ...process.env, ...tool.envFor(store?.dir ?? dir) };
+    if (toolName === "claude") pinConsoleStore(env, tool.envFor(dir).ANTHROPIC_CONFIG_DIR);
 
     // Per-account provider override (e.g. point Claude Code at MiniMax): inject its env BEFORE the
     // measuring-proxy block so a custom ANTHROPIC_BASE_URL disables the proxy (which must only ever
     // front Anthropic). This is an explicit per-account choice, so it wins over the inherited shell.
     const providerEnv = accountProviderEnv(toolName, account);
     if (providerEnv) Object.assign(env, providerEnv);
+    if (toolName === "claude" && account !== DEFAULT_NAME && !providerEnv) prepareClaudeLogin(account, dir, opts.login === true);
 
     touchLastUsed(toolName, account);
 
@@ -847,6 +856,50 @@ export async function launchTool(toolName: string, name: string | null, passthro
         // keeps a refresh token Anthropic has already invalidated - a silent logout.
         if (store) leaveSharedStore(toolName, dir);
     }
+}
+
+/**
+ * Point a Claude launch at the Console sign-in store of the account it runs: `own` for a managed
+ * account, which also wins over the shared session store's dir (that store pools conversations,
+ * never logins). The user's own account keeps a store they chose in their shell, but never the one
+ * an enigma session it was started from injected (always `<its CLAUDE_CONFIG_DIR>/anthropic`), or
+ * it would run on that account's login.
+ */
+function pinConsoleStore(env: NodeJS.ProcessEnv, own: string | undefined): void {
+    const inherited = process.env.ANTHROPIC_CONFIG_DIR?.trim();
+    const parentDir = process.env.CLAUDE_CONFIG_DIR?.trim();
+    const injected = Boolean(inherited && parentDir && resolve(inherited) === resolve(consoleStoreDir(parentDir)));
+    const store = own ?? (injected ? undefined : inherited);
+    if (store) env.ANTHROPIC_CONFIG_DIR = store;
+    else delete env.ANTHROPIC_CONFIG_DIR;
+}
+
+/**
+ * The user's own environment for reading the machine-wide Console store: from inside an enigma
+ * session the inherited store is that session's account, not the one a legacy login lives in.
+ */
+export function userConsoleEnv(): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    pinConsoleStore(env, undefined);
+    return env;
+}
+
+/** Give a managed Claude account dir its own copy of a legacy Console-only login (seedConsoleStore). */
+export function migrateConsoleLogin(dir: string): void {
+    seedConsoleStore(dir, userConsoleEnv());
+}
+
+/**
+ * Before launching a managed Claude account: migrate a legacy Console-only login into the
+ * account's own store, then say so when the account has no login at all. Claude Code's own
+ * "please /login" does not name the account it expects, which is how a signed-out account
+ * ending up on someone else's login went unnoticed.
+ */
+function prepareClaudeLogin(account: string, dir: string, login: boolean): void {
+    migrateConsoleLogin(dir);
+    if (login || isUsableSession(sessionState(dir)) || accountConsoleLogin(dir, userConsoleEnv())) return;
+    const email = sessionEmail(dir);
+    process.stdout.write(`enigma: account '${account}'${email ? ` (${email})` : ""} is signed out - run /login and sign in${email ? ` as ${email}` : ""}.\n`);
 }
 
 /**

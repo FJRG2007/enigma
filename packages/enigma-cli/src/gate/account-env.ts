@@ -62,6 +62,15 @@ export function decodeAccountEnv(raw: unknown): AccountEnv | undefined {
     return decoded;
 }
 
+/**
+ * The wire form of a snapshot: only the variables that are set, since an omitted one decodes as
+ * unset. A daemon started by an older enigma rejects variables it does not know, so sending an
+ * unset one it never heard of would refuse every push until that daemon restarts.
+ */
+export function encodeAccountEnv(env: AccountEnv): Record<string, string> {
+    return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== null));
+}
+
 /** One-line rendering for logs: `KEY=dir` or `KEY=(unset)` per variable. */
 export function describeAccountEnv(env: AccountEnv): string {
     return Object.entries(env).map(([key, value]) => `${key}=${value ?? "(unset)"}`).join(" ");

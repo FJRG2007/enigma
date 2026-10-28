@@ -35,6 +35,14 @@ test("decodeAccountEnv rejects malformed snapshots and treats omitted variables 
     expect(() => accountEnv.decodeAccountEnv(["x"])).toThrow("must be an object");
 });
 
+test("the wire form sends only set variables, so an older daemon never sees an unset one it does not know", () => {
+    const snapshot = accountEnv.captureAccountEnv({ CLAUDE_CONFIG_DIR: PUSHER_DIR, ANTHROPIC_CONFIG_DIR: join(PUSHER_DIR, "anthropic") });
+    expect(snapshot.ANTHROPIC_CONFIG_DIR).toBe(join(PUSHER_DIR, "anthropic"));
+    const wire = proto.encodePushReceivedParams({ gate: "g", ref: "r", old: "o", new: "n", accountEnv: accountEnv.captureAccountEnv({ CLAUDE_CONFIG_DIR: PUSHER_DIR }) });
+    expect(wire.account_env).toEqual({ CLAUDE_CONFIG_DIR: PUSHER_DIR });
+    expect(accountEnv.decodeAccountEnv(accountEnv.encodeAccountEnv(snapshot))).toEqual(snapshot);
+});
+
 test("push and rerun params carry the snapshot across the wire", () => {
     const snapshot = accountEnv.captureAccountEnv({ CLAUDE_CONFIG_DIR: PUSHER_DIR });
     const push = proto.decodePushReceivedParams(JSON.parse(JSON.stringify(proto.encodePushReceivedParams({

@@ -130,3 +130,52 @@ test("an account or profile cannot take a command's name", () => {
     // Names that merely contain a command word are fine.
     expect(() => accounts.addAccount("claude", "update-team")).not.toThrow();
 });
+
+/** Launch `account` with a stand-in binary that records the Console-store env it was given. */
+async function launchedEnv(account: string, env: Record<string, string | undefined> = {}): Promise<{ claude?: string; store?: string; }> {
+    const out = join(HOME, `launch-${Math.random().toString(36).slice(2)}.json`);
+    const saved = { ...process.env };
+    Object.assign(process.env, env, { ENIGMA_CLAUDE_BIN: process.execPath });
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
+    try {
+        const script = `require("fs").writeFileSync(${JSON.stringify(out)}, JSON.stringify({ claude: process.env.CLAUDE_CONFIG_DIR, store: process.env.ANTHROPIC_CONFIG_DIR }))`;
+        expect(await accounts.launchTool("claude", account, ["-e", script], { login: true })).toBe(0);
+    } finally {
+        for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+        Object.assign(process.env, saved);
+    }
+    return JSON.parse(readFileSync(out, "utf8"));
+}
+
+test("a managed Claude account launches on its own Console store, never the machine-wide one", async () => {
+    const a = accounts.addAccount("claude", "isolated");
+    const got = await launchedEnv("isolated", { ANTHROPIC_CONFIG_DIR: join(HOME, "machine-store") });
+    expect(got.claude).toBe(a.dir);
+    expect(got.store).toBe(join(a.dir, "anthropic"));
+});
+
+test("the user's own account drops a store inherited from an enigma session, keeps one they chose", async () => {
+    const parent = accounts.addAccount("claude", "parentsession");
+    const inherited = await launchedEnv(accounts.DEFAULT_NAME, { CLAUDE_CONFIG_DIR: parent.dir, ANTHROPIC_CONFIG_DIR: join(parent.dir, "anthropic") });
+    expect(inherited.store).toBeUndefined();
+    const chosen = await launchedEnv(accounts.DEFAULT_NAME, { CLAUDE_CONFIG_DIR: undefined, ANTHROPIC_CONFIG_DIR: join(HOME, "my-store") });
+    expect(chosen.store).toBe(join(HOME, "my-store"));
+});
+
+test("launching a Console-only account carries its machine-wide login into its own store", async () => {
+    const machine = join(HOME, "legacy-store");
+    mkdirSync(join(machine, "configs"), { recursive: true });
+    mkdirSync(join(machine, "credentials"), { recursive: true });
+    writeFileSync(join(machine, "configs", "default.json"), JSON.stringify({ authentication: { type: "user_oauth" } }));
+    writeFileSync(join(machine, "credentials", "default.json"), JSON.stringify({ access_token: "A", refresh_token: "R", account_email: "dev@example.com" }));
+    const consoleOnly = accounts.addAccount("claude", "consoleonly");
+    writeFileSync(join(consoleOnly.dir, ".credentials.json"), "{}");
+    writeFileSync(join(consoleOnly.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "dev@example.com" } }));
+    const otherId = accounts.addAccount("claude", "signedout");
+    writeFileSync(join(otherId.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "admin@example.com" } }));
+
+    await launchedEnv("consoleonly", { ANTHROPIC_CONFIG_DIR: machine, CLAUDE_CONFIG_DIR: undefined });
+    await launchedEnv("signedout", { ANTHROPIC_CONFIG_DIR: machine, CLAUDE_CONFIG_DIR: undefined });
+    expect(JSON.parse(readFileSync(join(consoleOnly.dir, "anthropic", "credentials", "default.json"), "utf8")).account_email).toBe("dev@example.com");
+    expect(existsSync(join(otherId.dir, "anthropic"))).toBe(false);
+});

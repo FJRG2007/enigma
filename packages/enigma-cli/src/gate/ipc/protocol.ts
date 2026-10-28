@@ -11,7 +11,7 @@
  */
 
 import type { Run, StepResult } from "../db";
-import { decodeAccountEnv, type AccountEnv } from "../account-env";
+import { decodeAccountEnv, encodeAccountEnv, type AccountEnv } from "../account-env";
 import { ACTION_ASKUSER, ACTION_AUTOFIX } from "../types";
 import type { Finding, StepName, RunStatus, StepStatus, ApprovalAction } from "../types";
 
@@ -319,7 +319,7 @@ export function encodePushReceivedParams(p: PushReceivedParams): Record<string, 
     const w: Record<string, unknown> = { gate: p.gate, ref: p.ref, old: p.old, new: p.new };
     if (p.skipSteps && p.skipSteps.length > 0) w.skip_steps = p.skipSteps;
     if (p.intent) w.intent = p.intent;
-    if (p.accountEnv) w.account_env = p.accountEnv;
+    if (p.accountEnv) w.account_env = encodeAccountEnv(p.accountEnv);
     return w;
 }
 
@@ -373,7 +373,7 @@ export function encodeRerunParams(p: RerunParams): Record<string, unknown> {
     const w: Record<string, unknown> = { repo_id: p.repoId, branch: p.branch };
     if (p.skipSteps && p.skipSteps.length > 0) w.skip_steps = p.skipSteps;
     if (p.intent) w.intent = p.intent;
-    if (p.accountEnv) w.account_env = p.accountEnv;
+    if (p.accountEnv) w.account_env = encodeAccountEnv(p.accountEnv);
     return w;
 }
 
