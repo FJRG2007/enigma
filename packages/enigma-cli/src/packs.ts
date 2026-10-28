@@ -31,10 +31,7 @@ import { engineBin, engineNodeRange, ensureEngine, ensureEngineAsync, installedE
 import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import {
-    DEFAULT_NAME, DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir, toolEnv,
-    listAccounts, resolveConfigDir, resolveLaunchAccount
-} from "./accounts";
+import * as acct from "./accounts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -238,7 +235,7 @@ function packAccountKey(id: string, tool: string): string {
 /** The pack's stored default account for a tool, if set and still existing; else null. */
 export function getPackAccount(id: string, tool: string): string | null {
     const name = readConfig().config.packAccounts?.[packAccountKey(id, tool)];
-    return name && accountExists(tool, name) ? name : null;
+    return name && acct.accountExists(tool, name) ? name : null;
 }
 
 /**
@@ -248,9 +245,9 @@ export function getPackAccount(id: string, tool: string): string | null {
  */
 export function setPackDefaultAccount(id: string, tool: string, account: string | null): void {
     if (!getPack(id)) throw new Error(`Unknown agent '${id}'.`);
-    if (!isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
-    if (account !== null && !accountExists(tool, account)) {
-        throw new Error(`No such ${tool} account: '${account}'. Create it first: enigma account add ${account}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
+    if (!acct.isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
+    if (account !== null && !acct.accountExists(tool, account)) {
+        throw new Error(`No such ${tool} account: '${account}'. Create it first: enigma account add ${account}${tool === acct.DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
     }
     setPackAccount(packAccountKey(id, tool), account, "global");
 }
@@ -262,12 +259,12 @@ export function setPackDefaultAccount(id: string, tool: string, account: string 
  */
 export function resolvePackAccount(id: string, tool: string, explicit?: string): string {
     if (explicit) {
-        if (!accountExists(tool, explicit)) {
-            throw new Error(`No such ${tool} account: '${explicit}'. Create it first: enigma account add ${explicit}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
+        if (!acct.accountExists(tool, explicit)) {
+            throw new Error(`No such ${tool} account: '${explicit}'. Create it first: enigma account add ${explicit}${tool === acct.DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
         }
         return explicit;
     }
-    return getPackAccount(id, tool) ?? resolveLaunchAccount(tool);
+    return getPackAccount(id, tool) ?? acct.resolveLaunchAccount(tool);
 }
 
 // --- isolated context deployment -------------------------------------------------
@@ -299,7 +296,7 @@ function copyInto(src: string, dest: string): void {
 function ensurePackBypass(dir: string, tool: string): void {
     if (tool !== "claude" || !readConfig().config.permissionBypass) return;
     try {
-        const file = join(getTool(tool).accountTarget(dir).memory, "settings.json");
+        const file = join(acct.getTool(tool).accountTarget(dir).memory, "settings.json");
         const settings = (existsSync(file) ? readJson<Record<string, unknown>>(file) : {}) ?? {};
         const perm = (typeof settings.permissions === "object" && settings.permissions) ? settings.permissions as Record<string, unknown> : {};
         if (perm.defaultMode === "bypassPermissions") return;
@@ -343,7 +340,7 @@ export function deployPack(id: string, tool: string): string | null {
         if (existsSync(deployMarker(dir)) && readFileSync(deployMarker(dir), "utf8").trim() === version) return dir;
     } catch { /* re-deploy on a bad marker */ }
 
-    const target = getTool(tool).accountTarget(dir);
+    const target = acct.getTool(tool).accountTarget(dir);
     // Skills -> the tool's skill dir (when it has a per-account one).
     if (target.skills) {
         rmSync(target.skills, { recursive: true, force: true });
@@ -438,7 +435,7 @@ export function seedCredentials(id: string, tool: string, account: string): void
     const files = CRED_FILES[tool];
     if (!files) return;
     try {
-        const source = resolveConfigDir(tool, account);
+        const source = acct.resolveConfigDir(tool, account);
         const dest = contextDir(id, tool);
         const marker = join(dest, ".enigma-pack-account");
         let seededFrom = "";
@@ -512,9 +509,9 @@ function syncContextAccountState(accountDir: string, ctxDir: string): void {
  * own ~/.claude, which enigma never writes credentials into. Best-effort.
  */
 export function reconcilePackSession(id: string, tool: string, account: string): void {
-    if (tool !== "claude" || account === DEFAULT_NAME) return;
+    if (tool !== "claude" || account === acct.DEFAULT_NAME) return;
     try {
-        const accountDir = resolveConfigDir(tool, account);
+        const accountDir = acct.resolveConfigDir(tool, account);
         const ctx = contextDir(id, tool);
         copyIfFresher(accountDir, ctx);
         copyIfFresher(ctx, accountDir);
@@ -522,7 +519,7 @@ export function reconcilePackSession(id: string, tool: string, account: string):
 }
 
 /** Claude pack contexts that currently hold a credentials file, as session-transfer sources. */
-export function packSessionSources(tool: string = DEFAULT_TOOL): { id: string; label: string; dir: string; }[] {
+export function packSessionSources(tool: string = acct.DEFAULT_TOOL): { id: string; label: string; dir: string; }[] {
     return PACKS
         .map((p) => ({ id: p.id, label: p.label, dir: contextDir(p.id, tool) }))
         .filter((s) => existsSync(join(s.dir, ".credentials.json")));
@@ -659,7 +656,7 @@ export function runPackEngine(id: string, tool: string, args: string[]): number 
     const withClient = client && (args[0] === "setup" || args[0] === "doctor") && !args.includes("--client") ? [...args, "--client", client] : args;
     const result = spawnSync(inv.command, [...inv.args, ...withClient], {
         stdio: "inherit", windowsHide: true,
-        env: toolEnv(tool, contextDir(id, tool)),
+        env: acct.toolEnv(tool, contextDir(id, tool)),
     });
     return result.status ?? 1;
 }
@@ -693,8 +690,8 @@ export interface PackView {
 /** Marketplace listing of every pack with its install/enable state and seeding account. */
 export function listPacks(): PackView[] {
     return PACKS.map((p) => {
-        const tool = DEFAULT_TOOL;
-        const accounts = listAccounts(tool).map((a) => ({ name: a.name, label: a.email ?? a.displayName ?? a.name, state: accountTokenState(tool, a.name) }));
+        const tool = acct.DEFAULT_TOOL;
+        const accounts = acct.listAccounts(tool).map((a) => ({ name: a.name, label: a.email ?? a.displayName ?? a.name, state: accountTokenState(tool, a.name) }));
         const resolvedAccount = resolvePackAccount(p.id, tool);
         const ctxCred = join(contextDir(p.id, tool), ...(CRED_FILES[tool]?.[0] ?? "").split("/"));
         return {
@@ -721,10 +718,10 @@ export function listPacks(): PackView[] {
  * agent itself with the context dir - used by the local API server to serve requests inside a
  * pack (e.g. Helio). Throws on any unrecoverable error. `account` overrides the pack default.
  */
-export function ensurePackContext(id: string, tool: string = DEFAULT_TOOL, account?: string): string {
+export function ensurePackContext(id: string, tool: string = acct.DEFAULT_TOOL, account?: string): string {
     const pack = getPack(id);
     if (!pack) throw new Error(`Unknown agent '${id}'.`);
-    if (!isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
+    if (!acct.isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
     const seedAccount = resolvePackAccount(id, tool, account);
     if (!ensurePackInstalled(id)) throw new Error(`Could not fetch ${pack.label} (${pack.pkg}). Check your network and npm.`);
     if (!isPackEnabled(id)) enablePack(id);
@@ -736,10 +733,10 @@ export function ensurePackContext(id: string, tool: string = DEFAULT_TOOL, accou
     return dir;
 }
 
-export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passthrough: string[] = [], account?: string): Promise<number> {
+export async function launchPack(id: string, tool: string = acct.DEFAULT_TOOL, passthrough: string[] = [], account?: string): Promise<number> {
     const pack = getPack(id);
     if (!pack) { process.stderr.write(`Unknown agent '${id}'.\n`); return 1; }
-    if (!isToolName(tool)) { process.stderr.write(`Unknown tool '${tool}'.\n`); return 1; }
+    if (!acct.isToolName(tool)) { process.stderr.write(`Unknown tool '${tool}'.\n`); return 1; }
     let seedAccount: string;
     try { seedAccount = resolvePackAccount(id, tool, account); }
     catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 1; }
@@ -758,7 +755,7 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
     const ctxFresh = hasUsableToken(join(dir, ...(CRED_FILES[tool]?.[0] ?? "").split("/")));
     const srcState = accountTokenState(tool, seedAccount);
     if (!ctxFresh && srcState !== "ok") {
-        const valid = listAccounts(tool).find((a) => a.name !== seedAccount && accountTokenState(tool, a.name) === "ok");
+        const valid = acct.listAccounts(tool).find((a) => a.name !== seedAccount && accountTokenState(tool, a.name) === "ok");
         const lines = [
             `Note: no saved token could be copied for '${seedAccount}', so ${pack.label} may ask you to log in once.`,
             "  If it does, sign in inside the agent (/login) - the isolated context remembers it next time.",
@@ -772,11 +769,11 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
     // fresher token (seed it in, or heal a blanked/stale account from the still-live context).
     reconcilePackSession(id, tool, seedAccount);
     process.stdout.write(`Launching ${pack.label} (${tool}) with account '${seedAccount}' in an isolated context.\n`);
-    const code = await launchInDir(tool, dir, passthrough);
+    const code = await acct.launchInDir(tool, dir, passthrough);
     // After exit, propagate any token the pack refreshed during the session back to the managed
     // account, so the next `enigma claude ${seedAccount}` reuses the live session, not a stale copy.
-    if (tool === "claude" && seedAccount !== DEFAULT_NAME) {
-        try { copyIfFresher(dir, resolveConfigDir(tool, seedAccount)); } catch { /* best-effort */ }
+    if (tool === "claude" && seedAccount !== acct.DEFAULT_NAME) {
+        try { copyIfFresher(dir, acct.resolveConfigDir(tool, seedAccount)); } catch { /* best-effort */ }
     }
     return code;
 }
@@ -786,6 +783,6 @@ export function accountTokenState(tool: string, account: string): "ok" | "expire
     if (tool !== "claude") return "ok"; // only Claude's token freshness is inspected today
     const rel = CRED_FILES[tool]?.[0];
     if (!rel) return "ok";
-    try { return tokenState(join(resolveConfigDir(tool, account), ...rel.split("/"))); }
+    try { return tokenState(join(acct.resolveConfigDir(tool, account), ...rel.split("/"))); }
     catch { return "absent"; }
 }
