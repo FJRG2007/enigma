@@ -11,6 +11,7 @@ import { Paths } from "@/gate/paths";
 import { Server } from "@/gate/ipc/server";
 import { Client } from "@/gate/ipc/client";
 import * as proto from "@/gate/ipc/protocol";
+import * as accountEnv from "@/gate/account-env";
 import { mkdtempSync, rmSync } from "node:fs";
 import { test, expect, afterAll } from "bun:test";
 import { RunManager } from "@/gate/daemon/manager";
@@ -115,4 +116,47 @@ test("the daemon refuses a push or rerun without the pusher's account", async ()
 test("health advertises account support only when the daemon says so", () => {
     expect(proto.decodeHealthResult({ status: "ok" }).accountEnv).toBe(false);
     expect(proto.decodeHealthResult({ status: "ok", account_env: true }).accountEnv).toBe(true);
+});
+
+test("a push to a daemon that does not know a set variable is resent without it", async () => {
+    const paths = Paths.withRoot(join(ROOT, "older-keys"));
+    paths.ensureDirs();
+    const received: Record<string, unknown>[] = [];
+    const srv = new Server();
+    for (const method of [proto.MethodPushReceived, proto.MethodRerun]) {
+        srv.handle(method, (params) => {
+            const wire = (params as { account_env: Record<string, unknown>; }).account_env;
+            received.push(wire);
+            if ("ANTHROPIC_CONFIG_DIR" in wire) throw new Error("account_env: unsupported variable \"ANTHROPIC_CONFIG_DIR\"");
+            return { run_id: "run-1" };
+        });
+    }
+    void srv.serve(paths.socket());
+    const accountDir = join(ROOT, "managed");
+    const snapshot = { CLAUDE_CONFIG_DIR: accountDir, ANTHROPIC_CONFIG_DIR: join(accountDir, "anthropic"), CODEX_HOME: null };
+    try {
+        await Bun.sleep(50);
+        const client = await Client.dial(paths.socket());
+        try {
+            expect(await client.pushReceived({ gate: "g", ref: "r", old: "o", new: "n", accountEnv: snapshot })).toBe("run-1");
+            expect(await client.rerun({ repoId: "repo", branch: "main", accountEnv: snapshot })).toBe("run-1");
+            expect(received).toEqual([
+                { CLAUDE_CONFIG_DIR: accountDir, ANTHROPIC_CONFIG_DIR: join(accountDir, "anthropic") },
+                { CLAUDE_CONFIG_DIR: accountDir },
+                { CLAUDE_CONFIG_DIR: accountDir, ANTHROPIC_CONFIG_DIR: join(accountDir, "anthropic") },
+                { CLAUDE_CONFIG_DIR: accountDir }
+            ]);
+        } finally {
+            client.close();
+        }
+    } finally {
+        srv.close();
+    }
+});
+
+test("any other daemon error is not retried", () => {
+    const env = { CLAUDE_CONFIG_DIR: join(ROOT, "managed") };
+    expect(accountEnv.withoutUnsupportedKey(env, "account_env: \"CLAUDE_CONFIG_DIR\" must be an absolute path or null")).toBeNull();
+    expect(accountEnv.withoutUnsupportedKey(env, "account_env: unsupported variable \"PATH\"")).toBeNull();
+    expect(accountEnv.withoutUnsupportedKey(env, "account_env: unsupported variable \"CLAUDE_CONFIG_DIR\"")).toEqual({});
 });

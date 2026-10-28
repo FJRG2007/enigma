@@ -32,7 +32,7 @@ import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import {
-    DEFAULT_NAME, DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir,
+    DEFAULT_NAME, DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir, toolEnv,
     listAccounts, resolveConfigDir, resolveLaunchAccount
 } from "./accounts";
 
@@ -659,7 +659,7 @@ export function runPackEngine(id: string, tool: string, args: string[]): number 
     const withClient = client && (args[0] === "setup" || args[0] === "doctor") && !args.includes("--client") ? [...args, "--client", client] : args;
     const result = spawnSync(inv.command, [...inv.args, ...withClient], {
         stdio: "inherit", windowsHide: true,
-        env: { ...process.env, ...getTool(tool).envFor(contextDir(id, tool)) },
+        env: toolEnv(tool, contextDir(id, tool)),
     });
     return result.status ?? 1;
 }

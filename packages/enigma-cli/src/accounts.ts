@@ -874,6 +874,14 @@ function pinConsoleStore(env: NodeJS.ProcessEnv, own: string | undefined): void 
     else delete env.ANTHROPIC_CONFIG_DIR;
 }
 
+/** The environment that runs `toolName` on the config dir `dir`, Console store pinned for Claude. */
+export function toolEnv(toolName: string, dir: string): NodeJS.ProcessEnv {
+    const own = getTool(toolName).envFor(dir);
+    const env: NodeJS.ProcessEnv = { ...process.env, ...own };
+    if (toolName === "claude") pinConsoleStore(env, own.ANTHROPIC_CONFIG_DIR);
+    return env;
+}
+
 /**
  * The user's own environment for reading the machine-wide Console store: from inside an enigma
  * session the inherited store is that session's account, not the one a legacy login lives in.
@@ -950,7 +958,7 @@ export async function launchInDir(toolName: string, dir: string, passthrough: st
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });
     const cfg = readConfig().config;
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
-    const env: NodeJS.ProcessEnv = { ...process.env, ...tool.envFor(dir) };
+    const env = toolEnv(toolName, dir);
     const browsers = await startAgentJail(env);
     const proxy = await maybeStartProxy(toolName, env, cfg);
     try {

@@ -236,10 +236,14 @@ export function accountConsoleLogin(dir: string, env: NodeJS.ProcessEnv = proces
  * working once its launch stops reading the shared store. Only for the identity rule of
  * `inheritsSharedConsole`; any other account is left to sign in on its own. The copy drops a
  * custom `credentials_path` (it would point back at the shared file). The machine-wide store is
- * never modified. Returns whether it wrote. Best-effort, never throws.
+ * never modified. The copy shares the original's refresh token and a refresh rotates it, so
+ * whichever side refreshes first (this account, or a plain `claude` and the `default` account on
+ * the machine-wide store) leaves the other signed out until it runs /login once. Returns whether
+ * it wrote. Best-effort, never throws.
  */
 export function seedConsoleStore(dir: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): boolean {
     try {
+        if (existsSync(consoleStoreDir(dir))) return false;
         const shared = resolveConsoleProfile(env, platform);
         if (!shared || !inheritsSharedConsole(dir, shared.cred)) return false;
         const store = consoleStoreDir(dir);

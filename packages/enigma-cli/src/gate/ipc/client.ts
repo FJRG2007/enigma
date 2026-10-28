@@ -12,6 +12,7 @@
 
 import * as proto from "./protocol";
 import type { Socket } from "node:net";
+import { withoutUnsupportedKey, type AccountEnv } from "../account-env";
 import { dial, readLines } from "./transport";
 
 /** Read deadline for a unary call, matching the Go client's 30s read deadline. */
@@ -54,7 +55,7 @@ export class Client {
 
     /** Notifies the daemon a push arrived and returns the created run ID. */
     async pushReceived(params: proto.PushReceivedParams): Promise<string> {
-        const raw = await this.call(proto.MethodPushReceived, proto.encodePushReceivedParams(params));
+        const raw = await this.callWithAccountEnv(proto.MethodPushReceived, params, proto.encodePushReceivedParams);
         return proto.decodePushReceivedResult(raw).runId;
     }
 
@@ -78,7 +79,7 @@ export class Client {
 
     /** Requests a new run for the latest gate head on a branch; returns the run ID. */
     async rerun(params: proto.RerunParams): Promise<string> {
-        const raw = await this.call(proto.MethodRerun, proto.encodeRerunParams(params));
+        const raw = await this.callWithAccountEnv(proto.MethodRerun, params, proto.encodeRerunParams);
         return proto.decodeRerunResult(raw).runId;
     }
 
@@ -142,6 +143,19 @@ export class Client {
             });
             this.socket.write(`${JSON.stringify(req)}\n`);
         });
+    }
+
+    /** `call` for a request carrying an account snapshot, dropping each variable the daemon does not know. */
+    private async callWithAccountEnv<P extends { accountEnv?: AccountEnv }>(method: string, params: P, encode: (p: P) => unknown): Promise<unknown> {
+        for (;;) {
+            try {
+                return await this.call(method, encode(params));
+            } catch (err) {
+                const accountEnv = err instanceof proto.RPCError && params.accountEnv ? withoutUnsupportedKey(params.accountEnv, err.message) : null;
+                if (!accountEnv) throw err;
+                params = { ...params, accountEnv };
+            }
+        }
     }
 
     private onLine(line: string): void {

@@ -20,7 +20,7 @@ import { tokenMatches } from "./dashboard-token";
 import { apiRotationOf, readConfig, type ApiRotation } from "./config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AccountRotator, classifyAccountError, poolOrder, type WindowUsage } from "./api-rotation";
-import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles, listAccounts, migrateConsoleLogin, DEFAULT_NAME } from "./accounts";
+import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles, listAccounts, migrateConsoleLogin, toolEnv, DEFAULT_NAME } from "./accounts";
 import { runSessionTurn, closeAllSessions, isSessionBusy, SessionError, DEFAULT_SESSION_CONFIG, type SessionSpec } from "./session-runtime";
 import {
     resolveAdapter,
@@ -179,7 +179,7 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
     const cfg = readConfig().config;
     const dir = await resolveContextDir(toolName, opts);
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
-    const env = { ...process.env, ...tool.envFor(dir) };
+    const env = toolEnv(toolName, dir);
     const { args, stdin } = adapter.build(prompt, opts);
     const useShell = process.platform === "win32" && !binary.toLowerCase().endsWith(".exe");
 
@@ -582,7 +582,7 @@ async function buildClaudeSessionSpec(opts: CompletionOptions): Promise<SessionS
     const cfg = readConfig().config;
     const dir = await resolveContextDir("claude", opts);
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.claude || resolveBin(tool.bin) || tool.bin;
-    const env = { ...process.env, ...tool.envFor(dir) };
+    const env = toolEnv("claude", dir);
     const useShell = process.platform === "win32" && !binary.toLowerCase().endsWith(".exe");
     // `dir` is the resolved isolation context: it binds the session id to this account/profile/pack.
     return { binary, env, model: opts.model, system: opts.system, enableTools: opts.enableTools === true, contextKey: dir, useShell };

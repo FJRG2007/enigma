@@ -162,6 +162,21 @@ test("the user's own account drops a store inherited from an enigma session, kee
     expect(chosen.store).toBe(join(HOME, "my-store"));
 });
 
+test("every spawn env pins the Console store the way a launch does, the API server's default account included", () => {
+    const parent = accounts.addAccount("claude", "apiparent");
+    const saved = { ...process.env };
+    Object.assign(process.env, { CLAUDE_CONFIG_DIR: parent.dir, ANTHROPIC_CONFIG_DIR: join(parent.dir, "anthropic") });
+    try {
+        const own = accounts.toolEnv("claude", accounts.resolveConfigDir("claude", accounts.DEFAULT_NAME));
+        expect(own.ANTHROPIC_CONFIG_DIR).toBeUndefined();
+        const managed = accounts.addAccount("claude", "apimanaged");
+        expect(accounts.toolEnv("claude", managed.dir).ANTHROPIC_CONFIG_DIR).toBe(join(managed.dir, "anthropic"));
+    } finally {
+        for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+        Object.assign(process.env, saved);
+    }
+});
+
 test("launching a Console-only account carries its machine-wide login into its own store", async () => {
     const machine = join(HOME, "legacy-store");
     mkdirSync(join(machine, "configs"), { recursive: true });

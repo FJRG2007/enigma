@@ -24,6 +24,8 @@ export type AccountEnv = Record<string, string | null>;
 
 const runAccounts = new Map<string, AccountEnv>();
 
+const UNSUPPORTED_PREFIX = "account_env: unsupported variable ";
+
 /** Snapshots the account variables of `env`; every known variable is present. */
 export function captureAccountEnv(env: NodeJS.ProcessEnv = process.env): AccountEnv {
     const snapshot: AccountEnv = {};
@@ -45,7 +47,7 @@ export function decodeAccountEnv(raw: unknown): AccountEnv | undefined {
     const keys = accountEnvKeys();
     const entries = raw as Record<string, unknown>;
     for (const key of Object.keys(entries)) {
-        if (!keys.includes(key)) throw new Error(`account_env: unsupported variable "${key}"`);
+        if (!keys.includes(key)) throw new Error(`${UNSUPPORTED_PREFIX}"${key}"`);
     }
     const decoded: AccountEnv = {};
     for (const key of keys) {
@@ -69,6 +71,21 @@ export function decodeAccountEnv(raw: unknown): AccountEnv | undefined {
  */
 export function encodeAccountEnv(env: AccountEnv): Record<string, string> {
     return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== null));
+}
+
+/**
+ * `env` without the variable a daemon refused as unknown (`message` is its error), or null when
+ * the error is anything else. A daemon started by an older enigma knows fewer variables, and the
+ * run is better pinned to the ones it does know than refused until that daemon restarts.
+ */
+export function withoutUnsupportedKey(env: AccountEnv, message: string): AccountEnv | null {
+    const at = message.indexOf(UNSUPPORTED_PREFIX);
+    if (at < 0) return null;
+    const match = /^"([^"]+)"/.exec(message.slice(at + UNSUPPORTED_PREFIX.length));
+    if (!match || !(match[1] in env)) return null;
+    const rest = { ...env };
+    delete rest[match[1]];
+    return rest;
 }
 
 /** One-line rendering for logs: `KEY=dir` or `KEY=(unset)` per variable. */
