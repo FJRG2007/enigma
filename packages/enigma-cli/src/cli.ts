@@ -3241,6 +3241,14 @@ export async function run(argv: string[]): Promise<void> {
         const { runPushGuardHook } = await import("./push-guard");
         process.exit(await runPushGuardHook(payload));
     }
+    // Hidden: the same refusal as a git pre-push hook (global `hook.enigma-push-guard.*` config),
+    // for pushes from any tool. Git passes the remote name and URL, and the refs on stdin.
+    if (argv[0] === "__pre-push-guard") {
+        let refs = "";
+        try { refs = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runPrePushHook } = await import("./push-guard");
+        process.exit(await runPrePushHook(argv.slice(1), refs));
+    }
     // Hidden: the subagent budget (PreToolUse on Agent, SubagentStart, SubagentStop). Spawned only
     // around a subagent launch, never for other tool calls (the PreToolUse entry matches Agent).
     // Hidden: hands a saved handoff to a session that starts fresh (Claude Code, Codex, Kimi, OpenCode).

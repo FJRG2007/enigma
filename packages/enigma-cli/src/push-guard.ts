@@ -23,7 +23,9 @@
  * `push`; a push that rewrites nothing returns before any git call.
  */
 
-import { resolve } from "node:path";
+import { enigmaHome } from "./util";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { applyClaudeHook } from "./claude-hooks";
 import { parseGuardPayload } from "./attribution-guard";
@@ -300,4 +302,111 @@ function guardGroup(): HookGroup {
 /** Installs (on) or removes the guard in a Claude settings.json, leaving everything else. */
 export function applyPushGuard(settingsPath: string, on: boolean): HookWrite {
     return applyClaudeHook(settingsPath, "PreToolUse", PUSH_GUARD_MARKER, guardGroup(), on);
+}
+
+/**
+ * THE SAME RULE AT GIT'S OWN LEVEL. The PreToolUse hook only sees Claude Code's shell calls; a
+ * push from Codex, Kimi, OpenCode, an IDE or the user's terminal never reaches it. A `pre-push`
+ * hook does, whatever started git, and it is handed the exact refs and SHAs instead of a command
+ * line to parse. Git 2.54+ reads hooks from config (`hook.<name>.command` / `.event`), and a
+ * global entry runs IN ADDITION to a repository's own hooks and `core.hooksPath`, so installing
+ * it never displaces a repo's husky or .githooks. Older git ignores the keys. `--no-verify`
+ * skips it, which is the deliberate escape a person can type; an agent's `--no-verify` push still
+ * meets the PreToolUse hook in Claude Code.
+ */
+export const PRE_PUSH_MARKER = "__pre-push-guard";
+
+/** Name of enigma's entry in the global git config (`hook.<name>.*`). */
+const GIT_HOOK_NAME = "enigma-push-guard";
+
+/**
+ * The command the global config runs. Git runs it as `sh -c '<command> "$@"'` with the remote name
+ * and URL, so the call sits in a function invoked LAST, where that `"$@"` lands. Exit 127 (no
+ * `enigma` on the PATH of whatever started git, an IDE for instance) lets the push through: a
+ * guard that cannot start must not stop every push on the machine. Measured on git 2.54.
+ */
+const GIT_HOOK_COMMAND = `f() { enigma ${PRE_PUSH_MARKER} "$@"; s=$?; [ $s -eq 127 ] && exit 0; exit $s; }; f`;
+
+/** A SHA git uses for "no object": a new branch on the remote side, a deletion on the local side. */
+function isZeroSha(sha: string): boolean {
+    return /^0+$/.test(sha);
+}
+
+/**
+ * Why the push git is about to make would erase someone else's commits, or "" when it would not.
+ * `stdin` is what git hands a pre-push hook: one `<local ref> <local sha> <remote ref> <remote sha>`
+ * line per ref. A fast-forward and a new branch return before any network call.
+ */
+export async function prePushRefusal(remote: string, stdin: string, cwd: string, deadline = Date.now() + BUDGET_MS): Promise<string> {
+    const run = gitIn(cwd, deadline);
+    for (const line of stdin.split("\n")) {
+        const [, localSha = "", remoteRef = "", remoteSha = ""] = line.trim().split(/\s+/);
+        if (!remoteRef.startsWith("refs/heads/") || remoteSha === "" || isZeroSha(remoteSha)) continue;
+        const deleting = isZeroSha(localSha);
+        if (!deleting && await run(["merge-base", "--is-ancestor", remoteSha, localSha]).then(() => true, () => false)) continue;
+        const plan: PushPlan = { cwd, remote, targets: [], wholesale: "" };
+        const target: PushTarget = { branch: branchName(remoteRef), source: deleting ? null : localSha };
+        let reason: string;
+        try {
+            reason = await judgeTarget(plan, target, deadline);
+        } catch (err) {
+            reason = `this push rewrites ${remote}/${target.branch} and enigma could not verify it erases nobody's work (${err instanceof Error ? err.message : String(err)}).`;
+        }
+        if (reason) return reason;
+    }
+    return "";
+}
+
+/** pre-push entry: exit 1 with the reason on stderr stops the push; anything else lets it run. */
+export async function runPrePushHook(args: string[], stdin: string, cwd = process.cwd()): Promise<number> {
+    const remote = args[0] ?? "";
+    if (remote === "") return 0;
+    const reason = await prePushRefusal(remote, stdin, cwd);
+    if (!reason) return 0;
+    process.stderr.write(`enigma: push refused, ${reason}\nIntegrate their work instead: git pull --rebase (or merge), resolve conflicts keeping both sides, then push without --force. If those commits really must go, the person who owns that decision can push with --no-verify.\n`);
+    return 1;
+}
+
+/**
+ * The global config file: GIT_CONFIG_GLOBAL, else `.gitconfig` under enigma's home, which is the
+ * user's home unless ENIGMA_CONFIG_HOME isolates it (tests do). Written through `--file`, never
+ * `--global`, so the file read and the file written can never differ.
+ */
+function globalGitConfigFile(): string {
+    return process.env.GIT_CONFIG_GLOBAL || join(enigmaHome(), ".gitconfig");
+}
+
+/** Runs `git config --file <global file>` with an argument array; the trimmed stdout, or null on a non-zero exit. */
+function globalGitConfig(args: string[]): string | null {
+    const r = spawnSync("git", ["config", "--file", globalGitConfigFile(), ...args], { encoding: "utf8", timeout: 10_000, windowsHide: true });
+    return r.status === 0 ? r.stdout.trim() : null;
+}
+
+/**
+ * Whether the global config file already carries the entry, read without starting git: this runs
+ * on every sync, and a process launch costs seconds on some machines. A false "no" only costs the
+ * `git config` calls below, which settle it.
+ */
+function gitHookPresent(): boolean {
+    let text: string;
+    try { text = readFileSync(globalGitConfigFile(), "utf8"); } catch { return false; }
+    const section = text.split(/^\s*\[/m).find((s) => s.startsWith(`hook "${GIT_HOOK_NAME}"]`)) ?? "";
+    // git writes the value quoted, its inner quotes escaped.
+    return section.includes(`"${GIT_HOOK_COMMAND.replace(/"/g, "\\\"")}"`) && /^\s*event\s*=\s*pre-push\s*$/m.test(section);
+}
+
+/** Installs (on) or removes the global pre-push entry. Returns true when the config changed. */
+export function applyGitPushGuard(on: boolean): boolean {
+    if (on && gitHookPresent()) return false;
+    const command = globalGitConfig(["--get-all", `hook.${GIT_HOOK_NAME}.command`]);
+    const event = globalGitConfig(["--get-all", `hook.${GIT_HOOK_NAME}.event`]);
+    if (!on) {
+        if (command === null && event === null) return false;
+        globalGitConfig(["--remove-section", `hook.${GIT_HOOK_NAME}`]);
+        return true;
+    }
+    if (command === GIT_HOOK_COMMAND && event === "pre-push") return false;
+    globalGitConfig(["--replace-all", `hook.${GIT_HOOK_NAME}.command`, GIT_HOOK_COMMAND]);
+    globalGitConfig(["--replace-all", `hook.${GIT_HOOK_NAME}.event`, "pre-push"]);
+    return true;
 }

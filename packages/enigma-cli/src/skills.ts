@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { ASSETS_DIR } from "./assets-dir";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
-import { applyPushGuard } from "./push-guard";
+import { applyGitPushGuard, applyPushGuard } from "./push-guard";
 import { maybeOfferGitHooks } from "./security";
 import type { AccountTarget } from "./accounts";
 import { applyDashboardMode } from "./dashboard";
@@ -1251,6 +1251,13 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         }
     };
 
+    // The push guard at git's own level, whatever agent was chosen: one global pre-push entry
+    // covers every tool that runs git on this machine, the terminal included.
+    const applyGitConfig = (): void => {
+        if (opts.dryRun) return;
+        if (applyGitPushGuard(true)) reporter.info("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook).");
+    };
+
     // The same for Kimi Code, which asks its own "Trust this folder?" - per directory, so
     // this trusts the one being installed into and the sync path covers the rest.
     const applyKimiConfig = (): void => {
@@ -1458,6 +1465,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         reporter.note(lines.join("\n"), "Nothing to do");
         applyClaudeConfig();
         applyKimiConfig();
+        applyGitConfig();
         applyGhConfig();
         applyBypassConfig();
         applyLintConfig();
@@ -1532,6 +1540,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     s.stop(`Wrote ${copied} item(s)${nRemove ? `, removed ${nRemove}` : ""}.`);
     applyClaudeConfig();
     applyKimiConfig();
+    applyGitConfig();
     applyGhConfig();
     applyBypassConfig();
     applyLintConfig();
@@ -1638,6 +1647,7 @@ export function syncDeployed(agentNames?: string[]): string[] {
     // Discarded and per-agent-off skills are excluded from each agent's source set, so the
     // prune pass in syncTarget removes any deployed copy of them (propagates on every sync).
     const commands = bundledCommands();
+    let gitGuarded = false;
     for (const agent of discoverAgents()) {
         if (agentNames && !agentNames.includes(agent.name)) continue;
         const skills = currentSkillSet(agent.name);
@@ -1679,6 +1689,11 @@ export function syncDeployed(agentNames?: string[]): string[] {
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
         // The push guard, same reasoning: an install from before it existed only gains it here.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyPushGuard(claudeGlobalSettings(), true);
+        // Its git-level twin covers every other agent and the terminal: one global pre-push entry.
+        if (!gitGuarded && hasDeployment(agent, "global")) {
+            gitGuarded = true;
+            if (applyGitPushGuard(true)) notices.push("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook).");
+        }
         // The browser guard, same reasoning: an install from before it existed only gains it here.
         // Account dirs too: a launch only syncs an already-deployed account when autoSync is on,
         // so without this an account could stay unguarded indefinitely.

@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { foreignLostCommits, parsePush, pushRefusal, runPushGuardHook } from "@/push-guard";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { applyGitPushGuard, foreignLostCommits, parsePush, prePushRefusal, pushRefusal, runPushGuardHook } from "@/push-guard";
 
 const dirs: string[] = [];
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
@@ -145,3 +145,53 @@ test("reads a remote tip it has never fetched without leaving a ref or moving or
     expect(git(me, "me@e.test", "for-each-ref", "refs/enigma/")).toBe("");
     expect(git(me, "me@e.test", "rev-parse", "origin/develop")).toBe(tracking);
 }, 120_000);
+
+/** Pushes from `dir` with only a global config holding the pre-push entry; returns git's exit code and stderr. */
+function pushThroughHook(dir: string, globalConfig: string, ...args: string[]): { code: number; stderr: string; } {
+    const cli = join(import.meta.dir, "..", "src", "bin", "enigma.ts").replace(/\\/g, "/");
+    writeFileSync(globalConfig, `[hook "enigma-push-guard"]\n\tcommand = bun "${cli}" __pre-push-guard\n\tevent = pre-push\n`);
+    try {
+        execFileSync("git", ["push", ...args], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_CONFIG_GLOBAL: globalConfig } });
+        return { code: 0, stderr: "" };
+    } catch (err) {
+        const e = err as { status: number; stderr: string; };
+        return { code: e.status, stderr: e.stderr };
+    }
+}
+
+test("git's own pre-push hook refuses the force push from any tool, and lets a normal push through", async () => {
+    const { me, mate } = scenario();
+    const config = join(tmp("gitconfig"), ".gitconfig");
+    commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop");
+    commit(me, "me@e.test", "docs.txt", "docs: mine");
+    const before = git(mate, "mate@e.test", "ls-remote", "origin", "refs/heads/develop");
+
+    const forced = pushThroughHook(me, config, "--force", "origin", "develop");
+    expect(forced.code).not.toBe(0);
+    expect(forced.stderr).toContain("feat: usage alerts");
+    expect(git(mate, "mate@e.test", "ls-remote", "origin", "refs/heads/develop")).toBe(before);
+    expect(pushThroughHook(me, config, "origin", ":develop").stderr).toContain("deleting");
+
+    git(me, "me@e.test", "pull", "-q", "--rebase", "origin", "develop");
+    expect(pushThroughHook(me, config, "origin", "develop").code).toBe(0);
+    expect(await prePushRefusal("origin", "refs/heads/develop abc refs/tags/v1 0000000000000000000000000000000000000000\n", me)).toBe("");
+}, 180_000);
+
+test("installs the global entry once, idempotently, and removes it", () => {
+    const config = join(tmp("gitconfig"), ".gitconfig");
+    writeFileSync(config, "[user]\n\tname = x\n");
+    const previous = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+        expect(applyGitPushGuard(true)).toBe(true);
+        expect(applyGitPushGuard(true)).toBe(false);
+        const text = readFileSync(config, "utf8");
+        expect(text).toContain("enigma __pre-push-guard");
+        expect(text).toContain("name = x");
+        expect(applyGitPushGuard(false)).toBe(true);
+        expect(readFileSync(config, "utf8")).not.toContain("enigma-push-guard");
+    } finally {
+        if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = previous;
+    }
+}, 60_000);
