@@ -662,6 +662,12 @@ half needs `bun:sqlite` and is imported dynamically.
   not a loss) whose author email differs from the user's `user.email`; any such commit stops
   the step, naming each one. Same rule as the agent-side push guard (`push-guard.ts`,
   rules-are-persuasion.md), sharing its `foreignCommitsDropped` (cherry, log, author filter) and `lostCommitLines`.
+- CI-FIX ROUND PUSHES WERE NEVER COVERED BY EITHER FIX ABOVE. `ciFix.ts`'s `pushUpdatedHeadSHA`
+  force-pushed its own branch straight off the `ls-remote` tip, no lease and no foreign-commit
+  check - the exact gap the two bullets above closed for `push.ts`. It now calls `push.ts`'s
+  exported `safeForce` (same `inspectRemoteTip` lease plus `foreignCommitsLost`/`foreignLossError`)
+  and pushes with the SHA and force flag it returns, so a CI-fix round refuses on the same terms
+  as the initial push instead of forcing blind.
 
 ## Agent steps have an idle watchdog
 
