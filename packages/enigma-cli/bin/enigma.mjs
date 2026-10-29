@@ -140,6 +140,9 @@ if ((process.argv[2] === "__ci-hook" || process.argv[2] === "__ci-watch") && exi
  * Bundle missing -> fall through untouched and let the binary answer as it always did.
  */
 const browserGuardBundle = join(pkgRoot, "dist", "browser-guard.js");
+// A command naming `push` that the browser guard let through still owes the push guard, which
+// needs git and the binary: its payload is handed to `enigma __push-guard` below instead of exiting.
+let pushGuardPayload = null;
 if (process.argv[2] === "__browser-guard" && existsSync(browserGuardBundle)) {
     // Read SYNCHRONOUSLY, before any await, as above.
     let payload = "";
@@ -147,7 +150,9 @@ if (process.argv[2] === "__browser-guard" && existsSync(browserGuardBundle)) {
     try {
         const { runBrowserGuardHook } = await import(pathToFileURL(browserGuardBundle).href);
         // Exit 2 is the refusal; it is never swallowed.
-        process.exit(runBrowserGuardHook(payload));
+        const code = runBrowserGuardHook(payload);
+        if (code !== 0 || !/\bpush\b/.test(payload)) process.exit(code);
+        pushGuardPayload = payload;
     } catch (error) {
         // Said out loud: a guard that stops running looks exactly like a command that was allowed.
         process.stderr.write(`enigma: the browser guard could not run: ${error.message}\n`);
@@ -205,7 +210,10 @@ try {
  */
 const windowless = !process.stdin.isTTY && !process.stdout.isTTY && !process.stderr.isTTY;
 
-const child = spawn(binary, process.argv.slice(2), { stdio: "inherit", env, windowsHide: windowless });
+const child = pushGuardPayload === null
+    ? spawn(binary, process.argv.slice(2), { stdio: "inherit", env, windowsHide: windowless })
+    : spawn(binary, ["__push-guard"], { stdio: ["pipe", "inherit", "inherit"], env, windowsHide: windowless });
+if (pushGuardPayload !== null) child.stdin.end(pushGuardPayload);
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => { try { child.kill(signal); } catch { /* already gone */ } });

@@ -31,12 +31,12 @@ const COMMAND = `enigma ${BROWSER_GUARD_MARKER}`;
 
 /** Kimi Code's PreToolUse rule over its shell tools (its matcher is a regex on the tool name). */
 export function applyKimiBrowserGuard(configPath: string, on: boolean): boolean {
-    return applyKimiHook(configPath, BROWSER_GUARD_MARKER, { event: "PreToolUse", matcher: "^(?:Bash|PowerShell)$", command: COMMAND, timeout: 10 }, on) === "changed";
+    return applyKimiHook(configPath, BROWSER_GUARD_MARKER, { event: "PreToolUse", matcher: "^(?:Bash|PowerShell)$", command: COMMAND, timeout: 60 }, on) === "changed";
 }
 
 /** Codex's PreToolUse group in hooks.json; its shell tool is `Bash` for every command it runs. */
 export function applyCodexBrowserGuard(hooksPath: string, on: boolean): boolean {
-    const group = { matcher: "^Bash$", hooks: [{ type: "command", command: COMMAND, timeout: 10 }] };
+    const group = { matcher: "^Bash$", hooks: [{ type: "command", command: COMMAND, timeout: 60 }] };
     return applyClaudeHook(hooksPath, "PreToolUse", BROWSER_GUARD_MARKER, group, on) === "changed";
 }
 
@@ -59,7 +59,7 @@ export const EnigmaBrowserGuard = async () => ({
         let r;
         try {
             // shell:true lets Windows resolve enigma.cmd; windowsHide keeps that shell from flashing a console.
-            r = spawnSync("enigma", ["${BROWSER_GUARD_MARKER}"], { input: JSON.stringify({ tool_name: "Bash", tool_input: { command } }), encoding: "utf8", timeout: 10000, shell: process.platform === "win32", windowsHide: true });
+            r = spawnSync("enigma", ["${BROWSER_GUARD_MARKER}"], { input: JSON.stringify({ tool_name: "Bash", tool_input: { command } }), encoding: "utf8", timeout: 60000, shell: process.platform === "win32", windowsHide: true });
         } catch {
             return;
         }

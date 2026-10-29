@@ -3231,7 +3231,13 @@ export async function run(argv: string[]): Promise<void> {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
         const { runBrowserGuardHook } = await import("./browser-guard");
-        process.exit(runBrowserGuardHook(payload));
+        const browser = runBrowserGuardHook(payload);
+        // Kimi, Codex and OpenCode run this one entry before EVERY shell command, so it carries
+        // the push guard too: their `git push --no-verify` would otherwise skip the git-level
+        // pre-push hook, the only other place the push is judged. Claude has its own entry.
+        if (browser !== 0 || !/\bpush\b/.test(payload)) process.exit(browser);
+        const { runPushGuardHook } = await import("./push-guard");
+        process.exit(await runPushGuardHook(payload));
     }
     // Hidden: the PreToolUse guard that refuses a `git push` erasing commits other people pushed
     // (a force push, a `+` refspec, a branch deletion). Spawned only for `git push` (`if` filters).

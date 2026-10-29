@@ -25,7 +25,7 @@ test("Kimi gets one PreToolUse rule over its shell tools, after the user's own s
     expect(text).toContain("default_model = \"k2\"");
     expect(text).toContain("command = \"my-own-hook\"");
     expect(text.match(/__browser-guard/g)?.length).toBe(1);
-    expect(text).toContain("event = \"PreToolUse\"\nmatcher = \"^(?:Bash|PowerShell)$\"\ncommand = \"enigma __browser-guard\"\ntimeout = 10\n");
+    expect(text).toContain("event = \"PreToolUse\"\nmatcher = \"^(?:Bash|PowerShell)$\"\ncommand = \"enigma __browser-guard\"\ntimeout = 60\n");
 });
 
 test("Codex gets a PreToolUse group in hooks.json and nothing it would reject", () => {
@@ -38,7 +38,7 @@ test("Codex gets a PreToolUse group in hooks.json and nothing it would reject", 
     // Codex rejects unknown top-level keys, so `hooks` stays the only one.
     expect(Object.keys(data)).toEqual(["hooks"]);
     expect(data.hooks.Stop?.[0]?.hooks[0]?.command).toBe("mine");
-    expect(data.hooks.PreToolUse).toEqual([{ matcher: "^Bash$", hooks: [{ type: "command", command: "enigma __browser-guard", timeout: 10 }] }]);
+    expect(data.hooks.PreToolUse).toEqual([{ matcher: "^Bash$", hooks: [{ type: "command", command: "enigma __browser-guard", timeout: 60 }] }]);
 });
 
 test("the OpenCode plugin hands each shell command to the guard and throws its refusal", async () => {
