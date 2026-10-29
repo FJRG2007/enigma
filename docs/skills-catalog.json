@@ -109,11 +109,11 @@
     },
     {
       "name": "git-policy",
-      "version": "1.9.0",
+      "version": "1.10.0",
       "description": "Git & contribution policy (senior engineering standards).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-10-21T16:15:11+02:00",
-      "sha": "691c5cb8cf42613d5e63bf6435cf692ea1a8a73db02ac1a88e7bbc816314bdc7"
+      "updated": "2026-10-29T16:59:53+01:00",
+      "sha": "a5d00953d70b2e42df3c7bf161f8e36538a2bd5294bdf70f49ca924da2e76486"
     },
     {
       "name": "logo-sourcing-policy",
