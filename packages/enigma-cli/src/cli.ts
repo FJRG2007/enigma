@@ -3233,6 +3233,14 @@ export async function run(argv: string[]): Promise<void> {
         const { runBrowserGuardHook } = await import("./browser-guard");
         process.exit(runBrowserGuardHook(payload));
     }
+    // Hidden: the PreToolUse guard that refuses a `git push` erasing commits other people pushed
+    // (a force push, a `+` refspec, a branch deletion). Spawned only for `git push` (`if` filters).
+    if (argv[0] === "__push-guard") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runPushGuardHook } = await import("./push-guard");
+        process.exit(runPushGuardHook(payload));
+    }
     // Hidden: the subagent budget (PreToolUse on Agent, SubagentStart, SubagentStop). Spawned only
     // around a subagent launch, never for other tool calls (the PreToolUse entry matches Agent).
     // Hidden: hands a saved handoff to a session that starts fresh (Claude Code, Codex, Kimi, OpenCode).

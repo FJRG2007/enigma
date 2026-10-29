@@ -6,22 +6,22 @@
 
 import * as conf from "./config";
 import * as p from "@clack/prompts";
-import { getTool, listAccounts } from "./accounts";
 import { setKimiTrust } from "./kimi";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { ASSETS_DIR } from "./assets-dir";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
+import { applyPushGuard } from "./push-guard";
 import { maybeOfferGitHooks } from "./security";
 import type { AccountTarget } from "./accounts";
 import { applyDashboardMode } from "./dashboard";
 import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
+import { getTool, listAccounts } from "./accounts";
 import { dirname, join, resolve } from "node:path";
 import { ensureClaudeBypassGuard } from "./claude";
 import { applyBrowserGuard } from "./browser-guard";
-import { applyBrowserGuardGlobal, CODEX_TRUST_NOTICE, mirrorBrowserGuardWiring } from "./browser-guard-deploy";
 import { claudeGlobalSettings } from "./claude-hooks";
 import { applyPostEditWiring } from "./post-edit-deploy";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
@@ -30,7 +30,6 @@ import { applyAttributionGuard } from "./attribution-guard";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
-import { applyMcpForAgent, applyMcpForAccount, repairProjectBrowserEntries } from "./mcp-deploy";
 import { applyHandoffWiring, mirrorHandoffWiring } from "./handoff-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applySubagentWiring, mirrorSubagentWiring } from "./subagent-deploy";
@@ -39,7 +38,9 @@ import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-depl
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha } from "./util";
+import { applyMcpForAgent, applyMcpForAccount, repairProjectBrowserEntries } from "./mcp-deploy";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
+import { applyBrowserGuardGlobal, CODEX_TRUST_NOTICE, mirrorBrowserGuardWiring } from "./browser-guard-deploy";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 import { claudeSettingsPath, disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeSearchGuard, setClaudeTrust } from "./claude";
@@ -1230,6 +1231,9 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (applyBrowserGuard(claudeSettingsPath(claudeScope), true) === "changed") {
             reporter.info("Claude Code: a shell command that would open a visible browser window is now refused (agents test headless).");
         }
+        if (applyPushGuard(claudeSettingsPath(claudeScope), true) === "changed") {
+            reporter.info("Claude Code: a git push that would erase commits other people pushed is now refused.");
+        }
         if (disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
@@ -1673,6 +1677,8 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // before the guard existed only gains it here. Always on - its attribution check reads
         // the setting at run time, its home-path check applies either way.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
+        // The push guard, same reasoning: an install from before it existed only gains it here.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) applyPushGuard(claudeGlobalSettings(), true);
         // The browser guard, same reasoning: an install from before it existed only gains it here.
         // Account dirs too: a launch only syncs an already-deployed account when autoSync is on,
         // so without this an account could stay unguarded indefinitely.

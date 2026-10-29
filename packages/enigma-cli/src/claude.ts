@@ -9,6 +9,7 @@
  * so the behavior is enforced regardless of what the model does.
  */
 
+import { applyPushGuard } from "./push-guard";
 import { applyBrowserGuard } from "./browser-guard";
 import { join, normalize, parse, resolve } from "node:path";
 import { applyAttributionGuard } from "./attribution-guard";
@@ -766,7 +767,7 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     // The attribution guard is always on: it refuses a home path in any message, and an AI
     // trailer only while the session's own settings have attribution off. The browser guard is
     // always installed too and reads browserHeadless when it runs.
-    const guards = (): boolean => [applyAttributionGuard(path, true), applyBrowserGuard(path, true)].includes("changed");
+    const guards = (): boolean => [applyAttributionGuard(path, true), applyBrowserGuard(path, true), applyPushGuard(path, true)].includes("changed");
     if (JSON.stringify(next) === JSON.stringify(current)) return guards();
     // Nothing to mirror into a file that does not exist yet: avoid creating an
     // empty settings.json in a fresh account dir.
