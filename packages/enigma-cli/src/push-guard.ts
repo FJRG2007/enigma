@@ -21,6 +21,13 @@
  *
  * COST: the handlers carry an `if` filter, so Claude Code spawns this only for a command naming
  * `push`; a push that rewrites nothing returns before any git call.
+ *
+ * THE SAME RULE AT GIT'S OWN LEVEL (`runPrePushHook`, `applyGitPushGuard`, below): the hook above
+ * only sees Claude Code's own shell calls, so a push from Codex, Kimi, OpenCode, an IDE or the
+ * terminal never reaches it. A global git `pre-push` hook declared in config
+ * (`hook.enigma-push-guard.*`, git 2.54+) does, additive to a repo's own hooks and
+ * `core.hooksPath`, and reuses `judgeTarget` against the exact `<local ref> <local sha> <remote
+ * ref> <remote sha>` lines git hands a pre-push hook instead of a command line to parse.
  */
 
 import { homedir } from "node:os";
