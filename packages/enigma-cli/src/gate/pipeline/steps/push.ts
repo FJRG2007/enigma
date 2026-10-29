@@ -16,7 +16,9 @@
 import * as git from "@/gate/git";
 import { readdirSync } from "node:fs";
 import { redact } from "@/gate/safeurl";
+import * as pushGuard from "@/push-guard";
 import { armGatePushWatch } from "@/ci-watch";
+import type { LostCommit } from "@/push-guard";
 import { normalizedBranchRef } from "./commonGit";
 import { runStepShellCommand } from "./commonExec";
 import { gateCommitMessage } from "./commitMessage";
@@ -24,7 +26,6 @@ import { STEP_PUSH, type StepName } from "@/gate/types";
 import { resolveTestEvidenceLocation } from "./evidence";
 import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { join, relative, sep, isAbsolute } from "node:path";
-import { foreignLostCommits, type LostCommit } from "@/push-guard";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 
 /** Prefix of the run-scoped local ref the push target's current tip is fetched into. */
@@ -61,17 +62,13 @@ async function inspectRemoteTip(sctx: StepContext, pushURL: string, ref: string,
  * other than the user's `user.email`. The tip's objects are already local (inspectRemoteTip).
  */
 async function foreignCommitsLost(sctx: StepContext, tipSHA: string, signal: AbortSignal, head = "HEAD"): Promise<LostCommit[]> {
-    const cherry = await git.run(sctx.workDir, ["cherry", head, tipSHA], signal);
-    const shas = cherry.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
-    if (!shas.length) return [];
-    const log = await git.run(sctx.workDir, ["log", "--no-walk=unsorted", "--format=%H%x1f%an%x1f%ae%x1f%s", ...shas.slice(0, 200)], signal);
-    const ownEmail = await git.run(sctx.repo.workingPath, ["config", "user.email"], signal).catch(() => "");
-    return foreignLostCommits(cherry, log, ownEmail);
+    const run = (args: string[]): Promise<string> => git.run(sctx.workDir, args, signal);
+    return pushGuard.foreignCommitsDropped(run, head, tipSHA, () => git.run(sctx.repo.workingPath, ["config", "user.email"], signal).catch(() => ""));
 }
 
 /** The refusal for a rewrite that would drop `lost`, naming each commit. */
 function foreignLossError(ref: string, lost: LostCommit[]): Error {
-    const list = lost.slice(0, 10).map((c) => `${c.sha.slice(0, 10)} ${c.author} <${c.email}>: ${c.subject}`).join("; ");
+    const list = pushGuard.lostCommitLines(lost).join("; ");
     return new Error(`${ref} on the push target holds ${lost.length} commit(s) by other people that this run does not contain (${list}) - force-pushing would erase them. Pull them into the branch, resolve, and run the gate again`);
 }
 

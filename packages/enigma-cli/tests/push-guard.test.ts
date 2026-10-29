@@ -68,24 +68,24 @@ test("a lost commit counts only when it has no rebase on the pushed side and is 
     expect(foreignLostCommits(cherry, log, "me@e.test").map((c) => c.sha)).toEqual(["aaa"]);
 });
 
-test("refuses a force push that would erase a teammate's commit, and the remote keeps it", () => {
+test("refuses a force push that would erase a teammate's commit, and the remote keeps it", async () => {
     const { me, mate } = scenario();
     commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
     git(mate, "mate@e.test", "push", "-q", "origin", "develop");
     commit(me, "me@e.test", "docs.txt", "docs: mine");
     git(me, "me@e.test", "fetch", "-q", "origin");
     for (const command of ["git push --force origin develop", "git push -f", "cd . && git push --force-with-lease origin develop", "git push origin +develop", "git push origin --delete develop", "bash -c \"git push -f origin develop\"", "powershell -Command \"git push --force origin develop\""]) {
-        expect(pushRefusal(command, me)).toContain("feat: usage alerts");
-        expect(runPushGuardHook(payload(command, me))).toBe(2);
+        expect(await pushRefusal(command, me)).toContain("feat: usage alerts");
+        expect(await runPushGuardHook(payload(command, me))).toBe(2);
     }
 }, 120_000);
 
-test("lets through a plain push, a rewrite of the user's own commits, and a rebase onto the teammate", () => {
+test("lets through a plain push, a rewrite of the user's own commits, and a rebase onto the teammate", async () => {
     const { me, mate } = scenario();
     commit(me, "me@e.test", "docs.txt", "docs: first");
     git(me, "me@e.test", "push", "-q", "origin", "develop");
     git(me, "me@e.test", "commit", "-q", "--amend", "-m", "docs: amended");
-    expect(runPushGuardHook(payload("git push --force-with-lease origin develop", me))).toBe(0);
+    expect(await runPushGuardHook(payload("git push --force-with-lease origin develop", me))).toBe(0);
     git(me, "me@e.test", "push", "-q", "--force-with-lease", "origin", "develop");
 
     commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
@@ -93,13 +93,55 @@ test("lets through a plain push, a rewrite of the user's own commits, and a reba
     git(mate, "mate@e.test", "push", "-q", "origin", "develop");
     git(me, "me@e.test", "pull", "-q", "--rebase", "origin", "develop");
     git(me, "me@e.test", "commit", "-q", "--amend", "-m", "docs: amended again");
-    expect(runPushGuardHook(payload("git push origin develop", me))).toBe(0);
-    expect(pushRefusal("git push --force origin develop", me)).toBe("");
+    expect(await runPushGuardHook(payload("git push origin develop", me))).toBe(0);
+    expect(await pushRefusal("git push --force origin develop", me)).toBe("");
 }, 120_000);
 
-test("refuses a force push it cannot verify, and --mirror outright", () => {
+test("refuses a force push it cannot verify, and --mirror outright", async () => {
     const { me } = scenario();
-    expect(pushRefusal("git push --force nowhere develop", me)).toContain("could not verify");
-    expect(pushRefusal("git push --mirror origin", me)).toContain("every branch");
-    expect(runPushGuardHook("not json")).toBe(0);
+    expect(await pushRefusal("git push --force nowhere develop", me)).toContain("could not verify");
+    expect(await pushRefusal("git push --mirror origin", me)).toContain("every branch");
+    expect(await runPushGuardHook("not json")).toBe(0);
+}, 120_000);
+
+test("refuses once the shared time budget is spent instead of letting the push through", async () => {
+    const { me } = scenario();
+    expect(await pushRefusal("git push --force origin develop", me, Date.now() - 1)).toContain("ran out of time");
+}, 120_000);
+
+test("a push without a remote is judged where git sends it, not against origin", async () => {
+    const { me, mate } = scenario();
+    const fork = tmp("fork");
+    git(fork, "me@e.test", "init", "-q", "--bare", ".");
+    git(me, "me@e.test", "remote", "rename", "origin", "upstream");
+    git(me, "me@e.test", "remote", "add", "origin", fork);
+    commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop:shared");
+    git(me, "me@e.test", "fetch", "-q", "upstream");
+    git(me, "me@e.test", "branch", "-q", "-u", "upstream/shared");
+    git(me, "me@e.test", "config", "push.default", "upstream");
+    expect(await pushRefusal("git push -f", me)).toContain("upstream/shared would erase");
+}, 120_000);
+
+test("a deletion counts only the branches the remote holds now, not stale tracking refs", async () => {
+    const { me, mate } = scenario();
+    commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop", "develop:old");
+    git(me, "me@e.test", "fetch", "-q", "origin");
+    git(mate, "mate@e.test", "push", "-q", "origin", "--delete", "old");
+    expect(git(me, "me@e.test", "rev-parse", "--verify", "-q", "origin/old")).not.toBe("");
+    expect(await pushRefusal("git push origin --delete develop", me)).toContain("feat: usage alerts");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop:kept");
+    expect(await pushRefusal("git push origin --delete develop", me)).toBe("");
+}, 120_000);
+
+test("reads a remote tip it has never fetched without leaving a ref or moving origin/<branch>", async () => {
+    const { me, mate } = scenario();
+    commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop", "develop:side");
+    const tracking = git(me, "me@e.test", "rev-parse", "origin/develop");
+    expect(await pushRefusal("git push -f origin develop", me)).toContain("feat: usage alerts");
+    expect(await pushRefusal("git push origin :side", me)).toBe("");
+    expect(git(me, "me@e.test", "for-each-ref", "refs/enigma/")).toBe("");
+    expect(git(me, "me@e.test", "rev-parse", "origin/develop")).toBe(tracking);
 }, 120_000);

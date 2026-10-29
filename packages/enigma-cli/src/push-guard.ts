@@ -46,6 +46,7 @@ export interface PushTarget { branch: string; source: string | null; }
 export interface PushPlan {
     /** Directory the push runs in, after `cd` and `-C`. */
     cwd: string;
+    /** The remote named on the command line; "" when the branch's push configuration decides. */
     remote: string;
     /** Rewritten destinations; empty when the push is a plain fast-forward. */
     targets: PushTarget[];
@@ -91,10 +92,10 @@ export function parsePush(segment: string, cwd: string): PushPlan | null {
         else if (w === "--all" || w === "--branches") wholesale ||= w;
         else if (!w.startsWith("-")) positional.push(w);
     }
-    const plan: PushPlan = { cwd: dir, remote: positional[0] ?? "origin", targets: [], wholesale: "" };
+    const plan: PushPlan = { cwd: dir, remote: positional[0] ?? "", targets: [], wholesale: "" };
     if (wholesale === "--mirror" || (wholesale && force)) { plan.wholesale = wholesale; return plan; }
     const specs = positional.slice(1);
-    // No refspec: push.default sends the current branch to its namesake.
+    // No refspec: the branch's push configuration decides where it goes (defaultDestination).
     if (!specs.length && force) plan.targets.push({ branch: "HEAD", source: "HEAD" });
     for (const raw of specs) {
         const plus = raw.startsWith("+");
@@ -127,53 +128,126 @@ export function foreignLostCommits(cherry: string, log: string, ownEmail: string
     return out;
 }
 
-/** Runs git in `cwd` with an argument array, no shell; null on a non-zero exit. */
-function git(cwd: string, args: string[]): string | null {
-    const r = spawnSync("git", args, { cwd, encoding: "utf8", timeout: 30_000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-    return r.status === 0 ? r.stdout.trim() : null;
+/** Runs git with an argument array and resolves its trimmed stdout; rejects on a non-zero exit. */
+export type GitRun = (args: string[]) => Promise<string>;
+
+/** Runs git in a directory, optionally feeding stdin; rejects on a non-zero exit. */
+type HookGit = (args: string[], input?: string) => Promise<string>;
+
+/** Time every git call of one hook run shares: well under the hook's 60s timeout, which lets the call through when it fires. */
+const BUDGET_MS = 45_000;
+
+/** Ceiling of the scratch-ref cleanup, which runs even once the budget is spent. */
+const CLEANUP_MS = 10_000;
+
+/** The other people's commits among `cherry` (`+ <sha>` lines), read through `run`; `ownEmail` is only read when there are any. */
+export async function foreignCommitsAmong(run: GitRun, cherry: string, ownEmail: () => Promise<string>): Promise<LostCommit[]> {
+    const shas = cherry.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
+    if (!shas.length) return [];
+    const log = await run(["log", "--no-walk=unsorted", "--format=%H%x1f%an%x1f%ae%x1f%s", ...shas.slice(0, 200)]);
+    return foreignLostCommits(cherry, log, await ownEmail());
+}
+
+/** The other people's commits on `tip` that pushing `pushed` over it drops (no patch-equivalent in `pushed`). */
+export async function foreignCommitsDropped(run: GitRun, pushed: string, tip: string, ownEmail: () => Promise<string>): Promise<LostCommit[]> {
+    return foreignCommitsAmong(run, await run(["cherry", pushed, tip]), ownEmail);
+}
+
+/** One line per lost commit, capped at ten plus a count of the rest. */
+export function lostCommitLines(lost: LostCommit[]): string[] {
+    const lines = lost.slice(0, 10).map((c) => `${c.sha.slice(0, 10)} ${c.author} <${c.email}>: ${c.subject}`);
+    if (lost.length > 10) lines.push(`...and ${lost.length - 10} more`);
+    return lines;
+}
+
+/** A git runner in `cwd` whose every call stops at `deadline` (epoch ms), no shell. */
+function gitIn(cwd: string, deadline: number): HookGit {
+    return async (args, input) => {
+        const left = deadline - Date.now();
+        if (left <= 0) throw new Error("ran out of time reading the remote");
+        const r = spawnSync("git", args, { cwd, input, encoding: "utf8", timeout: left, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+        if (r.status !== 0) throw new Error(r.error ? `git ${args[0]}: ${r.error.message}` : `git ${args[0]} exited ${r.status ?? "on a signal"}`);
+        return r.stdout.trim();
+    };
+}
+
+/**
+ * Where a push without a refspec goes, as git decides it: the branch's push remote (pushRemote,
+ * remote.pushDefault, its upstream's remote, else origin) unless `remote` names one, and the
+ * configured push refspec, the upstream branch under push.default=upstream, or the namesake.
+ */
+async function defaultDestination(run: HookGit, remote: string): Promise<{ remote: string; branch: string; }> {
+    const branch = await run(["symbolic-ref", "--short", "HEAD"]).catch(() => "");
+    if (branch === "") throw new Error("HEAD is not on a branch");
+    const [pushRemote = "", pushRef = ""] = (await run(["for-each-ref", "--format=%(push:remotename)%1f%(push:remoteref)", `refs/heads/${branch}`])).split("\x1f");
+    const target = remote || pushRemote || "origin";
+    if (pushRef !== "" && target === pushRemote) return { remote: target, branch: branchName(pushRef) };
+    const mode = await run(["config", "push.default"]).catch(() => "simple");
+    if (mode === "matching") throw new Error("push.default=matching pushes every matching branch");
+    if (mode === "upstream" || mode === "tracking") {
+        const merge = await run(["config", `branch.${branch}.merge`]).catch(() => "");
+        if (merge === "") throw new Error(`${branch} has no upstream branch`);
+        return { remote: target, branch: branchName(merge) };
+    }
+    return { remote: target, branch };
+}
+
+/** Whether any of `shas` is not in the local object store. */
+async function anyMissing(run: HookGit, shas: string[]): Promise<boolean> {
+    const out = await run(["cat-file", "--batch-check"], `${shas.join("\n")}\n`);
+    return out.split("\n").some((l) => l.endsWith(" missing"));
 }
 
 /** Why `target` cannot be pushed, or "" when it loses nobody's work. Throws when it cannot tell. */
-function judgeTarget(plan: PushPlan, target: PushTarget): string {
+async function judgeTarget(plan: PushPlan, target: PushTarget, deadline: number): Promise<string> {
+    const run = gitIn(plan.cwd, deadline);
+    let { remote } = plan;
     let branch = target.branch;
-    if (branch === "HEAD") {
-        branch = git(plan.cwd, ["symbolic-ref", "--short", "HEAD"]) ?? "";
-        if (branch === "") throw new Error("HEAD is not on a branch");
+    if (branch === "HEAD" || remote === "") ({ remote, branch } = await defaultDestination(run, remote));
+    // A deletion is judged against every branch the remote holds right now, never against local
+    // remote-tracking refs, which may still hold commits the server already dropped.
+    const deleting = target.source === null;
+    const listed = await run(["ls-remote", "--heads", remote, ...(deleting ? [] : [`refs/heads/${branch}`])]).catch((err: Error) => {
+        throw new Error(`could not read ${branch} on ${remote}: ${err.message}`);
+    });
+    const heads = new Map<string, string>();
+    for (const line of listed.split("\n")) {
+        const [sha = "", ref = ""] = line.trim().split(/\s+/);
+        if (sha && ref) heads.set(branchName(ref), sha);
     }
-    const listed = git(plan.cwd, ["ls-remote", "--heads", plan.remote, `refs/heads/${branch}`]);
-    if (listed === null) throw new Error(`could not read ${branch} on ${plan.remote}`);
-    const tip = listed.split(/\s+/)[0] ?? "";
-    if (tip === "") return "";
-    if (git(plan.cwd, ["cat-file", "-e", `${tip}^{commit}`]) === null) {
-        // An empty --refmap keeps the fetch from moving origin/<branch>, which a lease reads.
-        const scratch = `refs/enigma/push-guard/${process.pid}`;
-        const fetched = git(plan.cwd, ["fetch", "--no-tags", "--no-write-fetch-head", "--refmap=", plan.remote, `+refs/heads/${branch}:${scratch}`]);
-        git(plan.cwd, ["update-ref", "-d", scratch]);
-        if (fetched === null) throw new Error(`could not fetch ${branch} from ${plan.remote}`);
+    const tip = heads.get(branch);
+    if (tip === undefined) return "";
+    const scratch = `refs/enigma/push-guard/${process.pid}`;
+    try {
+        if (await anyMissing(run, [...heads.values()])) {
+            // An empty --refmap keeps the fetch from moving origin/<branch>, which a lease reads.
+            const spec = deleting ? `+refs/heads/*:${scratch}/*` : `+refs/heads/${branch}:${scratch}/${branch}`;
+            const fetched = await run(["fetch", "--no-tags", "--no-write-fetch-head", "--refmap=", remote, spec]).then(() => true, () => false);
+            if (!fetched) throw new Error(`could not fetch ${branch} from ${remote}`);
+            if (await anyMissing(run, [...heads.values()])) throw new Error(`${remote} changed while it was read`);
+        }
+        let cherry: string;
+        if (deleting) {
+            const others = [...heads].filter(([name]) => name !== branch).map(([, sha]) => `^${sha}`);
+            cherry = await run(["log", "--format=+ %H", "--stdin"], `${[tip, ...others].join("\n")}\n`);
+        } else {
+            const pushed = await run(["rev-parse", "--verify", `${target.source}^{commit}`]).catch(() => "");
+            if (pushed === "") throw new Error(`could not resolve ${target.source}`);
+            cherry = await run(["cherry", pushed, tip]);
+        }
+        const lost = await foreignCommitsAmong(run, cherry, () => run(["config", "user.email"]).catch(() => ""));
+        if (!lost.length) return "";
+        const list = lostCommitLines(lost).map((l) => `  ${l}`).join("\n");
+        return `${deleting ? "deleting" : "force-pushing"} ${remote}/${branch} would erase ${lost.length} commit(s) other people pushed:\n${list}`;
+    } finally {
+        const cleanup = gitIn(plan.cwd, Date.now() + CLEANUP_MS);
+        const refs = await cleanup(["for-each-ref", "--format=delete %(refname)", `${scratch}/`]).catch(() => "");
+        if (refs !== "") await cleanup(["update-ref", "--stdin"], `${refs}\n`).catch(() => "");
     }
-    let cherry: string | null;
-    if (target.source === null) {
-        // Deleting: what survives is what the remote's other branches still hold. Its HEAD is
-        // excluded too, since it usually points at the very branch being deleted.
-        cherry = git(plan.cwd, ["log", "--format=+ %H", tip, "--not", `--exclude=${plan.remote}/${branch}`, `--exclude=${plan.remote}/HEAD`, `--remotes=${plan.remote}`]);
-    } else {
-        const pushed = git(plan.cwd, ["rev-parse", "--verify", `${target.source}^{commit}`]) ?? "";
-        if (pushed === "") throw new Error(`could not resolve ${target.source}`);
-        cherry = git(plan.cwd, ["cherry", pushed, tip]);
-    }
-    if (cherry === null) throw new Error(`could not compare ${branch} with what is pushed`);
-    const shas = cherry.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
-    if (!shas.length) return "";
-    const log = git(plan.cwd, ["log", "--no-walk=unsorted", "--format=%H%x1f%an%x1f%ae%x1f%s", ...shas.slice(0, 200)]) ?? "";
-    const lost = foreignLostCommits(cherry, log, git(plan.cwd, ["config", "user.email"]) ?? "");
-    if (!lost.length) return "";
-    const list = lost.slice(0, 10).map((c) => `  ${c.sha.slice(0, 10)} ${c.author} <${c.email}>: ${c.subject}`).join("\n");
-    const more = lost.length > 10 ? `\n  ...and ${lost.length - 10} more` : "";
-    return `${target.source === null ? "deleting" : "force-pushing"} ${plan.remote}/${branch} would erase ${lost.length} commit(s) other people pushed:\n${list}${more}`;
 }
 
 /** Why `command` would erase someone else's pushed work, or "" when it would not. */
-export function pushRefusal(command: string, cwd: string): string {
+export async function pushRefusal(command: string, cwd: string, deadline = Date.now() + BUDGET_MS): Promise<string> {
     let dir = cwd;
     for (const segment of commandSegments(command)) {
         const w = words(segment);
@@ -182,18 +256,19 @@ export function pushRefusal(command: string, cwd: string): string {
         // A command handed to another shell as text (`bash -c "git push -f"`, `powershell -Command
         // "..."`) is one quoted word holding spaces: judge it as the command it is.
         for (const inner of w.slice(1).filter((x) => /\s/.test(x) && /\bpush\b/.test(x))) {
-            const reason = pushRefusal(inner, dir);
+            const reason = await pushRefusal(inner, dir, deadline);
             if (reason) return reason;
         }
         const plan = parsePush(segment, dir);
         if (plan === null) continue;
-        if (plan.wholesale) return `git push ${plan.wholesale} rewrites every branch on ${plan.remote} at once, other people's included. Push the branches that are yours by name.`;
+        const remote = plan.remote || "the remote";
+        if (plan.wholesale) return `git push ${plan.wholesale} rewrites every branch on ${remote} at once, other people's included. Push the branches that are yours by name.`;
         for (const target of plan.targets) {
             let reason: string;
             try {
-                reason = judgeTarget(plan, target);
+                reason = await judgeTarget(plan, target, deadline);
             } catch (err) {
-                reason = `this push rewrites ${plan.remote}/${target.branch} and enigma could not verify it erases nobody's work (${err instanceof Error ? err.message : String(err)}).`;
+                reason = `this push rewrites ${remote}/${target.branch} and enigma could not verify it erases nobody's work (${err instanceof Error ? err.message : String(err)}).`;
             }
             if (reason) return reason;
         }
@@ -205,10 +280,10 @@ export function pushRefusal(command: string, cwd: string): string {
  * Hook entry. Exit 2 with the reason on stderr denies the call and feeds it back to the model;
  * an unreadable payload or a push that rewrites nothing lets the call through.
  */
-export function runPushGuardHook(raw: string): number {
+export async function runPushGuardHook(raw: string): Promise<number> {
     const payload = parseGuardPayload(raw);
     if (payload === null || !/\bpush\b/.test(payload.command)) return 0;
-    const reason = pushRefusal(payload.command, payload.cwd);
+    const reason = await pushRefusal(payload.command, payload.cwd);
     if (!reason) return 0;
     process.stderr.write(`enigma: refused, ${reason}\nIntegrate their work instead: git pull --rebase (or merge), resolve conflicts hunk by hunk keeping both sides, then push without --force. If those commits really must go, stop and ask the user, naming each one; only the user can run that push.\n`);
     return 2;

@@ -3239,7 +3239,7 @@ export async function run(argv: string[]): Promise<void> {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
         const { runPushGuardHook } = await import("./push-guard");
-        process.exit(runPushGuardHook(payload));
+        process.exit(await runPushGuardHook(payload));
     }
     // Hidden: the subagent budget (PreToolUse on Agent, SubagentStart, SubagentStop). Spawned only
     // around a subagent launch, never for other tool calls (the PreToolUse entry matches Agent).
