@@ -254,3 +254,20 @@ test("an empty or merge commit of a teammate counts as lost, even beside an empt
     const reason = await pushRefusal("git push --force origin develop", me2);
     expect(reason).toContain("merge side");
 }, 180_000);
+
+test("signature lines from log.showSignature do not make a teammate's empty commit read as kept", async () => {
+    const { me, mate } = scenario();
+    const key = join(tmp("key"), "key");
+    execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key], { stdio: "ignore" });
+    writeFileSync(join(mate, "signed.txt"), "feat: signed\n");
+    git(mate, "mate@e.test", "add", "-A");
+    git(mate, "mate@e.test", "-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "commit", "-q", "-S", "-m", "feat: signed");
+    git(mate, "mate@e.test", "commit", "-q", "--allow-empty", "-m", "chore: trigger deploy");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop");
+    git(me, "me@e.test", "fetch", "-q", "origin");
+    git(me, "me@e.test", "cherry-pick", "origin/develop~1");
+    git(me, "me@e.test", "commit", "-q", "--allow-empty", "-m", "chore: mine, also empty");
+    git(me, "me@e.test", "config", "gpg.format", "ssh");
+    git(me, "me@e.test", "config", "log.showSignature", "true");
+    expect(await pushRefusal("git push --force origin develop", me)).toContain("chore: trigger deploy");
+}, 60_000);

@@ -159,7 +159,7 @@ const MAX_DROPPED = 5_000;
 /** `git log --no-walk` over every sha in chunks, concatenated. */
 async function logEach(run: GitRun, args: string[], shas: string[]): Promise<string> {
     const parts: string[] = [];
-    for (let i = 0; i < shas.length; i += LOG_CHUNK) parts.push(await run(["log", "--no-walk=unsorted", ...args, ...shas.slice(i, i + LOG_CHUNK)]));
+    for (let i = 0; i < shas.length; i += LOG_CHUNK) parts.push(await run(["log", "--no-walk=unsorted", "--no-show-signature", ...args, ...shas.slice(i, i + LOG_CHUNK)]));
     return parts.join("\n");
 }
 
