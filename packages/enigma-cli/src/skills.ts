@@ -1254,8 +1254,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // The push guard at git's own level, whatever agent was chosen: one global pre-push entry
     // covers every tool that runs git on this machine, the terminal included.
     const applyGitConfig = (): void => {
-        if (opts.dryRun) return;
-        if (applyGitPushGuard(true)) reporter.info("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook).");
+        if (opts.dryRun || !conf.readConfig().config.gitPushGuard) return;
+        const result = applyGitPushGuard(true);
+        if (result === "changed") reporter.info("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook; undo with 'enigma config git-push-guard off').");
+        if (result === "refused") reporter.warn("git: could not install the global pre-push hook that refuses pushes erasing other people's commits (the global git config is locked, read-only or malformed).");
     };
 
     // The same for Kimi Code, which asks its own "Trust this folder?" - per directory, so
@@ -1690,9 +1692,11 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // The push guard, same reasoning: an install from before it existed only gains it here.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyPushGuard(claudeGlobalSettings(), true);
         // Its git-level twin covers every other agent and the terminal: one global pre-push entry.
-        if (!gitGuarded && hasDeployment(agent, "global")) {
+        if (!gitGuarded && hasDeployment(agent, "global") && conf.readConfig().config.gitPushGuard) {
             gitGuarded = true;
-            if (applyGitPushGuard(true)) notices.push("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook).");
+            const result = applyGitPushGuard(true);
+            if (result === "changed") notices.push("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook; undo with 'enigma config git-push-guard off').");
+            if (result === "refused") notices.push("git: could not install the global pre-push hook that refuses pushes erasing other people's commits (the global git config is locked, read-only or malformed).");
         }
         // The browser guard, same reasoning: an install from before it existed only gains it here.
         // Account dirs too: a launch only syncs an already-deployed account when autoSync is on,

@@ -23,8 +23,9 @@
  * `push`; a push that rewrites nothing returns before any git call.
  */
 
+import { homedir } from "node:os";
 import { enigmaHome } from "./util";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { applyClaudeHook } from "./claude-hooks";
@@ -368,12 +369,21 @@ export async function runPrePushHook(args: string[], stdin: string, cwd = proces
 }
 
 /**
- * The global config file: GIT_CONFIG_GLOBAL, else `.gitconfig` under enigma's home, which is the
- * user's home unless ENIGMA_CONFIG_HOME isolates it (tests do). Written through `--file`, never
- * `--global`, so the file read and the file written can never differ.
+ * The global config file, resolved the way git resolves it: GIT_CONFIG_GLOBAL, else `.gitconfig`
+ * under $HOME (git honors HOME, also on Windows, where it can differ from USERPROFILE), else an
+ * existing `$XDG_CONFIG_HOME/git/config` (default `~/.config/git/config`) when there is no
+ * `.gitconfig`, which is where `git config --global` writes then. ENIGMA_CONFIG_HOME isolates it
+ * under enigma's home (tests do). Written through `--file`, never `--global`, so the file read
+ * and the file written can never differ.
  */
 function globalGitConfigFile(): string {
-    return process.env.GIT_CONFIG_GLOBAL || join(enigmaHome(), ".gitconfig");
+    if (process.env.GIT_CONFIG_GLOBAL) return process.env.GIT_CONFIG_GLOBAL;
+    if (process.env.ENIGMA_CONFIG_HOME) return join(enigmaHome(), ".gitconfig");
+    const home = process.env.HOME || homedir();
+    const primary = join(home, ".gitconfig");
+    if (existsSync(primary)) return primary;
+    const xdg = join(process.env.XDG_CONFIG_HOME || join(home, ".config"), "git", "config");
+    return existsSync(xdg) ? xdg : primary;
 }
 
 /** Runs `git config --file <global file>` with an argument array; the trimmed stdout, or null on a non-zero exit. */
@@ -395,18 +405,20 @@ function gitHookPresent(): boolean {
     return section.includes(`"${GIT_HOOK_COMMAND.replace(/"/g, "\\\"")}"`) && /^\s*event\s*=\s*pre-push\s*$/m.test(section);
 }
 
-/** Installs (on) or removes the global pre-push entry. Returns true when the config changed. */
-export function applyGitPushGuard(on: boolean): boolean {
-    if (on && gitHookPresent()) return false;
+/**
+ * Installs (on) or removes the global pre-push entry. "refused" when a `git config` write failed
+ * (locked, read-only or malformed file), so the caller never reports a guard that is not there.
+ */
+export function applyGitPushGuard(on: boolean): HookWrite {
+    if (on && gitHookPresent()) return "unchanged";
     const command = globalGitConfig(["--get-all", `hook.${GIT_HOOK_NAME}.command`]);
     const event = globalGitConfig(["--get-all", `hook.${GIT_HOOK_NAME}.event`]);
     if (!on) {
-        if (command === null && event === null) return false;
-        globalGitConfig(["--remove-section", `hook.${GIT_HOOK_NAME}`]);
-        return true;
+        if (command === null && event === null) return "unchanged";
+        return globalGitConfig(["--remove-section", `hook.${GIT_HOOK_NAME}`]) === null ? "refused" : "changed";
     }
-    if (command === GIT_HOOK_COMMAND && event === "pre-push") return false;
-    globalGitConfig(["--replace-all", `hook.${GIT_HOOK_NAME}.command`, GIT_HOOK_COMMAND]);
-    globalGitConfig(["--replace-all", `hook.${GIT_HOOK_NAME}.event`, "pre-push"]);
-    return true;
+    if (command === GIT_HOOK_COMMAND && event === "pre-push") return "unchanged";
+    if (globalGitConfig(["--replace-all", `hook.${GIT_HOOK_NAME}.command`, GIT_HOOK_COMMAND]) === null) return "refused";
+    if (globalGitConfig(["--replace-all", `hook.${GIT_HOOK_NAME}.event`, "pre-push"]) === null) return "refused";
+    return "changed";
 }

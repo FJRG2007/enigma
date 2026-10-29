@@ -18,6 +18,7 @@ import { setVerify } from "./verify-deploy";
 import { clampCapPercent } from "./governor";
 import { applyMcpToggle } from "./mcp-deploy";
 import { setCiWatch } from "./ci-watch-deploy";
+import { applyGitPushGuard } from "./push-guard";
 import { applyDashboardMode } from "./dashboard";
 import { parseSubagentLimit } from "./subagents";
 import { isAutoLintOn, setAutoLint } from "./lint";
@@ -266,6 +267,18 @@ function setSearchGuard(on: boolean, scope: Scope): ApplyResult {
 }
 
 /**
+ * Persist the push guard at git's level and apply it to the global git config now.
+ *
+ * Same intent/effect split as `setSearchGuard`: without the flag, sync could not tell a removed
+ * entry from one that was never installed. A failed git config write is reported, not hidden.
+ */
+function setGitPushGuard(on: boolean, scope: Scope): ApplyResult {
+    const path = conf.setEnigmaToggle("gitPushGuard", on, scope);
+    if (applyGitPushGuard(on) === "refused") return { path, changed: true, error: "could not update the global git config (locked, read-only or malformed)" };
+    return { path, changed: true };
+}
+
+/**
  * Persist the workspace-trust preference and apply it to Claude's own state file now.
  *
  * Same intent/effect split as `setStatusline`: the flag says what the user wants and
@@ -437,6 +450,14 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "stop an agent starting a 'find' across the whole disk (from /, your home, or a drive root) - the ones nobody notices are still running",
                 read: () => conf.readConfig().config.searchGuard,
                 write: (value, scope) => setSearchGuard(value, scope),
+            },
+            {
+                key: "git-push-guard",
+                label: "Refuse pushes that erase others' commits",
+                hint: "a global git pre-push hook stops a force push or branch deletion that would drop commits other people pushed, from any tool or the terminal",
+                globalOnly: true,
+                read: () => conf.readConfig().config.gitPushGuard,
+                write: (value, scope) => setGitPushGuard(value, scope),
             },
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             {

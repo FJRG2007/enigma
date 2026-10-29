@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { applyGitPushGuard, foreignLostCommits, parsePush, prePushRefusal, pushRefusal, runPushGuardHook } from "@/push-guard";
 
 const dirs: string[] = [];
@@ -184,14 +184,52 @@ test("installs the global entry once, idempotently, and removes it", () => {
     const previous = process.env.GIT_CONFIG_GLOBAL;
     process.env.GIT_CONFIG_GLOBAL = config;
     try {
-        expect(applyGitPushGuard(true)).toBe(true);
-        expect(applyGitPushGuard(true)).toBe(false);
+        expect(applyGitPushGuard(true)).toBe("changed");
+        expect(applyGitPushGuard(true)).toBe("unchanged");
         const text = readFileSync(config, "utf8");
         expect(text).toContain("enigma __pre-push-guard");
         expect(text).toContain("name = x");
-        expect(applyGitPushGuard(false)).toBe(true);
+        expect(applyGitPushGuard(false)).toBe("changed");
         expect(readFileSync(config, "utf8")).not.toContain("enigma-push-guard");
     } finally {
         if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = previous;
+    }
+}, 60_000);
+
+test("a git config that cannot be written is reported, never as installed", () => {
+    const config = join(tmp("gitconfig-bad"), ".gitconfig");
+    writeFileSync(config, "[user\n\tname = x\n");
+    const previous = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+        expect(applyGitPushGuard(true)).toBe("refused");
+        expect(readFileSync(config, "utf8")).not.toContain("enigma-push-guard");
+    } finally {
+        if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = previous;
+    }
+}, 60_000);
+
+test("without overrides, writes the file git reads: HOME, else an existing XDG config", () => {
+    const keys = ["GIT_CONFIG_GLOBAL", "ENIGMA_CONFIG_HOME", "HOME", "XDG_CONFIG_HOME"] as const;
+    const previous = keys.map((k) => process.env[k]);
+    const home = tmp("git-home");
+    const xdg = join(home, ".config", "git", "config");
+    mkdirSync(join(home, ".config", "git"), { recursive: true });
+    writeFileSync(xdg, "[user]\n\tname = x\n");
+    delete process.env.GIT_CONFIG_GLOBAL;
+    delete process.env.ENIGMA_CONFIG_HOME;
+    delete process.env.XDG_CONFIG_HOME;
+    process.env.HOME = home;
+    try {
+        expect(applyGitPushGuard(true)).toBe("changed");
+        expect(readFileSync(xdg, "utf8")).toContain("enigma __pre-push-guard");
+        expect(existsSync(join(home, ".gitconfig"))).toBe(false);
+        expect(applyGitPushGuard(false)).toBe("changed");
+        writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = y\n");
+        expect(applyGitPushGuard(true)).toBe("changed");
+        expect(readFileSync(join(home, ".gitconfig"), "utf8")).toContain("enigma __pre-push-guard");
+        expect(readFileSync(xdg, "utf8")).not.toContain("enigma-push-guard");
+    } finally {
+        keys.forEach((k, i) => { if (previous[i] === undefined) delete process.env[k]; else process.env[k] = previous[i]; });
     }
 }, 60_000);

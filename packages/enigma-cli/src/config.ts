@@ -183,6 +183,13 @@ export interface EnigmaConfig {
      */
     searchGuard: boolean;
     /**
+     * Refuse a push that would erase commits other people pushed, from any tool (default on):
+     * a global git pre-push hook (`hook.enigma-push-guard.*`, see push-guard.ts). Same
+     * intent/effect split as `searchGuard`: the git config carries the effect, this records the
+     * choice, so a deliberate off is never re-applied by the next install or sync.
+     */
+    gitPushGuard: boolean;
+    /**
      * Pre-answer Claude Code's "Is this a project you trust?" prompt (default on, Claude
      * Code only). Same intent/effect split as `statusline`: this records the choice and the
      * effect is written into Claude's own `.claude.json`, so a deliberate off is never
@@ -481,7 +488,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, gitPushGuard: true, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     gateTrivialLines: 20,
     subagentLimit: 2, compactWindow: 400_000, subagentTurns: 60, relay: true, relayAt: 300_000,
