@@ -91,7 +91,7 @@ export function commandSegments(raw: string): string[] {
 }
 
 /** The words of one segment, quotes removed. */
-function words(segment: string): string[] {
+export function words(segment: string): string[] {
     return (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((w) => w.replace(/^["']|["']$/g, ""));
 }
 

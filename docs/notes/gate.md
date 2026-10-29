@@ -655,6 +655,13 @@ half needs `bun:sqlite` and is imported dynamically.
   fast-forward; a replay that does not apply cleanly stops the step instead of choosing a side.
   A working branch the run itself rewrote still force-pushes, but leased on the tip just
   fetched, not on a stale `ls-remote` read. Covered by `tests/gate/push-safety.test.ts`.
+- THAT LEASE STILL ERASED A TEAMMATE ON A SHARED BRANCH. "Working branch" was any branch that
+  is not the default, so `develop` took the force path, and a commit a teammate pushed there
+  mid-run vanished. Before forcing, `foreignCommitsLost` now lists the tip's commits with no
+  patch-equivalent in HEAD (`git cherry HEAD <tip>`, so a rebase of the user's own commit is
+  not a loss) whose author email differs from the user's `user.email`; any such commit stops
+  the step, naming each one. Same rule as the agent-side push guard (`push-guard.ts`,
+  rules-are-persuasion.md), sharing its `foreignLostCommits`.
 
 ## Agent steps have an idle watchdog
 

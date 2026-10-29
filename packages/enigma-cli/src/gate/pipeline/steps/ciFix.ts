@@ -13,6 +13,7 @@
  */
 
 import { log } from "@/gate/log";
+import { safeForce } from "./push";
 import { STEP_CI } from "@/gate/types";
 import type { StepContext } from "../types";
 import { trimLogOutput } from "./ciBitbucket";
@@ -211,8 +212,12 @@ export async function pushUpdatedHeadSHA(sctx: StepContext, newHeadSHA: string):
         updateRunHeadSHA(sctx.db, sctx.run.id, newHeadSHA);
         return false;
     }
+    // A lease on the tip just read protects nothing: force only once the rewrite is proven to
+    // drop none of someone else's commits (safeForce), and push as a fast-forward otherwise.
+    let force = { force: false, tipSHA: "" };
+    if (lsErr === null && upstreamSHA !== "") force = await safeForce(sctx, pushURL, ref, newHeadSHA, sctx.signal);
     try {
-        await stepGitPush(sctx, pushURL, ref, upstreamSHA, upstreamSHA !== "");
+        await stepGitPush(sctx, pushURL, ref, force.tipSHA, force.force);
     } catch (err) {
         if (lsErr !== null) {
             throw new Error(`push (ls-remote failed: ${errMessage(lsErr)}): ${errMessage(err)}`);

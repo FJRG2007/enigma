@@ -129,3 +129,62 @@ test("the replay base is the tip fetched for this run, not a ref another run lef
     expect(git(remote, "log", "--format=%s", "main").split("\n")).toEqual(["run change", "bot: refresh preview", "base"]);
     expect(git(work, "for-each-ref", "--format=%(refname)", "refs/enigma/push-bases/")).toBe("");
 }, 60_000);
+
+/** The scenario on a shared working branch (develop), where the step force-pushes a rewrite. */
+function sharedBranch(): { remote: string; work: string; mate: string; } {
+    const { remote, work } = scenario();
+    git(work, "push", "-q", "origin", "HEAD:refs/heads/develop");
+    git(work, "checkout", "-q", "-b", "develop", "origin/main");
+    const mate = tmp("mate");
+    git(mate, "clone", "-q", "-b", "develop", remote, ".");
+    return { remote, work, mate };
+}
+
+test("a teammate's commit on a shared branch stops the force push instead of being erased", async () => {
+    const { remote, work, mate } = sharedBranch();
+    writeFileSync(join(mate, "alerts.txt"), "usage alerts\n");
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "add", "-A"], { cwd: mate });
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "commit", "-q", "-m", "feat: usage alerts"], { cwd: mate });
+    git(mate, "push", "-q", "origin", "develop");
+    const before = git(remote, "rev-parse", "develop");
+    // The run's own rewrite of develop, which no longer contains the remote tip.
+    writeFileSync(join(work, "run.txt"), "rewritten\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-q", "-m", "run rewrite");
+
+    const { sctx } = context(work, remote);
+    (sctx as { run: { branch: string; }; }).run.branch = "develop";
+    await expect(newPushStep().execute(sctx)).rejects.toThrow("by other people");
+    expect(git(remote, "rev-parse", "develop")).toBe(before);
+}, 60_000);
+
+test("a rewrite of the user's own commits on a working branch still pushes", async () => {
+    const { remote, work } = sharedBranch();
+    writeFileSync(join(work, "run.txt"), "rewritten\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-q", "-m", "run rewrite");
+
+    const { sctx } = context(work, remote);
+    (sctx as { run: { branch: string; }; }).run.branch = "develop";
+    await newPushStep().execute(sctx);
+    expect(git(remote, "log", "-1", "--format=%s", "develop")).toBe("run rewrite");
+}, 60_000);
+
+test("the CI fix push stops on a teammate's commit instead of forcing over it", async () => {
+    const { remote, work, mate } = sharedBranch();
+    writeFileSync(join(mate, "alerts.txt"), "usage alerts\n");
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "add", "-A"], { cwd: mate });
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "commit", "-q", "-m", "feat: usage alerts"], { cwd: mate });
+    git(mate, "push", "-q", "origin", "develop");
+    const before = git(remote, "rev-parse", "develop");
+    writeFileSync(join(work, "ci.txt"), "ci fix\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-q", "-m", "ci fix");
+
+    const { pushUpdatedHeadSHA } = await import("../../src/gate/pipeline/steps/ciFix");
+    const { sctx } = context(work, remote);
+    (sctx as { run: { branch: string; }; env: string[]; }).run.branch = "develop";
+    (sctx as { env: string[]; }).env = [];
+    await expect(pushUpdatedHeadSHA(sctx, git(work, "rev-parse", "HEAD"))).rejects.toThrow("by other people");
+    expect(git(remote, "rev-parse", "develop")).toBe(before);
+}, 60_000);

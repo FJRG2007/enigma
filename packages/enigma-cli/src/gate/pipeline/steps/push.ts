@@ -24,6 +24,7 @@ import { STEP_PUSH, type StepName } from "@/gate/types";
 import { resolveTestEvidenceLocation } from "./evidence";
 import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { join, relative, sep, isAbsolute } from "node:path";
+import { foreignLostCommits, type LostCommit } from "@/push-guard";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 
 /** Prefix of the run-scoped local ref the push target's current tip is fetched into. */
@@ -35,7 +36,7 @@ const PUSH_BASE_REF_PREFIX = "refs/enigma/push-bases";
  * one gate repository, and removed afterwards. A fetch that fails throws: comparing or replaying
  * against a tip that was never fetched would act on someone else's state.
  */
-async function inspectRemoteTip(sctx: StepContext, pushURL: string, ref: string, signal: AbortSignal): Promise<{ ahead: boolean; tipSHA: string; }> {
+async function inspectRemoteTip(sctx: StepContext, pushURL: string, ref: string, signal: AbortSignal, head = "HEAD"): Promise<{ ahead: boolean; tipSHA: string; }> {
     const baseRef = `${PUSH_BASE_REF_PREFIX}/${sctx.run.id}`;
     try {
         try {
@@ -44,7 +45,7 @@ async function inspectRemoteTip(sctx: StepContext, pushURL: string, ref: string,
             throw new Error(`fetch ${ref} from the push target: ${errMessage(err)}`);
         }
         const tipSHA = await git.run(sctx.workDir, ["rev-parse", "--verify", `${baseRef}^{commit}`], signal);
-        const ancestor = await git.runRaw(sctx.workDir, ["merge-base", "--is-ancestor", tipSHA, "HEAD"], signal);
+        const ancestor = await git.runRaw(sctx.workDir, ["merge-base", "--is-ancestor", tipSHA, head], signal);
         if (ancestor.code !== 0 && ancestor.code !== 1) {
             throw new Error(`compare ${tipSHA.slice(0, 12)} with HEAD: exit status ${ancestor.code}: ${ancestor.stderr.trim()}`);
         }
@@ -52,6 +53,42 @@ async function inspectRemoteTip(sctx: StepContext, pushURL: string, ref: string,
     } finally {
         await git.run(sctx.workDir, ["update-ref", "-d", baseRef], signal).catch(() => "");
     }
+}
+
+/**
+ * Commits on `tipSHA` that a force push of HEAD would drop and that someone else authored: no
+ * patch-equivalent in HEAD (a rebase of the user's own commit is not a loss) and an author email
+ * other than the user's `user.email`. The tip's objects are already local (inspectRemoteTip).
+ */
+async function foreignCommitsLost(sctx: StepContext, tipSHA: string, signal: AbortSignal, head = "HEAD"): Promise<LostCommit[]> {
+    const cherry = await git.run(sctx.workDir, ["cherry", head, tipSHA], signal);
+    const shas = cherry.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
+    if (!shas.length) return [];
+    const log = await git.run(sctx.workDir, ["log", "--no-walk=unsorted", "--format=%H%x1f%an%x1f%ae%x1f%s", ...shas.slice(0, 200)], signal);
+    const ownEmail = await git.run(sctx.repo.workingPath, ["config", "user.email"], signal).catch(() => "");
+    return foreignLostCommits(cherry, log, ownEmail);
+}
+
+/** The refusal for a rewrite that would drop `lost`, naming each commit. */
+function foreignLossError(ref: string, lost: LostCommit[]): Error {
+    const list = lost.slice(0, 10).map((c) => `${c.sha.slice(0, 10)} ${c.author} <${c.email}>: ${c.subject}`).join("; ");
+    return new Error(`${ref} on the push target holds ${lost.length} commit(s) by other people that this run does not contain (${list}) - force-pushing would erase them. Pull them into the branch, resolve, and run the gate again`);
+}
+
+/**
+ * Whether pushing `head` over `ref` needs a force, and the tip to lease it on. A force is only
+ * returned once it is proven to drop none of someone else's commits, and never for the default
+ * branch; either case throws instead.
+ */
+export async function safeForce(sctx: StepContext, pushURL: string, ref: string, head: string, signal: AbortSignal): Promise<{ force: boolean; tipSHA: string; }> {
+    const remote = await inspectRemoteTip(sctx, pushURL, ref, signal, head);
+    if (!remote.ahead) return { force: false, tipSHA: remote.tipSHA };
+    if (ref === normalizedBranchRef(sctx.repo.defaultBranch)) {
+        throw new Error(`${sctx.repo.defaultBranch} moved on the remote during the run (now ${remote.tipSHA.slice(0, 12)}) and the default branch is never force-pushed - pull, resolve, and run the gate again`);
+    }
+    const lost = await foreignCommitsLost(sctx, remote.tipSHA, signal, head);
+    if (lost.length) throw foreignLossError(ref, lost);
+    return { force: true, tipSHA: remote.tipSHA };
 }
 
 /** PushStep force-pushes the worktree state to the configured push remote. */
@@ -153,6 +190,13 @@ export class PushStep implements Step {
                     throw new Error(`${sctx.repo.defaultBranch} moved on the remote during the run (now ${remote.tipSHA.slice(0, 12)}) and this run's commits do not replay onto it cleanly - pull, resolve, and run the gate again: ${errMessage(err)}`);
                 }
                 newHeadSHA = await git.headSHA(sctx.workDir, signal);
+            }
+            if (remoteAhead && !onDefault) {
+                // The lease below only proves nothing moved since the inspection, not that what it
+                // overwrites is this run's. A shared branch (develop) lost a teammate's commit that
+                // way, so a rewrite that drops someone else's commit stops the step instead.
+                const lost = await foreignCommitsLost(sctx, remote.tipSHA, signal);
+                if (lost.length) throw foreignLossError(ref, lost);
             }
             try {
                 if (remoteAhead && !onDefault) {
