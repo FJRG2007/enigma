@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { applyGitPushGuard, foreignLostCommits, parsePush, prePushRefusal, pushRefusal, runPushGuardHook } from "@/push-guard";
 
@@ -144,6 +144,21 @@ test("reads a remote tip it has never fetched without leaving a ref or moving or
     expect(await pushRefusal("git push origin :side", me)).toBe("");
     expect(git(me, "me@e.test", "for-each-ref", "refs/enigma/")).toBe("");
     expect(git(me, "me@e.test", "rev-parse", "origin/develop")).toBe(tracking);
+}, 120_000);
+
+test("the __browser-guard entry Kimi, Codex and OpenCode run also refuses a destructive push", () => {
+    const { me, mate } = scenario();
+    commit(mate, "mate@e.test", "alerts.txt", "feat: usage alerts");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop");
+    commit(me, "me@e.test", "docs.txt", "docs: mine");
+    git(me, "me@e.test", "fetch", "-q", "origin");
+    const cli = join(import.meta.dir, "..", "src", "bin", "enigma.ts");
+    const hook = (command: string) => spawnSync("bun", [cli, "__browser-guard"], { input: payload(command, me), encoding: "utf8", windowsHide: true, timeout: 60_000 });
+    const refused = hook("git push --no-verify --force origin develop");
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain("feat: usage alerts");
+    expect(hook("git status").status).toBe(0);
+    expect(hook("git push --no-verify origin develop:fresh").status).toBe(0);
 }, 120_000);
 
 /** Pushes from `dir` with only a global config holding the pre-push entry; returns git's exit code and stderr. */

@@ -148,10 +148,10 @@ if (process.argv[2] === "__browser-guard" && existsSync(browserGuardBundle)) {
     let payload = "";
     try { payload = readFileSync(0, "utf8"); } catch { /* no stdin; the guard lets the call through */ }
     try {
-        const { runBrowserGuardHook } = await import(pathToFileURL(browserGuardBundle).href);
+        const { namesPush, runBrowserGuardHook } = await import(pathToFileURL(browserGuardBundle).href);
         // Exit 2 is the refusal; it is never swallowed.
         const code = runBrowserGuardHook(payload);
-        if (code !== 0 || !/\bpush\b/.test(payload)) process.exit(code);
+        if (code !== 0 || !namesPush(payload)) process.exit(code);
         pushGuardPayload = payload;
     } catch (error) {
         // Said out loud: a guard that stops running looks exactly like a command that was allowed.

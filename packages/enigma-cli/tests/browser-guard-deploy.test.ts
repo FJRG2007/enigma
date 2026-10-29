@@ -46,13 +46,13 @@ test("the OpenCode plugin hands each shell command to the guard and throws its r
     expect(applyOpencodeBrowserGuard(config, true)).toBe(true);
     expect(applyOpencodeBrowserGuard(config, true)).toBe(false);
 
-    // A stand-in guard: refuses (exit 2, reason on stderr) any payload naming a URL.
+    // A stand-in guard: refuses (exit 2, reason on stderr) any payload naming a URL or the marked workdir.
     const bin = join(DIR, "bin");
     mkdirSync(bin, { recursive: true });
     if (process.platform === "win32") {
-        writeFileSync(join(bin, "enigma.cmd"), "@echo off\r\nfindstr /c:\"http\" >nul && (echo refused by stand-in 1>&2 & exit /b 2)\r\nexit /b 0\r\n");
+        writeFileSync(join(bin, "enigma.cmd"), "@echo off\r\nfindstr /c:\"http\" /c:\"cwd-marker\" >nul && (echo refused by stand-in 1>&2 & exit /b 2)\r\nexit /b 0\r\n");
     } else {
-        writeFileSync(join(bin, "enigma"), "#!/bin/sh\nif grep -q http; then echo 'refused by stand-in' >&2; exit 2; fi\nexit 0\n");
+        writeFileSync(join(bin, "enigma"), "#!/bin/sh\nif grep -q -e http -e cwd-marker; then echo 'refused by stand-in' >&2; exit 2; fi\nexit 0\n");
         chmodSync(join(bin, "enigma"), 0o755);
     }
     // The plugin runs in its own process, as it would inside OpenCode, with the stand-in first on PATH.
@@ -60,14 +60,15 @@ test("the OpenCode plugin hands each shell command to the guard and throws its r
     writeFileSync(driver, [
         `const { EnigmaBrowserGuard } = await import(${JSON.stringify(pathToFileURL(join(config, "plugins", "enigma-browser-guard.js")).href)});`,
         "const before = (await EnigmaBrowserGuard())[\"tool.execute.before\"];",
-        "const outcome = async (input, args) => { try { await before(input, { args }); return \"ran\"; } catch (e) { return e.message; } };",
-        "console.log(JSON.stringify([await outcome({ tool: \"bash\" }, { command: \"start http://localhost:3000\" }), await outcome({ tool: \"bash\" }, { command: \"npm test\" }), await outcome({ tool: \"read\" }, { filePath: \"http.txt\" })]));",
+        "const inProject = (await EnigmaBrowserGuard({ directory: process.cwd() }))[\"tool.execute.before\"];",
+        "const outcome = async (input, args, hook = before) => { try { await hook(input, { args }); return \"ran\"; } catch (e) { return e.message; } };",
+        "console.log(JSON.stringify([await outcome({ tool: \"bash\" }, { command: \"start http://localhost:3000\" }), await outcome({ tool: \"bash\" }, { command: \"npm test\" }), await outcome({ tool: \"read\" }, { filePath: \"http.txt\" }), await outcome({ tool: \"bash\" }, { command: \"git push\", workdir: \"cwd-marker\" }, inProject)]));",
     ].join("\n"));
     const env: NodeJS.ProcessEnv = {};
     for (const [k, v] of Object.entries(process.env)) if (k.toUpperCase() !== "PATH") env[k] = v;
     env.PATH = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
     const result = spawnSync(process.execPath, [driver], { env, encoding: "utf8", windowsHide: true, timeout: 30000 });
-    expect(JSON.parse(result.stdout.trim())).toEqual(["refused by stand-in", "ran", "ran"]);
+    expect(JSON.parse(result.stdout.trim())).toEqual(["refused by stand-in", "ran", "ran", "refused by stand-in"]);
 
     expect(applyOpencodeBrowserGuard(config, false)).toBe(true);
     expect(applyOpencodeBrowserGuard(config, false)).toBe(false);

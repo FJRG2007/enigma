@@ -224,6 +224,16 @@ export function runBrowserGuardHook(raw: string, headless: () => boolean = () =>
     return 2;
 }
 
+/**
+ * True when the payload's command names `push`: Kimi, Codex and OpenCode run this one entry before
+ * every shell command, and such a command still owes the push guard. Judged on the command alone,
+ * so a `push` in the cwd or a transcript path does not start the binary for every command.
+ */
+export function namesPush(raw: string): boolean {
+    const payload = parseGuardPayload(raw);
+    return payload !== null && /\bpush\b/.test(payload.command);
+}
+
 /** The PreToolUse group: one filtered handler per command pattern and shell tool. */
 function guardGroup(): HookGroup {
     const hooks = ["Bash", "PowerShell"].flatMap((tool) =>

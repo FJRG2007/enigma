@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { COMMAND_PATTERNS, applyBrowserGuard, commandSegments, runBrowserGuardHook, visibleBrowserReason } from "@/browser-guard";
+import { COMMAND_PATTERNS, applyBrowserGuard, commandSegments, namesPush, runBrowserGuardHook, visibleBrowserReason } from "@/browser-guard";
 
 const payload = (command: string, tool = "Bash"): string => JSON.stringify({ tool_name: tool, tool_input: { command }, cwd: process.cwd() });
 const headlessOn = (): boolean => true;
@@ -177,4 +177,11 @@ test("Kimi's and Codex's PreToolUse payloads are read like Claude's", () => {
     expect(runBrowserGuardHook(kimi, headlessOn)).toBe(2);
     expect(runBrowserGuardHook(codex, headlessOn)).toBe(2);
     expect(runBrowserGuardHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: "python -c \"print(1)\"" } }), headlessOn)).toBe(0);
+});
+
+test("a push is read from the command, never from the cwd or other payload fields", () => {
+    const payload = (command: string, cwd: string): string => JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd, transcript_path: "/t/push.jsonl" });
+    expect(namesPush(payload("git push --force origin develop", "/repo"))).toBe(true);
+    expect(namesPush(payload("npm test", "/work/push-service"))).toBe(false);
+    expect(namesPush("not json push")).toBe(false);
 });

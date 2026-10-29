@@ -3230,12 +3230,12 @@ export async function run(argv: string[]): Promise<void> {
     if (argv[0] === "__browser-guard") {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
-        const { runBrowserGuardHook } = await import("./browser-guard");
+        const { namesPush, runBrowserGuardHook } = await import("./browser-guard");
         const browser = runBrowserGuardHook(payload);
         // Kimi, Codex and OpenCode run this one entry before EVERY shell command, so it carries
         // the push guard too: their `git push --no-verify` would otherwise skip the git-level
         // pre-push hook, the only other place the push is judged. Claude has its own entry.
-        if (browser !== 0 || !/\bpush\b/.test(payload)) process.exit(browser);
+        if (browser !== 0 || !namesPush(payload)) process.exit(browser);
         const { runPushGuardHook } = await import("./push-guard");
         process.exit(await runPushGuardHook(payload));
     }
