@@ -121,8 +121,9 @@ export function parsePush(segment: string, cwd: string): PushPlan | null {
 }
 
 /**
- * The commits a rewrite would drop that belong to someone else. `cherry` is
- * `git cherry <pushed> <remoteTip>` (a `+` line has no equivalent on the pushed side), `log` is
+ * The commits a rewrite would drop that belong to someone else. `cherry` is `+ <sha>` per dropped
+ * commit - raw `git cherry <pushed> <remoteTip>` output when deleting a branch, `droppedCommits`'
+ * output otherwise (see its doc comment for why plain `cherry` is not proof on its own) - `log` is
  * `%H%x1f%an%x1f%ae%x1f%s` per line for those commits, `ownEmail` the repo's `user.email`.
  */
 export function foreignLostCommits(cherry: string, log: string, ownEmail: string): LostCommit[] {

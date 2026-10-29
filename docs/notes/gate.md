@@ -658,10 +658,12 @@ half needs `bun:sqlite` and is imported dynamically.
 - THAT LEASE STILL ERASED A TEAMMATE ON A SHARED BRANCH. "Working branch" was any branch that
   is not the default, so `develop` took the force path, and a commit a teammate pushed there
   mid-run vanished. Before forcing, `foreignCommitsLost` now lists the tip's commits with no
-  patch-equivalent in HEAD (`git cherry HEAD <tip>`, so a rebase of the user's own commit is
-  not a loss) whose author email differs from the user's `user.email`; any such commit stops
+  patch-equivalent in HEAD (so a rebase of the user's own commit is not a loss) whose author
+  email differs from the user's `user.email`; any such commit stops
   the step, naming each one. Same rule as the agent-side push guard (`push-guard.ts`,
-  rules-are-persuasion.md), sharing its `foreignCommitsDropped` (cherry, log, author filter) and `lostCommitLines`.
+  rules-are-persuasion.md), sharing its `foreignCommitsDropped` (now `rev-list` + `cherry` +
+  log + author filter, via `droppedCommits`, so an empty or merge commit of a teammate's counts
+  as lost too) and `lostCommitLines`.
 - CI-FIX ROUND PUSHES WERE NEVER COVERED BY EITHER FIX ABOVE. `ciFix.ts`'s `pushUpdatedHeadSHA`
   force-pushed its own branch straight off the `ls-remote` tip, no lease and no foreign-commit
   check - the exact gap the two bullets above closed for `push.ts`. It now calls `push.ts`'s
