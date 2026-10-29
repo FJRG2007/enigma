@@ -32,10 +32,10 @@
 
 import { homedir } from "node:os";
 import { enigmaHome } from "./util";
-import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { applyClaudeHook } from "./claude-hooks";
+import { existsSync, readFileSync } from "node:fs";
 import { parseGuardPayload } from "./attribution-guard";
 import type { HookGroup, HookWrite } from "./claude-hooks";
 import { commandSegments, programName, words } from "./browser-guard";
@@ -150,17 +150,55 @@ const BUDGET_MS = 45_000;
 /** Ceiling of the scratch-ref cleanup, which runs even once the budget is spent. */
 const CLEANUP_MS = 10_000;
 
+/** SHAs per `git log --no-walk` call, so no command line outgrows the platform's limit. */
+const LOG_CHUNK = 200;
+
+/** More commits than this between the pushed side and the tip is refused rather than judged partly. */
+const MAX_DROPPED = 5_000;
+
+/** `git log --no-walk` over every sha in chunks, concatenated. */
+async function logEach(run: GitRun, args: string[], shas: string[]): Promise<string> {
+    const parts: string[] = [];
+    for (let i = 0; i < shas.length; i += LOG_CHUNK) parts.push(await run(["log", "--no-walk=unsorted", ...args, ...shas.slice(i, i + LOG_CHUNK)]));
+    return parts.join("\n");
+}
+
 /** The other people's commits among `cherry` (`+ <sha>` lines), read through `run`; `ownEmail` is only read when there are any. */
 export async function foreignCommitsAmong(run: GitRun, cherry: string, ownEmail: () => Promise<string>): Promise<LostCommit[]> {
     const shas = cherry.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
     if (!shas.length) return [];
-    const log = await run(["log", "--no-walk=unsorted", "--format=%H%x1f%an%x1f%ae%x1f%s", ...shas.slice(0, 200)]);
+    const log = await logEach(run, ["--format=%H%x1f%an%x1f%ae%x1f%s"], shas);
     return foreignLostCommits(cherry, log, await ownEmail());
 }
 
-/** The other people's commits on `tip` that pushing `pushed` over it drops (no patch-equivalent in `pushed`). */
+/**
+ * `+ <sha>` lines for every commit on `tip` that pushing `pushed` over it removes. A patch-equivalent
+ * on the pushed side (`git cherry`, a rebase of the commit) proves a commit preserved ONLY when it is
+ * an ordinary commit with a non-empty diff: every empty commit has the same patch-id, so a
+ * teammate's empty commit would otherwise read as "kept" next to any empty commit of the user's, and
+ * `git cherry` does not list merges at all. Measured: two empty commits, the teammate's was erased.
+ */
+export async function droppedCommits(run: GitRun, pushed: string, tip: string): Promise<string> {
+    const all = (await run(["rev-list", `--max-count=${MAX_DROPPED + 1}`, `${pushed}..${tip}`])).split("\n").filter(Boolean);
+    if (all.length > MAX_DROPPED) throw new Error(`the push drops more than ${MAX_DROPPED} commits`);
+    if (!all.length) return "";
+    const equivalent = new Set((await run(["cherry", pushed, tip])).split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim()));
+    const candidates = all.filter((sha) => equivalent.has(sha));
+    const preserved = new Set<string>();
+    if (candidates.length) {
+        const out = await logEach(run, ["--format=%x1e%H %P", "--name-only"], candidates);
+        for (const record of out.split("\x1e")) {
+            const [head = "", ...files] = record.trim().split("\n");
+            const [sha = "", ...parents] = head.trim().split(/\s+/);
+            if (sha && parents.length === 1 && files.some((f) => f.trim() !== "")) preserved.add(sha);
+        }
+    }
+    return all.filter((sha) => !preserved.has(sha)).map((sha) => `+ ${sha}`).join("\n");
+}
+
+/** The other people's commits on `tip` that pushing `pushed` over it drops (see droppedCommits). */
 export async function foreignCommitsDropped(run: GitRun, pushed: string, tip: string, ownEmail: () => Promise<string>): Promise<LostCommit[]> {
-    return foreignCommitsAmong(run, await run(["cherry", pushed, tip]), ownEmail);
+    return foreignCommitsAmong(run, await droppedCommits(run, pushed, tip), ownEmail);
 }
 
 /** One line per lost commit, capped at ten plus a count of the rest. */
@@ -243,7 +281,7 @@ async function judgeTarget(plan: PushPlan, target: PushTarget, deadline: number)
         } else {
             const pushed = await run(["rev-parse", "--verify", `${target.source}^{commit}`]).catch(() => "");
             if (pushed === "") throw new Error(`could not resolve ${target.source}`);
-            cherry = await run(["cherry", pushed, tip]);
+            cherry = await droppedCommits(run, pushed, tip);
         }
         const lost = await foreignCommitsAmong(run, cherry, () => run(["config", "user.email"]).catch(() => ""));
         if (!lost.length) return "";

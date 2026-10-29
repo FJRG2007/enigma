@@ -233,3 +233,24 @@ test("without overrides, writes the file git reads: HOME, else an existing XDG c
         keys.forEach((k, i) => { if (previous[i] === undefined) delete process.env[k]; else process.env[k] = previous[i]; });
     }
 }, 60_000);
+
+test("an empty or merge commit of a teammate counts as lost, even beside an empty commit of the user's", async () => {
+    const { me, mate } = scenario();
+    git(mate, "mate@e.test", "commit", "-q", "--allow-empty", "-m", "chore: trigger deploy");
+    git(mate, "mate@e.test", "push", "-q", "origin", "develop");
+    git(me, "me@e.test", "commit", "-q", "--allow-empty", "-m", "chore: mine, also empty");
+    git(me, "me@e.test", "fetch", "-q", "origin");
+    expect(await pushRefusal("git push --force origin develop", me)).toContain("chore: trigger deploy");
+
+    const { me: me2, mate: mate2 } = scenario();
+    git(mate2, "mate@e.test", "checkout", "-q", "-b", "side");
+    commit(mate2, "mate@e.test", "side.txt", "feat: side work");
+    git(mate2, "mate@e.test", "checkout", "-q", "develop");
+    git(mate2, "mate@e.test", "merge", "-q", "--no-ff", "-m", "merge side", "side");
+    git(mate2, "mate@e.test", "push", "-q", "origin", "develop");
+    // The user carries the side commit's change too, so only the merge itself would be lost.
+    git(me2, "me@e.test", "fetch", "-q", "origin");
+    git(me2, "me@e.test", "cherry-pick", "origin/develop^2");
+    const reason = await pushRefusal("git push --force origin develop", me2);
+    expect(reason).toContain("merge side");
+}, 180_000);
