@@ -73,11 +73,12 @@ jobs:
         # Native runner per target (OpenTUI's native core only embeds reliably when
         # built on its own platform). Intel macOS (darwin-x64) is omitted: its only free
         # runner (macos-13) is deprecated/unavailable. The downloader errors cleanly on
-        # an unsupported platform.
+        # an unsupported platform. macos-14 was retired by GitHub ("configuration not
+        # supported", Nov 2026); macos-15 is the arm64 image.
         include:
           - { os: ubuntu-latest, target: bun-linux-x64, asset: enigma-linux-x64 }
           - { os: ubuntu-24.04-arm, target: bun-linux-arm64, asset: enigma-linux-arm64 }
-          - { os: macos-14, target: bun-darwin-arm64, asset: enigma-darwin-arm64 }
+          - { os: macos-15, target: bun-darwin-arm64, asset: enigma-darwin-arm64 }
           - { os: windows-latest, target: bun-windows-x64, asset: enigma-win32-x64 }
     runs-on: ${{ matrix.os }}
     steps:
