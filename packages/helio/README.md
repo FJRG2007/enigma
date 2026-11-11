@@ -20,9 +20,17 @@ enigma helio                # launch an agent with ONLY Helio's skills/commands/
 `skills/`, `commands/`, `agents/`, `mcp/`, `tools/`, `rules/`, `hooks/`, `wordlists/`, `memory/`,
 `web3/`.
 
+`skills/security-audit/` is a separate vendor: Cloudflare's white-box codebase audit skill,
+wired up through the `/audit` command and natural-language routing in `AGENTS.md`. It is
+preserved across a Helio refresh and refreshed on its own schedule - see License below.
+
 The bundled copy is refreshed by the maintainer with `node scripts/sync-helio.mjs --commit <sha>`
-from the enigma monorepo root.
+from the enigma monorepo root; `skills/security-audit/` and the three `audit.md` commands are
+preserved across that refresh and refreshed independently with
+`node scripts/sync-security-audit.mjs --commit <sha> --force`.
 
 ## License
 
-Apache-2.0. Created in collaboration with the Dymo Intelligence Team.
+Apache-2.0, created in collaboration with the Dymo Intelligence Team, except
+`skills/security-audit/`, which is vendored from `cloudflare/security-audit-skill` under MIT
+(see that directory's own `LICENSE` and `VENDOR.md`).
