@@ -36,6 +36,10 @@ interface ClaudeOAuth {
     accessToken?: string;
     refreshToken?: string;
     expiresAt?: number;
+    /** When the refresh token itself stops working (ms). Past it the login is dead. */
+    refreshTokenExpiresAt?: number;
+    /** Set by Claude Code when it ends the login (e.g. "time_limit"); the tokens are then dead. */
+    loginEnded?: string;
     scopes?: string[];
     subscriptionType?: string;
 }
@@ -45,7 +49,8 @@ interface ClaudeOAuth {
  *  - `ok`          - a valid access token (present and not past expiry).
  *  - `refreshable` - the access token is expired/absent but a refresh token is present, so
  *                    Claude Code will mint a new access token itself. Still a usable login.
- *  - `expired`     - an access token past expiry with NO refresh token: unusable, dead.
+ *  - `expired`     - an access token past expiry with NO live refresh token (none, past its own
+ *                    `refreshTokenExpiresAt`, or the login was ended by Claude Code): dead.
  *  - `empty`       - the file exists but carries no tokens (a blanked / logged-out file).
  *  - `absent`      - no `.credentials.json` at all.
  */
@@ -76,12 +81,19 @@ export function sessionState(dir: string, now: number = Date.now()): SessionStat
     if (!existsSync(credentialsPath(dir))) return "absent";
     const oauth = readOAuth(dir);
     if (!oauth || (!oauth.accessToken && !oauth.refreshToken)) return "empty";
+    if (oauth.loginEnded) return "expired";
     const hasAccess = Boolean(oauth.accessToken);
-    const hasRefresh = Boolean(oauth.refreshToken);
+    const hasRefresh = liveRefresh(oauth, now);
     const past = typeof oauth.expiresAt === "number" && oauth.expiresAt > 0 && oauth.expiresAt <= now;
     if (hasRefresh) return hasAccess && !past ? "ok" : "refreshable";
     // No refresh token: usable only while the access token is still valid.
     return hasAccess && !past ? "ok" : "expired";
+}
+
+/** Whether the refresh token is present and not past its own expiry. */
+function liveRefresh(oauth: ClaudeOAuth, now: number): boolean {
+    const end = oauth.refreshTokenExpiresAt;
+    return Boolean(oauth.refreshToken) && !(typeof end === "number" && end > 0 && end <= now);
 }
 
 /** Whether a config dir holds a session that can be launched or transferred (ok | refreshable). */
@@ -94,12 +106,12 @@ export function isUsableSession(state: SessionState): boolean {
  * token always beats one without (it survives access-token expiry), then later expiry wins. An
  * unusable dir scores -Infinity so it never displaces a usable one.
  */
-function freshnessScore(dir: string): number {
+export function freshnessScore(dir: string, now: number = Date.now()): number {
     const oauth = readOAuth(dir);
-    if (!oauth || (!oauth.accessToken && !oauth.refreshToken)) return -Infinity;
+    if (!oauth || !isUsableSession(sessionState(dir, now))) return -Infinity;
     const expiresAt = typeof oauth.expiresAt === "number" ? oauth.expiresAt : 0;
     // Bias so any refresh-token dir outranks any refresh-less one regardless of expiry.
-    return (oauth.refreshToken ? 1e15 : 0) + expiresAt;
+    return (liveRefresh(oauth, now) ? 1e15 : 0) + expiresAt;
 }
 
 /** Email of the account signed into a config dir (from `.claude.json` oauthAccount), or undefined. */
@@ -338,6 +350,6 @@ export function transferSession(fromDir: string, toDir: string, now: number = Da
 export function copyIfFresher(fromDir: string, toDir: string, now: number = Date.now()): boolean {
     if (fromDir === toDir) return false;
     if (!isUsableSession(sessionState(fromDir, now))) return false;
-    if (freshnessScore(fromDir) <= freshnessScore(toDir)) return false;
+    if (freshnessScore(fromDir, now) <= freshnessScore(toDir, now)) return false;
     return transferSession(fromDir, toDir, now).ok;
 }

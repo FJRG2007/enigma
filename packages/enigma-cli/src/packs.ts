@@ -26,7 +26,7 @@ import { isDir, readJson, resolveBin } from "./util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { copyIfFresher } from "./claude-oauth";
+import { copyIfFresher, freshnessScore, isUsableSession, sessionState } from "./claude-oauth";
 import { applyContextServer, browserInvocation, hasContextServer, type ContextServer } from "./mcp-deploy";
 import { engineBin, engineNodeRange, ensureEngine, ensureEngineAsync, installedEngineVersion, pickNode, readEngineSpec, type EngineSpec } from "./agent-engine";
 import { mirrorAccountSettings } from "./permissions";
@@ -381,33 +381,22 @@ const CRED_FILES: Record<string, string[]> = {
     kimi: ["credentials"],
 };
 
-/** Whether a Claude credentials file already holds a usable OAuth token (non-empty access+refresh). */
+/**
+ * Whether a Claude credentials file holds a session the agent can run on. Same rule as
+ * `sessionState` - a refresh token past its own expiry, or a login Claude Code ended, is dead
+ * even though the file still has tokens in it.
+ */
 function hasUsableToken(file: string): boolean {
-    try {
-        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; }; }).claudeAiOauth;
-        return Boolean(t?.accessToken && t?.refreshToken);
-    } catch {
-        return false;
-    }
+    return isUsableSession(sessionState(dirname(file)));
 }
 
 /**
  * Login state of a Claude credentials file: "ok" | "expired" | "empty" | "absent".
- * IMPORTANT: a past-expiry access token is NOT a problem when a refresh token is present - the
- * agent refreshes it automatically, so that is "ok" (reporting it "expired" was a false alarm
- * for any normally-aged login). Only a token with no refresh token AND past expiry is truly
- * unusable ("expired"); "empty" is a logged-out/blanked file; "absent" is no file at all.
+ * A past-expiry access token with a live refresh token is "ok" (the agent refreshes it).
  */
 function tokenState(file: string): "ok" | "expired" | "empty" | "absent" {
-    if (!existsSync(file)) return "absent";
-    try {
-        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; expiresAt?: number; }; }).claudeAiOauth;
-        if (!t?.accessToken) return "empty";
-        const past = typeof t.expiresAt === "number" && t.expiresAt > 0 && t.expiresAt < Date.now();
-        return past && !t.refreshToken ? "expired" : "ok";
-    } catch {
-        return "absent";
-    }
+    const state = sessionState(dirname(file));
+    return state === "refreshable" ? "ok" : state;
 }
 
 /**
@@ -450,9 +439,11 @@ export function seedCredentials(id: string, tool: string, account: string): void
             // plant a blanked/keychain-stored placeholder over the agent's own resolution.
             if (tool === "claude" && !hasUsableToken(from)) continue;
             const to = join(dest, rel);
-            // Keep the context token only when it is the SAME account's (a possible fresh rotation);
-            // a different/switched account must replace it (token/identity mismatch -> login prompt).
-            if (!accountChanged && existsSync(to) && hasUsableToken(to)) continue;
+            // Keep the context token only when it is the SAME account's AND at least as fresh as the
+            // account's (a rotation done inside the context); an older copy is replaced, because the
+            // account refreshing has already invalidated it. A switched account always replaces it.
+            if (!accountChanged && existsSync(to) && hasUsableToken(to)
+                && (tool !== "claude" || freshnessScore(dirname(to)) >= freshnessScore(dirname(from)))) continue;
             mkdirSync(dirname(to), { recursive: true });
             // A directory entry (Kimi's per-provider credentials/) copies as a tree; the
             // recursive flag is inert for a file, so both kinds take the same path.
