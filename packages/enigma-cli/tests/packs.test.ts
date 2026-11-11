@@ -150,6 +150,32 @@ test("credential seeding never clobbers a refreshed context token (the re-login 
     expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT_ACCESS");
 });
 
+test("credential seeding replaces a same-account context token that is dead or older", () => {
+    const acct = addAccount("claude", "deadctx");
+    const now = Date.now();
+    writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "ACCT", refreshToken: "ACCT_R", expiresAt: now + 3600_000, refreshTokenExpiresAt: now + 86_400_000 } }));
+    packs.deployPack("helio", "claude");
+    const ctxCred = join(HOME, "packs", "helio", "context", "claude", ".credentials.json");
+    const ctxAccess = () => JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken;
+    packs.seedCredentials("helio", "claude", "deadctx");
+    expect(ctxAccess()).toBe("ACCT");
+
+    // Refresh token past its own expiry: the file still has tokens, but the login is dead.
+    writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "OLD", refreshToken: "OLD_R", expiresAt: 1, refreshTokenExpiresAt: 1 } }));
+    packs.seedCredentials("helio", "claude", "deadctx");
+    expect(ctxAccess()).toBe("ACCT");
+
+    // A login Claude Code ended (loginEnded) is dead too.
+    writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "OLD", refreshToken: "OLD_R", expiresAt: now + 60_000, loginEnded: "time_limit" } }));
+    packs.seedCredentials("helio", "claude", "deadctx");
+    expect(ctxAccess()).toBe("ACCT");
+
+    // An older copy of the same login: the account refreshed since, which invalidated it.
+    writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "OLD", refreshToken: "OLD_R", expiresAt: now - 60_000 } }));
+    packs.seedCredentials("helio", "claude", "deadctx");
+    expect(ctxAccess()).toBe("ACCT");
+});
+
 test("re-seeds when the pinned account changes (replaces a previous account's token)", () => {
     const cred = (a: string) => JSON.stringify({ claudeAiOauth: { accessToken: a, refreshToken: `${a}_R`, expiresAt: Date.now() + 3600_000 }, oauthAccount: { emailAddress: `${a}@x` } });
     const a = addAccount("claude", "acctA");

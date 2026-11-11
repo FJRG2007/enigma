@@ -49,6 +49,27 @@ test("sessionState classifies every credential shape", () => {
     expect(oauth.sessionState(d)).toBe("ok");                                       // access valid, no refresh (usable now)
 });
 
+test("sessionState: a refresh token past its own expiry, or an ended login, is dead", () => {
+    const d = dir();
+    const write = (o: object) => writeFileSync(join(d, ".credentials.json"), JSON.stringify({ claudeAiOauth: o }));
+    write({ accessToken: "a", refreshToken: "r", expiresAt: PAST, refreshTokenExpiresAt: PAST });
+    expect(oauth.sessionState(d)).toBe("expired");
+    write({ accessToken: "a", refreshToken: "r", expiresAt: PAST, refreshTokenExpiresAt: FUTURE });
+    expect(oauth.sessionState(d)).toBe("refreshable");
+    write({ accessToken: "a", refreshToken: "r", expiresAt: FUTURE, loginEnded: "time_limit" });
+    expect(oauth.sessionState(d)).toBe("expired");
+    write({ accessToken: "", refreshToken: "", expiresAt: 0, loginEnded: "time_limit" });
+    expect(oauth.sessionState(d)).toBe("empty");
+});
+
+test("copyIfFresher replaces a target whose refresh token has expired", () => {
+    const from = dir(), to = dir();
+    creds(from, { access: "new", refresh: "r2", expiresAt: FUTURE });
+    writeFileSync(join(to, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "old", refreshToken: "r1", expiresAt: FUTURE + 1, refreshTokenExpiresAt: PAST } }));
+    expect(oauth.copyIfFresher(from, to)).toBe(true);
+    expect(JSON.parse(readFileSync(join(to, ".credentials.json"), "utf8")).claudeAiOauth.accessToken).toBe("new");
+});
+
 test("isUsableSession: ok and refreshable are launchable/transferable, the rest are not", () => {
     expect(oauth.isUsableSession("ok")).toBe(true);
     expect(oauth.isUsableSession("refreshable")).toBe(true);
