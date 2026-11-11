@@ -1,0 +1,7 @@
+{
+  "repo": "cloudflare/security-audit-skill",
+  "url": "https://github.com/cloudflare/security-audit-skill.git",
+  "subdir": "skills/security-audit",
+  "commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "syncedAt": "2026-11-11"
+}

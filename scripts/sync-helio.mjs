@@ -12,8 +12,14 @@
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { tmpdir as osTmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
+
+// Subpaths under assets/ that enigma vendors separately (not from the Helio repo) and that the
+// wholesale replace below must NOT delete. security-audit comes from cloudflare/security-audit-skill
+// via scripts/sync-security-audit.mjs; preserve it across a Helio refresh.
+const PRESERVE = ["skills/security-audit"];
 
 const here = dirname(fileURLToPath(import.meta.url));   // scripts/
 const repoRoot = join(here, "..");
@@ -66,6 +72,19 @@ function main() {
         git(["checkout", "--quiet", "FETCH_HEAD"], { cwd: work });
         const resolved = git(["rev-parse", "HEAD"], { cwd: work });
 
+        // Stash enigma-vendored subpaths before the wholesale replace, restore them after.
+        const stash = join(osTmpdir(), `enigma-helio-preserve-${process.pid}`);
+        rmSync(stash, { recursive: true, force: true });
+        const preserved = [];
+        for (const rel of PRESERVE) {
+            const from = join(assetsDir, ...rel.split("/"));
+            if (!existsSync(from)) continue;
+            const to = join(stash, rel);
+            mkdirSync(dirname(to), { recursive: true });
+            cpSync(from, to, { recursive: true });
+            preserved.push(rel);
+        }
+
         // Replace the vendored tree wholesale so deletions upstream propagate.
         rmSync(assetsDir, { recursive: true, force: true });
         mkdirSync(assetsDir, { recursive: true });
@@ -83,7 +102,17 @@ function main() {
             syncedAt: new Date().toISOString().slice(0, 10)
         }, null, 2)}\n`);
 
+        // Restore the enigma-vendored subpaths over the fresh Helio tree.
+        for (const rel of preserved) {
+            const to = join(assetsDir, ...rel.split("/"));
+            rmSync(to, { recursive: true, force: true });
+            mkdirSync(dirname(to), { recursive: true });
+            cpSync(join(stash, rel), to, { recursive: true });
+        }
+        rmSync(stash, { recursive: true, force: true });
+
         console.log(`Vendored ${copied} top-level entries from helio@${resolved.slice(0, 12)} into packages/helio/assets`);
+        if (preserved.length) console.log(`Preserved enigma-vendored: ${preserved.join(", ")}`);
         if (!existsSync(join(assetsDir, "skills"))) console.warn("WARNING: assets/skills missing - check the source layout.");
     } finally {
         rmSync(work, { recursive: true, force: true });

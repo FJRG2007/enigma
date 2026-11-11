@@ -27,6 +27,7 @@ TUI-agnostic bug bounty and VAPT framework supporting Claude Code, OpenCode, and
 - `skills/security-arsenal/` — payloads, bypass tables, never-submit list
 - `skills/report-writing/` — H1/Bugcrowd/Intigriti/Immunefi templates, CVSS 4.0
 - `skills/triage-validation/` — 7-Question Gate, 4 gates, auto-kill list
+- `skills/security-audit/` — white-box six-phase codebase audit (recon, coverage-led hunting, candidate validation, structured findings, independent verification, target-neutral report) with machine-readable findings and Node validators. Vendored from cloudflare/security-audit-skill (MIT); see its `VENDOR.md`. Drives `/audit`.
 
 #### Web3
 - `skills/web3-audit/` — 10 smart contract bug classes, Foundry PoC template
@@ -71,6 +72,7 @@ Extended reference material the AI should use during hunts. Located in `docs/ai-
 |---------|-------|-------------|
 | `/recon` | `/recon target.com` | Full recon pipeline |
 | `/hunt` | `/hunt target.com` | Start vulnerability hunting |
+| `/audit` | `/audit [path] [--quick\|--deep]` | Full white-box codebase security audit (security-audit skill) |
 | `/validate` | `/validate` | Run validation gate |
 | `/report` | `/report` | Generate report |
 | `/chain` | `/chain` | Build exploit chains |
@@ -278,6 +280,14 @@ Most users do NOT invoke slash commands manually. When a user says anything like
 2. Follow the hunt pipeline from `commands/hunt.md`
 3. Before sharing ANY finding with the user, run the validation gate internally (see "Before Sharing Any Finding" below)
 4. Never present a lead as a confirmed bug until it passes validation
+
+**When asked to audit / security-review a codebase you can read (white-box):**
+When the user owns or is authorized to review the code and asks to "audit this codebase / repo", "security review", "pen-test this code", or a "full / comprehensive / end-to-end review", or asks for report artifacts — with or without typing `/audit`:
+1. Run the `security-audit` skill's full six-phase workflow (`skills/security-audit/SKILL.md`), as `/audit` describes.
+2. Execution safety first: source inspection is read-only; run target code only in an OS-enforced sandbox; a scratch-local `HOME` never justifies touching the real profile. No sandbox provable (common on Windows) → run source-only and say so; blocked facts become `needs_validation`, not `confirmed`.
+3. A record is `confirmed` only with a complete source trace, a verbatim byte quote at the cited line, and a bounded result. Validate `findings.json` and the coverage claim with the skill's Node validators.
+4. Mirror each `confirmed` finding into the repo's `docs/vulnerabilities/` ledger (rule 12) when the repo is team-owned. Hand verified records to `skills/report-writing/` only if the user wants a platform report.
+For a focused question or "is this exploitable?", use the skill in guidance mode instead of the full workflow.
 
 **When asked to write a report / submit a bug:**
 1. If the finding has not been validated yet, validate it first — silently if the user didn't ask for it

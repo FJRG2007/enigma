@@ -94,6 +94,25 @@ jobs:
       - name: Test @enigmax/primitives
         run: npm run --workspace @enigmax/primitives test
 
+  security-audit-validators:
+    # The vendored security-audit skill (packages/helio/assets/skills/security-audit) ships two
+    # zero-dependency Node validators whose safe-input reader is platform-specific: the whole point
+    # of the enigma patch set is that they work on Windows, where upstream rejected every input. Run
+    # their test suites on both OSes so a regression in the identity-checked open is caught here.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+      - name: Run the validator test suites
+        working-directory: packages/helio/assets/skills/security-audit
+        run: node --test validate-findings.test.cjs validate-coverage-ledger.test.cjs
+
   linter:
     runs-on: ubuntu-latest
     steps:
