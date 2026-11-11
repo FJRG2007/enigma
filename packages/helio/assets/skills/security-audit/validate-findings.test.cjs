@@ -897,6 +897,14 @@ for (const [name, script] of [
   });
 }
 
+test("Windows open rejects a UNC or device path before any filesystem call", () => {
+  for (const file of ["\\\\host\\share\\input.json", "//host/share/input.json", "\\\\?\\C:\\input.json", "\\\\.\\pipe\\input"]) {
+    const api = scriptedFs({ before: fakeStat() });
+    assert.throws(() => openWindowsInputDescriptor(file, api), /UNC or device path/);
+    assert.deepEqual(api.calls, []);
+  }
+});
+
 test("Windows open rejects a link or non-regular path before opening it", () => {
   const link = scriptedFs({ before: fakeStat({ link: true }) });
   assert.throws(() => openWindowsInputDescriptor("input.json", link), /input must not be a symlink/);

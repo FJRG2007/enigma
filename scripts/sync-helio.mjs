@@ -12,14 +12,26 @@
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { tmpdir as osTmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 
 // Subpaths under assets/ that enigma vendors separately (not from the Helio repo) and that the
 // wholesale replace below must NOT delete. security-audit comes from cloudflare/security-audit-skill
-// via scripts/sync-security-audit.mjs; preserve it across a Helio refresh.
-const PRESERVE = ["skills/security-audit"];
+// via scripts/sync-security-audit.mjs; preserve it and its /audit entry points across a Helio refresh.
+const PRESERVE = [
+    "skills/security-audit",
+    "commands/audit.md",
+    "commands/claude-code/audit.md",
+    "commands/opencode/audit.md"
+];
+
+// Enigma-local edits to Helio's own AGENTS.md: the upstream file replaces them on every refresh,
+// so each marker is checked afterwards and a missing one is reported for re-application.
+const AGENTS_MARKERS = [
+    ["- `skills/security-audit/`", "the security-audit entry in the skills list"],
+    ["| `/audit` |", "the /audit row in the commands table"],
+    ["**When asked to audit / security-review a codebase you can read (white-box):**", "the white-box audit routing block"]
+];
 
 const here = dirname(fileURLToPath(import.meta.url));   // scripts/
 const repoRoot = join(here, "..");
@@ -73,7 +85,7 @@ function main() {
         const resolved = git(["rev-parse", "HEAD"], { cwd: work });
 
         // Stash enigma-vendored subpaths before the wholesale replace, restore them after.
-        const stash = join(osTmpdir(), `enigma-helio-preserve-${process.pid}`);
+        const stash = join(tmpdir(), `enigma-helio-preserve-${process.pid}`);
         rmSync(stash, { recursive: true, force: true });
         const preserved = [];
         for (const rel of PRESERVE) {
@@ -113,6 +125,15 @@ function main() {
 
         console.log(`Vendored ${copied} top-level entries from helio@${resolved.slice(0, 12)} into packages/helio/assets`);
         if (preserved.length) console.log(`Preserved enigma-vendored: ${preserved.join(", ")}`);
+        const missingPreserve = PRESERVE.filter((rel) => !preserved.includes(rel));
+        if (missingPreserve.length) console.warn(`WARNING: not present before the refresh, so not preserved: ${missingPreserve.join(", ")}`);
+        const agentsPath = join(assetsDir, "AGENTS.md");
+        const agents = existsSync(agentsPath) ? readFileSync(agentsPath, "utf8") : "";
+        const lost = AGENTS_MARKERS.filter(([marker]) => !agents.includes(marker));
+        if (lost.length) {
+            console.warn("WARNING: the Helio refresh replaced AGENTS.md and dropped enigma's security-audit wiring. Re-apply from git history (git log -p -- packages/helio/assets/AGENTS.md):");
+            for (const [, what] of lost) console.warn(`  - ${what}`);
+        }
         if (!existsSync(join(assetsDir, "skills"))) console.warn("WARNING: assets/skills missing - check the source layout.");
     } finally {
         rmSync(work, { recursive: true, force: true });

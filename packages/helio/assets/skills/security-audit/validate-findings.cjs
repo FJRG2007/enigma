@@ -617,6 +617,10 @@ function sameFileIdentity(left, right) {
   return left.ino !== 0n && left.dev === right.dev && left.ino === right.ino;
 }
 
+function isWindowsNetworkOrDevicePath(file) {
+  return /^[\\/]{2}/.test(file) || path.win32.resolve(file).startsWith("\\\\");
+}
+
 // Windows exposes neither O_NOFOLLOW nor O_NONBLOCK. Reject a link or non-regular path
 // before opening, then require the opened descriptor and a second lstat to name the same
 // file as the first lstat. A swap before or after the open changes the identity and is
@@ -624,6 +628,7 @@ function sameFileIdentity(left, right) {
 // cannot block, and Windows filesystems have no FIFOs.
 // fsApi is injectable so tests can script a swap between the lstat, open and fstat calls.
 function openWindowsInputDescriptor(file, fsApi = fs) {
+  if (isWindowsNetworkOrDevicePath(file)) throw new SafeInputError("input must be a local path, not a UNC or device path");
   const before = fsApi.lstatSync(file, { bigint: true });
   if (before.isSymbolicLink()) {
     throw new SafeInputError("input must not be a symlink");
