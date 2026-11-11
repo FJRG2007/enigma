@@ -88,8 +88,12 @@ jobs:
       # The marquee's guarantees are timing and pointer behaviour, so they are only
       # real when measured in a browser: the suite samples the track's computed
       # transform per animation frame rather than asking the engine what it believes.
+      # No --with-deps: the hosted Ubuntu image already ships every shared library
+      # Chromium needs, so that flag only adds optional fonts through an apt round trip
+      # to the Azure mirror, and a mirror DNS outage then failed the job before any test
+      # ran. A library the image ever drops still fails loudly at browser launch.
       - name: Install Chromium for the browser suite
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
         working-directory: packages/primitives
       - name: Test @enigmax/primitives
         run: npm run --workspace @enigmax/primitives test
