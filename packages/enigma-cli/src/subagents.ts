@@ -36,7 +36,7 @@
 import { enigmaHome } from "./util";
 import { readConfigAt } from "./config";
 import { dirname, join } from "node:path";
-import { mkdirSync, readdirSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 /** A launch that never started (the call was refused later, or the session died) frees its slot. */
 const PENDING_TTL_MS = 2 * 60_000;
@@ -126,10 +126,54 @@ function agentTranscript(payload: SubagentPayload, agentId: string): string {
     return join(dirname(parent), payload.sessionId, "subagents", `agent-${agentId}.jsonl`);
 }
 
-/** Whether a running marker's subagent went IDLE_TTL_MS without a start or a transcript write. */
+/** How much of a transcript's end is read to find its last entry; one entry is rarely larger. */
+const TAIL_BYTES = 64 * 1024;
+
+/** The last line of a file, read from its end only (subagent transcripts reach tens of MB). */
+function lastLine(path: string): string {
+    let fd: number | undefined;
+    try {
+        fd = openSync(path, "r");
+        const size = fstatSync(fd).size;
+        const length = Math.min(size, TAIL_BYTES);
+        const buffer = Buffer.alloc(length);
+        readSync(fd, buffer, 0, length, size - length);
+        return buffer.toString("utf8").trimEnd().split("\n").pop() ?? "";
+    } catch {
+        return "";
+    } finally {
+        if (fd !== undefined) closeSync(fd);
+    }
+}
+
+/**
+ * Whether Claude Code itself recorded the subagent as ended since its marker was written. Two
+ * records, both observed on 2.1.319 for subagents that got no SubagentStop: `finished: true` in
+ * `agent-<id>.meta.json` (cut at maxTurns), and a last transcript entry of "[Request interrupted by
+ * user]" (TaskStop). Either is only trusted when written after the marker, so a resumed subagent
+ * whose meta still says finished is not freed. Neither is documented: a missing record falls back
+ * to the idle expiry, it never frees a slot on its own.
+ */
+function ended(transcript: string, mtime: number): boolean {
+    const meta = transcript.replace(/\.jsonl$/, ".meta.json");
+    try {
+        if (statSync(meta).mtimeMs >= mtime && (JSON.parse(readFileSync(meta, "utf8")) as { finished?: unknown; }).finished === true) return true;
+    } catch { /* no meta, or unreadable: not evidence either way */ }
+    try {
+        if (statSync(transcript).mtimeMs < mtime) return false;
+    } catch { return false; }
+    const line = lastLine(transcript);
+    return line.includes("\"type\":\"user\"") && line.includes("[Request interrupted by user]");
+}
+
+/**
+ * Whether a running marker's subagent has stopped: Claude Code recorded its end, or it went
+ * IDLE_TTL_MS without a start or a transcript write.
+ */
 function idle(payload: SubagentPayload, name: string, mtime: number, now: number): boolean {
     const transcript = agentTranscript(payload, name.slice("run-".length));
     if (!transcript) return false;
+    if (ended(transcript, mtime)) return true;
     let written: number;
     try { written = statSync(transcript).mtimeMs; } catch { return false; }
     return now - Math.max(mtime, written) > IDLE_TTL_MS;

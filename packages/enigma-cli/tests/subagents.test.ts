@@ -101,6 +101,45 @@ test("a subagent that stopped without a SubagentStop frees its slot once its tra
     expect(existsSync(join(dir(s), "run-busy"))).toBe(true);
 });
 
+test("a slot is freed at once when Claude Code recorded the subagent as finished or interrupted", () => {
+    const s = session();
+    const projects = join(HOME, "projects", "r");
+    const transcriptPath = join(projects, `${s}.jsonl`);
+    const base = (id: string): string => join(projects, s, "subagents", `agent-${id}`);
+    mkdirSync(join(projects, s, "subagents"), { recursive: true });
+    const at = (toolUseId: string) => ({ ...pre(s, toolUseId), transcriptPath });
+    for (const [t, id] of [["t1", "cut"], ["t2", "stopped"], ["t3", "busy"]]) {
+        expect(admitLaunch(at(t), 3)).toBe("");
+        recordStart({ ...life(s, id), transcriptPath });
+        writeFileSync(`${base(id)}.jsonl`, "{\"type\":\"assistant\"}\n");
+        writeFileSync(`${base(id)}.meta.json`, "{\"agentType\":\"general-purpose\"}");
+    }
+    expect(admitLaunch(at("t4"), 3)).toContain("limit is 3");
+    // Cut at maxTurns: the meta says finished. Stopped by TaskStop: the transcript ends on the interrupt.
+    writeFileSync(`${base("cut")}.meta.json`, "{\"agentType\":\"general-purpose\",\"finished\":true}");
+    writeFileSync(`${base("stopped")}.jsonl`, "{\"type\":\"assistant\"}\n{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user]\"}]}}\n");
+    expect(admitLaunch(at("t5"), 3)).toBe("");
+    expect(existsSync(join(dir(s), "run-cut"))).toBe(false);
+    expect(existsSync(join(dir(s), "run-stopped"))).toBe(false);
+    expect(existsSync(join(dir(s), "run-busy"))).toBe(true);
+});
+
+test("a finished record older than the marker does not free a resumed subagent", () => {
+    const s = session();
+    const projects = join(HOME, "projects", "u");
+    const transcriptPath = join(projects, `${s}.jsonl`);
+    const base = join(projects, s, "subagents", "agent-a1");
+    mkdirSync(join(projects, s, "subagents"), { recursive: true });
+    writeFileSync(`${base}.meta.json`, "{\"finished\":true}");
+    writeFileSync(`${base}.jsonl`, "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user]\"}]}}\n");
+    const old = (Date.now() - 60_000) / 1000;
+    utimesSync(`${base}.meta.json`, old, old);
+    utimesSync(`${base}.jsonl`, old, old);
+    admitLaunch({ ...pre(s, "t1"), transcriptPath }, 1);
+    recordStart({ ...life(s, "a1"), transcriptPath });
+    expect(admitLaunch({ ...pre(s, "t2"), transcriptPath }, 1)).toContain("limit is 1");
+});
+
 test("an idle transcript does not free a slot that was started again since (a resumed subagent)", () => {
     const s = session();
     const projects = join(HOME, "projects", "q");
