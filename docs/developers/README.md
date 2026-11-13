@@ -47,7 +47,7 @@ All commands run from the repo root; the root scripts delegate to the
 ```
 .
 ├─ package.json              # private root: workspaces + delegating scripts
-├─ .github/workflows/        # ci.yml (verify+build), publish.yml (npm release)
+├─ .github/workflows/        # ci.yml (verify+build), publish.yml (GitHub Release + npm)
 ├─ .githooks/                # this repo's own pre-commit (runs the guard)
 ├─ docs/
 │  ├─ developers/            # this guide (tracked)
