@@ -105,6 +105,12 @@ export interface Setting {
     unsetLabel?: string;
     readValue?(scope: Scope): string;
     writeValue?(value: string, scope: Scope): ApplyResult;
+    /**
+     * Throws (with the message writeValue would throw) when `value` is not acceptable, writing
+     * nothing. Lets a batch validate every pair before the first write; a value setting without
+     * it accepts any string.
+     */
+    checkValue?(value: string): void;
     listValues?(scope: Scope): string[];
     addItem?(item: string, scope: Scope): ApplyResult;
     removeItem?(item: string, scope: Scope): ApplyResult;
@@ -366,6 +372,13 @@ function guardListSetting(meta: GuardListMeta): Setting {
     };
 }
 
+/** The local API port from its text form (blank = 8000); throws outside 1-65535. */
+function parseApiPort(value: string): number {
+    const n = Number(value.trim() || 8000);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error("use a port between 1 and 65535");
+    return n;
+}
+
 /** Normalize a free-text API context value: trimmed, and "none" or blank clears it. */
 function apiContextValue(value: string): string {
     const v = value.trim();
@@ -470,6 +483,7 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value, scope) => ({ path: conf.setEnigmaValue("subagentLimit", value ? conf.CONFIG_DEFAULTS.subagentLimit : -1, scope), changed: true }),
                 readValue: () => (conf.readConfig().config.subagentLimit < 0 ? "off" : String(conf.readConfig().config.subagentLimit)),
                 writeValue: (value, scope) => ({ path: conf.setEnigmaValue("subagentLimit", parseSubagentLimit(value), scope), changed: true }),
+                checkValue: (value) => { parseSubagentLimit(value); },
             },
             {
                 key: "relay",
@@ -489,6 +503,7 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value) => setRelayAt(value ? conf.CONFIG_DEFAULTS.relayAt : 0),
                 readValue: () => (conf.readConfig().config.relayAt > 0 ? String(conf.readConfig().config.relayAt) : "off"),
                 writeValue: (value) => setRelayAt(parseRelayAt(value)),
+                checkValue: (value) => { parseRelayAt(value); },
             },
             {
                 key: "compact-window",
@@ -501,6 +516,7 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value) => setCompactWindow(value ? conf.CONFIG_DEFAULTS.compactWindow : 0),
                 readValue: () => (conf.readConfig().config.compactWindow > 0 ? String(conf.readConfig().config.compactWindow) : "auto"),
                 writeValue: (value) => setCompactWindow(parseCompactWindow(value)),
+                checkValue: (value) => { parseCompactWindow(value); },
             },
             {
                 key: "subagent-turns",
@@ -513,6 +529,7 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value) => setSubagentTurns(value ? conf.CONFIG_DEFAULTS.subagentTurns : 0),
                 readValue: () => (conf.readConfig().config.subagentTurns > 0 ? String(conf.readConfig().config.subagentTurns) : "off"),
                 writeValue: (value) => setSubagentTurns(parseSubagentTurns(value)),
+                checkValue: (value) => { parseSubagentTurns(value); },
             },
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "shorter replies, sized to the question (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", conf.OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", conf.MINIMAL_CODE_LEVELS, "full", false, "off", true),
@@ -617,6 +634,7 @@ const RAW_CATEGORIES: Category[] = [
                 write: () => ({ changed: false }),
                 readValue: () => String(conf.readConfig().config.gateTrivialLines),
                 writeValue: (value, scope) => ({ path: conf.setEnigmaValue("gateTrivialLines", parseTrivialLines(value), scope), changed: true }),
+                checkValue: (value) => { parseTrivialLines(value); },
             },
             {
                 key: "auto-lint",
@@ -799,11 +817,8 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => true,
                 write: () => ({ changed: false }),
                 readValue: () => String(conf.readConfig().config.apiPort || 8000),
-                writeValue: (value, scope) => {
-                    const n = Number(value.trim() || 8000);
-                    if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error("use a port between 1 and 65535");
-                    return { path: conf.setEnigmaValue("apiPort", n, scope), changed: true };
-                },
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("apiPort", parseApiPort(value), scope), changed: true }),
+                checkValue: (value) => { parseApiPort(value); },
             },
             { ...enigmaChoice("api-rotation", "apiRotation", "Account rotation", "how requests that name no account are spread across your accounts: off = always the default account; round-robin = take turns; least-used = the account with the least use in its current 5h window; fill-first = use the first until it hits its limit; random. With any of them on, a request that hits a usage limit is retried on the next account; enigma default: off", conf.API_ROTATIONS, "round-robin"), globalOnly: true },
             {

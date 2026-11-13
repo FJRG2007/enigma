@@ -524,6 +524,11 @@ function configPath(scope: "global" | "local"): string {
     return join(enigmaHome(), CONFIG_FILE);
 }
 
+/** The .enigma.json a scope reads and writes (global: the enigma home; local: the working directory). */
+export function configFilePath(scope: "global" | "local"): string {
+    return configPath(scope);
+}
+
 /** Merge the given .enigma.json files in order (nearest last), over the defaults. */
 function mergeConfigFiles(paths: string[]): { config: EnigmaConfig; sources: string[]; } {
     const sources: string[] = [];

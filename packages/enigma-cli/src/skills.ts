@@ -30,6 +30,7 @@ import { applyAttributionGuard } from "./attribution-guard";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
+import { mcpRegistrationWanted, parseSkipParts } from "./install-parts";
 import { applyHandoffWiring, mirrorHandoffWiring } from "./handoff-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applySubagentWiring, mirrorSubagentWiring } from "./subagent-deploy";
@@ -164,6 +165,8 @@ export interface InstallOptions extends SecurityOptions {
     assetsFrom: string | null;
     /** Make the install reach nothing over the network (`--offline`). */
     offline: boolean;
+    /** Install parts to leave out of this run (`--skip`, see install-parts.ts); empty = none. */
+    skip?: string[];
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -265,6 +268,30 @@ function renderMemory(srcFile: string): string {
     if (!cfg.recall) out = stripMarkedBlock(out, "recall");
     if (!cfg.gate) out = stripMarkedBlock(out, "gate");
     return applyCaseBlocks(out, cfg as unknown as Record<string, unknown>);
+}
+
+/**
+ * The memory file exactly as an install would deploy it under the current config, for a host
+ * that is not a CLI agent (`enigma memory render`). AGENTS.md and CLAUDE.md are one text.
+ */
+export function renderDeployedMemory(): string {
+    return renderMemory(join(memoryRoot(), "AGENTS.md"));
+}
+
+/** Drop an `enigma:<id>` block from rendered memory (see stripMarkedBlock). */
+export function stripMemoryBlock(content: string, id: string): string {
+    return stripMarkedBlock(content, id);
+}
+
+/**
+ * Every skill an install would deploy (not discarded), with its SKILL.md rendered under the
+ * current config, in name order.
+ */
+export function renderDeployedSkills(): { name: string; version: string | null; text: string; }[] {
+    const discarded = discardedSkillNames();
+    return inspectSkills()
+        .filter((s) => !discarded.has(s.name))
+        .map((s) => ({ name: s.name, version: s.meta.version || null, text: renderSkill(join(s.src, "SKILL.md"), s.meta.config) }));
 }
 
 /** Compare the toggle-rendered source against the deployed file, not the raw bytes. */
@@ -515,6 +542,19 @@ export function discardSkill(name: string, discarded: boolean): string[] {
 export function setSkillAgent(name: string, agentName: string, off: boolean): string[] {
     conf.setSkillAgentOff(name, agentName, off);
     return syncDeployed([agentName]);
+}
+
+/**
+ * Turn several skills off or on in one step - globally (discard/restore) or for one agent - and
+ * sync deployments ONCE, instead of once per skill. The caller validates the names first.
+ * Returns the sync notices.
+ */
+export function setSkillsState(names: readonly string[], off: boolean, agentName?: string): string[] {
+    for (const name of names) {
+        if (agentName) conf.setSkillAgentOff(name, agentName, off);
+        else conf.setSkillDiscarded(name, off);
+    }
+    return syncDeployed(agentName ? [agentName] : undefined);
 }
 
 /** A skill as seen across the user's installed agents, for the dashboard Skills subpage. */
@@ -1124,6 +1164,14 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const available = discoverAgents();
     if (available.length === 0) reporter.fatal("No installable agents known.");
 
+    // Parts the host asked to leave out of this run (--skip). Validated again here so a caller
+    // that bypassed the CLI parser (the hub, a test) gets the same refusal for an unknown part.
+    let skip: Set<string>;
+    try { skip = parseSkipParts(opts.skip ?? []); }
+    catch (err) { reporter.fatal((err as Error).message); }
+    const skipped = (part: string): boolean => skip.has(part);
+    if (skip.size) reporter.info(`Skipping this run: ${[...skip].join(", ")}.`);
+
     // An explicit asset tree is the whole source: overlaying a GitHub cache on top of it
     // would defeat the point of staging one, so it also implies offline. resolveSkills()
     // enforces that on the plan itself - stopping only the fetch would still install a cache
@@ -1225,28 +1273,28 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const claudeScope = chosenAgents.some((a) => a.name === "claude") ? scope : null;
     const applyClaudeConfig = (): void => {
         if (!claudeScope || opts.dryRun) return;
-        if (disableClaudeAttribution(claudeScope)) {
+        if (!skipped("claude-attribution") && disableClaudeAttribution(claudeScope)) {
             reporter.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
         }
-        if (applyBrowserGuard(claudeSettingsPath(claudeScope), true) === "changed") {
+        if (!skipped("browser-guard") && applyBrowserGuard(claudeSettingsPath(claudeScope), true) === "changed") {
             reporter.info("Claude Code: a shell command that would open a visible browser window is now refused (agents test headless).");
         }
-        if (applyPushGuard(claudeSettingsPath(claudeScope), true) === "changed") {
+        if (!skipped("git-push-guard") && applyPushGuard(claudeSettingsPath(claudeScope), true) === "changed") {
             reporter.info("Claude Code: a git push that would erase commits other people pushed is now refused.");
         }
-        if (disableClaudeFeedbackSurvey(claudeScope)) {
+        if (!skipped("claude-survey") && disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
-        if (!opts.noStatusline && conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
+        if (!opts.noStatusline && !skipped("statusline") && conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
-        if (conf.readConfig().config.searchGuard && setClaudeSearchGuard(claudeScope, true).changed) {
+        if (!skipped("search-guard") && conf.readConfig().config.searchGuard && setClaudeSearchGuard(claudeScope, true).changed) {
             reporter.info("Claude Code: a 'find' across the whole disk is now refused (undo with 'enigma config search-guard off').");
         }
         // Workspace trust: pre-answer the "do you trust this folder" prompt (default on).
         // Only ever applied when the flag is on - a user who turned it off keeps the prompt,
         // and the workspaces they already trusted are left alone either way.
-        if (conf.readConfig().config.claudeTrust && !getClaudeTrust() && setClaudeTrust(true)) {
+        if (!skipped("claude-trust") && conf.readConfig().config.claudeTrust && !getClaudeTrust() && setClaudeTrust(true)) {
             reporter.info("Claude Code: workspace trust pre-answered, so it stops asking in every folder (undo with 'enigma config claude-trust off').");
         }
     };
@@ -1254,7 +1302,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // The push guard at git's own level, whatever agent was chosen: one global pre-push entry
     // covers every tool that runs git on this machine, the terminal included.
     const applyGitConfig = (): void => {
-        if (opts.dryRun || !conf.readConfig().config.gitPushGuard) return;
+        if (opts.dryRun || skipped("git-push-guard") || !conf.readConfig().config.gitPushGuard) return;
         const result = applyGitPushGuard(true);
         if (result === "changed") reporter.info("git: a push that would erase commits other people pushed is now refused, from any tool (global pre-push hook; undo with 'enigma config git-push-guard off').");
         if (result === "refused") reporter.warn("git: could not install the global pre-push hook that refuses pushes erasing other people's commits (the global git config is locked, read-only or malformed).");
@@ -1263,7 +1311,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // The same for Kimi Code, which asks its own "Trust this folder?" - per directory, so
     // this trusts the one being installed into and the sync path covers the rest.
     const applyKimiConfig = (): void => {
-        if (opts.dryRun || !chosenAgents.some((a) => a.name === "kimi")) return;
+        if (opts.dryRun || skipped("kimi-trust") || !chosenAgents.some((a) => a.name === "kimi")) return;
         if (conf.readConfig().config.kimiTrust && setKimiTrust(true)) {
             reporter.info("Kimi Code: this folder is pre-trusted, so it starts without the trust prompt (undo with 'enigma config kimi-trust off').");
         }
@@ -1275,7 +1323,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // spawns tzutil.exe unhidden (cli/cli#13354). No-op when gh is not installed.
     const applyGhConfig = (): void => {
         if (opts.dryRun) return;
-        if (setGhTelemetry(false) === true) {
+        if (!skipped("gh-telemetry") && setGhTelemetry(false) === true) {
             reporter.info("GitHub CLI: telemetry disabled (privacy; re-enable with 'enigma config gh-telemetry on').");
         }
         // The only other outbound call an install makes, so --offline has to cover it too.
@@ -1284,7 +1332,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
 
     // Optional, opt-in: disable each chosen agent's per-action approval prompts.
     // Asked here (right after agent selection) so it is grouped with that choice.
-    const bypassAgents = await resolveBypassSelection(chosenAgents, opts, interactive);
+    const bypassAgents = skipped("permission-bypass") ? [] : await resolveBypassSelection(chosenAgents, opts, interactive);
     const applyBypassConfig = (): void => applyBypass(bypassAgents, scope, opts.dryRun);
 
     // Hook wiring is opt-out per class: a harness that runs its own hooks installs the
@@ -1303,30 +1351,34 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Auto-lint: re-assert the post-write hook wiring to match the toggle (adds it
     // when on, removes it when off). No-op and cheap when off; on enable the linter
     // install runs in the background. Skipped on a dry run (writes nothing).
-    const applyLintConfig = (): void => { if (wires("post-edit")) applyLintWiring(); };
+    const applyLintConfig = (): void => { if (wires("post-edit") && !skipped("auto-lint")) applyLintWiring(); };
 
     // Convention guardrails: re-assert the post-edit hook wiring to match the toggle
     // (default on). Same side-effect shape as the lint hook; skipped on a dry run.
-    const applyGuardrailsConfig = (): void => { if (wires("post-edit")) applyGuardrailsWiring(); };
+    const applyGuardrailsConfig = (): void => { if (wires("post-edit") && !skipped("guardrails")) applyGuardrailsWiring(); };
 
     // Code graph: re-assert the session hooks (orientation, per-prompt locators, blast radius,
     // end-of-turn re-index) to match the toggle. Same side-effect shape as the guardrails hook.
-    const applyCodeGraphConfig = (): void => { if (wires("post-edit")) applyCodeGraphWiring(); };
+    const applyCodeGraphConfig = (): void => { if (wires("post-edit") && !skipped("code-graph")) applyCodeGraphWiring(); };
 
     // EOF trimmer: re-assert the post-edit hook wiring to match the toggle (default on),
     // same side-effect shape as the guardrails hook; skipped on a dry run.
-    const applyTrimConfig = (): void => { if (wires("post-edit")) applyTrimWiring(); };
+    const applyTrimConfig = (): void => { if (wires("post-edit") && !skipped("trim")) applyTrimWiring(); };
 
     // CI notifier: re-assert the hooks that carry a failed workflow back to the agent, to
     // match the toggle (default on). Same side-effect shape as the guardrails hook.
-    const applyCiWatchConfig = (): void => { if (wires("post-edit")) applyCiWatchWiring(); };
+    const applyCiWatchConfig = (): void => { if (wires("post-edit") && !skipped("ci-watch")) applyCiWatchWiring(); };
 
     // Subagent budget and compact window: the launch hooks and Claude Code's autoCompactWindow.
-    const applySubagentConfig = (): void => { if (wires("post-edit")) { applySubagentWiring(); applyHandoffWiring(); } };
+    const applySubagentConfig = (): void => {
+        if (!wires("post-edit")) return;
+        if (!skipped("subagent-limit")) applySubagentWiring();
+        if (!skipped("relay")) applyHandoffWiring();
+    };
 
     // Completion gate: re-assert the turn-end hook wiring to match the toggle (default
     // on). Same side-effect shape as the guardrails hook; skipped on a dry run.
-    const applyVerifyConfig = (): void => { if (wires("stop")) applyVerifyWiring(); };
+    const applyVerifyConfig = (): void => { if (wires("stop") && !skipped("verify")) applyVerifyWiring(); };
 
     // Context-compression MCP: register enigma's MCP server in each chosen agent's
     // config when `compress` is on, remove it when off (mirror presence/absence).
@@ -1336,10 +1388,16 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         const cfg = conf.readConfig().config;
         const enabled = cfg.compress || cfg.recall || cfg.codeGraph;
         const changed: string[] = [];
-        for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
+        const registerMcp = mcpRegistrationWanted(skip, { compress: cfg.compress, recall: cfg.recall, codeGraph: cfg.codeGraph });
+        if (registerMcp) for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
+        // A partial skip cannot narrow the one server entry: its tool set follows the config keys.
+        const partial = (["compress", "recall", "code-graph"] as const).filter((k) => skip.has(k) && (k === "code-graph" ? cfg.codeGraph : cfg[k]));
+        if (registerMcp && enabled && partial.length) {
+            reporter.info(`MCP server registered for the features not skipped; its ${partial.join(", ")} tools still follow the config (turn them off with: enigma config set ${partial.map((k) => `${k}=off`).join(" ")}).`);
+        }
         // The browser guard for the agents Claude's settings.json does not cover (applyClaudeConfig wires Claude).
         for (const agent of chosenAgents) {
-            if (agent.name === "claude" || opts.dryRun || !applyBrowserGuardGlobal(agent.name)) continue;
+            if (agent.name === "claude" || opts.dryRun || skipped("browser-guard") || !applyBrowserGuardGlobal(agent.name)) continue;
             reporter.info(agent.name === "codex" ? CODEX_TRUST_NOTICE : `${agent.label}: a shell command that would open a visible browser window is now refused (agents test headless).`);
         }
         if (changed.length) {
@@ -1350,10 +1408,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
 
     // Output-compression level (memory section). Resolved before the plan so memoryStatus
     // and the deployed content reflect it. Irrelevant when only skills are installed.
-    if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
-    if (!opts.skillsOnly) await resolveMinimalCode(opts, scope, interactive, reporter);
-    if (!opts.skillsOnly) await resolveDashboard(opts, scope, interactive, reporter);
-    if (!opts.skillsOnly) await resolveSecretGuard(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly && !skipped("output-style")) await resolveOutputStyle(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly && !skipped("minimal-code")) await resolveMinimalCode(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly && !skipped("dashboard")) await resolveDashboard(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly && !skipped("prompt-secret-guard")) await resolveSecretGuard(opts, scope, interactive, reporter);
 
     // Discarded skills never install or update; they are also pruned from every
     // target below (even with --no-prune), so a discard reliably removes the skill.
@@ -1389,20 +1447,21 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
             chosenSkills = skills.filter((s) => (r as string[]).includes(s.name));
         }
 
-        const skillsWithStatus: PlannedSkill[] = (opts.memoryOnly ? [] : chosenSkills).map((s) => ({
+        const skillsWithStatus: PlannedSkill[] = (opts.memoryOnly || skipped("skills") ? [] : chosenSkills).map((s) => ({
             ...s, status: skillStatus(join(target.skills, s.name), s.meta), overwrite: true,
         }));
         // Source names exclude discarded skills, so a deployed discarded skill shows
         // up as an orphan; with --no-prune only those discard removals are kept.
-        const prune = opts.memoryOnly ? [] : computePrune(target.skills, skills.map((s) => s.name))
+        const prune = opts.memoryOnly || skipped("skills") ? [] : computePrune(target.skills, skills.map((s) => s.name))
             .filter((e) => opts.prune || discarded.has(e.name) || isSkillOffForAgent(e.name, agent.name));
 
         // Commands ride a full install only (neither --skills-only nor --memory-only)
         // and only for agents whose target declares a command dir.
-        const commands: PlannedCommand[] = (opts.skillsOnly || opts.memoryOnly || !target.commands) ? []
-            : bundledCommands().map((c) => ({ ...c, status: commandStatus(join(target.commands!, c.name), c.src) }));
+        const commands: PlannedCommand[] = (opts.skillsOnly || opts.memoryOnly || skipped("commands") || !target.commands) ? []
+            : bundledCommands().filter((c) => !(skipped("gate") && c.name === GATE_COMMAND))
+                .map((c) => ({ ...c, status: commandStatus(join(target.commands!, c.name), c.src) }));
 
-        plan.push({ agent, target, skills: skillsWithStatus, memory: opts.skillsOnly ? [] : memory, prune, commands });
+        plan.push({ agent, target, skills: skillsWithStatus, memory: opts.skillsOnly || skipped("memory") ? [] : memory, prune, commands });
     }
 
     // --- locally-modified (tampered) skills ---

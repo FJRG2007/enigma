@@ -209,15 +209,22 @@ function backfillNormHashes(db: RecallDb): void {
     })();
 }
 
-let cached: RecallDb | null = null;
+/**
+ * Open handles keyed by database path. One path in every ordinary process; `enigma serve` keeps
+ * one per tenant it has touched, so the map is capped and the least recently used handle closed.
+ */
+const handles = new Map<string, RecallDb>();
+const MAX_HANDLES = 64;
 
 /**
- * Open (and on first use, create) the recall database. The handle is cached for the process.
- * Throws RecallUnavailableError outside Bun so callers can degrade gracefully (the CLI prints
- * a hint; the dashboard/MCP return empty).
+ * Open (and on first use, create) the recall database at recallDbPath(). The handle is cached per
+ * path for the process. Throws RecallUnavailableError outside Bun so callers can degrade
+ * gracefully (the CLI prints a hint; the dashboard/MCP return empty).
  */
 export function openDb(): RecallDb {
-    if (cached) return cached;
+    const path = recallDbPath();
+    const hit = handles.get(path);
+    if (hit) { handles.delete(path); handles.set(path, hit); return hit; }
     let Database: new (path: string) => RecallDb;
     try {
         // Lazy require: bun:sqlite only exists under Bun; a top-level import would crash Node.
@@ -227,12 +234,17 @@ export function openDb(): RecallDb {
     }
     const dir = recallDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const db = new Database(recallDbPath());
+    const db = new Database(path);
     db.exec("PRAGMA journal_mode = WAL;");
     db.exec("PRAGMA foreign_keys = ON;");
     db.exec(SCHEMA);
     migrate(db);
-    cached = db;
+    handles.set(path, db);
+    if (handles.size > MAX_HANDLES) {
+        const [oldest, handle] = handles.entries().next().value as [string, RecallDb];
+        handles.delete(oldest);
+        try { handle.close(); } catch { /* already closed */ }
+    }
     return db;
 }
 
@@ -241,7 +253,8 @@ export function recallAvailable(): boolean {
     try { require("bun:sqlite"); return true; } catch { return false; }
 }
 
-/** Close and forget the cached handle (used by tests to reopen a fresh database). */
+/** Close and forget every cached handle (used by tests to reopen a fresh database). */
 export function closeDb(): void {
-    if (cached) { try { cached.close(); } catch { /* already closed */ } cached = null; }
+    for (const handle of handles.values()) { try { handle.close(); } catch { /* already closed */ } }
+    handles.clear();
 }

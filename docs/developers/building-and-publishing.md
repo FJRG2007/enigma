@@ -97,11 +97,33 @@ clean path is a tagged GitHub Release:
 4. Create a GitHub Release tagged `vX.Y.Z` where `X.Y.Z` exactly matches the
    `enigma-cli` version.
 5. `publish.yml` fires on the published release: it re-verifies, builds, checks
-   `tag == version`, skips if that version is already on npm, then runs
-   `npm publish --workspace enigma-cli --provenance --access public`.
+   `tag == version`, uploads the GitHub Release assets (job `release`), then, if
+   `NPM_TOKEN` authenticates, skips if that version is already on npm and runs
+   `npm publish --workspace enigma-cli --provenance --access public` (job `npm`).
+
+### Two channels: the GitHub Release does not depend on npm
+
+The `release` job needs only `GITHUB_TOKEN`. It uploads to `v<version>`:
+
+- the four platform binaries (`enigma-<os>-<arch>[.exe]`);
+- `npm pack` tarballs of `enigma-cli` (with `bin/checksums.json` inside; the job
+  fails if it is missing) and of `@enigmax/dashboard`, `helio`, `orion`, `vega`
+  and `linter` at their workspace versions (`enigma-cli-1.2.3.tgz`,
+  `enigmax-dashboard-0.1.9.tgz`, ...);
+- `SHA256SUMS` over every one of those assets.
+
+That is everything the standalone installer (`scripts/install.sh`,
+`scripts/install.ps1`), `enigma update` on a standalone install, and the
+npm-free fallback for the on-demand `@enigmax/*` packages download. The `npm` job
+runs after it and only when `npm-auth` reports a working token; a dead token or a
+suspended account is a warning and a skipped job, never a missing release.
 
 Requires the repo secret `NPM_TOKEN` (an npm automation token with publish
-rights). Provenance needs `id-token: write`, already set in the workflow.
+rights) for the npm channel only. Provenance needs `id-token: write`, granted to
+the `npm` job alone; only `release` gets `contents: write`.
+
+The dashboard's own fast workflow (`publish-dashboard.yml`) still publishes UI-only
+bumps to npm alone; those reach the GitHub channel with the next CLI release.
 
 ### Other publish triggers
 
@@ -132,10 +154,11 @@ package. npm returns 404 rather than 403 so that a token cannot be used to probe
 which private packages exist, which means the error names the wrong problem: the
 package is on the registry, the credential is what was refused.
 
-Every publish workflow now proves the credential before doing anything expensive
-(the `auth` job in `publish.yml`, gating the four binary builds; an equivalent
-step in the dashboard, linter and components workflows). A dead token fails in
-seconds with the cause spelled out instead of after a full matrix build.
+Every publish workflow proves the credential first (the `npm-auth` job in
+`publish.yml`; an equivalent step in the dashboard, linter and components
+workflows) and spells out the cause. In `publish.yml` a dead token no longer
+stops anything: the binaries build and the GitHub Release ships, and only the
+`npm` job is skipped, with a warning on the run.
 
 The fix is always the same, and it is not in this repository:
 
@@ -146,10 +169,9 @@ The fix is always the same, and it is not in this repository:
    `Publish enigma-cli` and `Publish dashboard` manually. No code change and no
    version bump is needed: each workflow skips a version already on npm.
 
-If a release was tagged and its binaries uploaded while npm publishing was
-broken, that tag is harmless on its own - nobody can install a version npm does
-not have. Bump past it only when the tagged commit predates a fix that must ship
-in the published build.
+A release tagged and uploaded while npm publishing was broken is a real
+release: standalone installs (`curl ... | sh`, `irm ... | iex`) pick it up. Once
+the token is fixed, re-running the workflow publishes the same version to npm.
 
 ## Publishing manually (without CI)
 
@@ -177,8 +199,9 @@ sync. Prefer the CI release flow; manual publish is a fallback.
   `linter` job gates `@enigmax/linter` and runs the Ciphera-style lint over
   the diff's changed lines. This is the merge gate.
 - `.github/workflows/publish.yml` - on release / dispatch / `publish:` push:
-  verify, build, tag-vs-version check (releases only), skip-if-already-published,
-  then `npm publish`.
+  binaries per OS, then `release` (verify, build, tag-vs-version check, pack,
+  SHA256SUMS, upload to the GitHub Release), then `npm` when the token works
+  (skip-if-already-published, `npm publish`).
 
 ### When a publish fails with `E409 Cannot publish over previously staged version`
 

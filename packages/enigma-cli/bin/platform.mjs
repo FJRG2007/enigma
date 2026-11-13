@@ -100,6 +100,25 @@ export function legacyBinTargetPath() {
     return join(pkgRoot, "bin", binName());
 };
 
+/**
+ * The binary of a standalone (GitHub-release) install, or null for an npm install.
+ *
+ * scripts/install.sh, scripts/install.ps1 and `enigma update` extract the package into a
+ * versioned directory, write an `install-method` marker reading `standalone` at its root and
+ * place the already-verified binary at `bin/enigma-bin[.exe]` inside it. That versioned
+ * directory is never written again while it is in use, so the binary lives beside the package
+ * rather than in the shared ~/.enigma/bin used by npm installs.
+ */
+export function standaloneBinPath() {
+    try {
+        if (readFileSync(join(pkgRoot, "install-method"), "utf8").trim() !== "standalone") return null;
+    } catch {
+        return null;
+    }
+    const path = legacyBinTargetPath();
+    return existsSync(path) ? path : null;
+};
+
 /** This package's declared version (release tag is `v<version>`). */
 export function packageVersion() {
     return JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version;

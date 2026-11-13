@@ -16,8 +16,9 @@ const SOURCES = [join(PKG, "assets"), join(PKG, "src"), join(ROOT, "docs", "note
 const TEXT = /\.(?:md|ts|json|mjs)$/;
 // A key followed by text that is not part of a key; a prefix such as `bypass-<name>` is a family, not a key.
 const REFERENCE = /enigma config ([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![a-z0-9<-])/g;
-// "enigma config bundle" and "enigma config file" are prose about the config, not commands.
-const NOT_KEYS = new Set(["bundle", "file"]);
+// "enigma config bundle" and "enigma config file" are prose about the config, not commands;
+// "set" and "apply" are the batch subcommands, whose keys follow as k=v pairs.
+const NOT_KEYS = new Set(["bundle", "file", "set", "apply"]);
 
 function files(path: string): string[] {
     if (!statSync(path, { throwIfNoEntry: false })) return [];

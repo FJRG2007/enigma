@@ -20,8 +20,14 @@ curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/instal
 irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex
 ```
 
-Or one-shot, no global install, no prompts - deploy the skills to every supported
-agent at user level:
+The script needs neither Node nor npm: it installs the latest GitHub release, checks it
+against the release's `SHA256SUMS`, puts `enigma` on your PATH, and `enigma update` keeps
+it current the same way. In a container: `ENIGMA_NO_SETUP=1` installs only,
+`| sh -s -- --all --yes` sets up without prompts, `ENIGMA_INSTALL_VERSION=1.73.0` pins a
+release, `ENIGMA_DOWNLOAD_BASE` points at a mirror, and `ENIGMA_INSTALL=npm` uses npm instead.
+
+Or one-shot through npm, no global install, no prompts - deploy the skills to every
+supported agent at user level:
 
 ```bash
 npx enigma-cli@latest install --all --yes
@@ -126,6 +132,27 @@ ENIGMA_OFFLINE=1                 No enigma command reaches the network - the ski
 
 `gh` is needed only by the gate's push, pr and ci steps: `enigma gate axi run --skip
 push,pr,ci` and `enigma gate init` work in an image without it.
+
+### Embedding enigma in a platform
+
+For a host that runs enigma for its own users. Every command below prints one JSON
+document with `--json`, never prompts, and fails with `{"error": {"code", "message"}}`
+and a non-zero exit.
+
+```
+enigma install --all --yes --skip stop-hook,statusline   Leave parts out of this run
+enigma skills list --json [agent]                        The catalogue, no install or home needed
+enigma skills disable git-policy ci-policy [agent]       Several at once, all or nothing
+enigma config --json [--defaults]                        Every setting: default, current, scope
+enigma config set gate=off output-style=lite             Many settings in one process,
+enigma config apply --file settings.json                 validated before anything is written
+enigma memory render --target generic --compact          The contract as a chat system prompt
+enigma serve --http --data-dir <dir> --token-file <f>    Recall, code graph and compression
+                                                         as a multi-tenant JSON API
+```
+
+The HTTP API, its tenancy model and what has to stay single-writer are described in
+[docs/notes/host-integration.md](https://github.com/FJRG2007/enigma/blob/main/docs/notes/host-integration.md).
 
 ## Agent skills
 

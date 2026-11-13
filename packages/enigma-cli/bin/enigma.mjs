@@ -21,7 +21,7 @@ import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { downloadBinary, installedBinary } from "./download.mjs";
-import { ARCH, PLATFORM, packageVersion, pkgRoot } from "./platform.mjs";
+import { ARCH, PLATFORM, packageVersion, pkgRoot, standaloneBinPath } from "./platform.mjs";
 
 /**
  * Fast path: an agent status bar (e.g. Claude Code's statusLine) calls `enigma
@@ -163,6 +163,8 @@ if (process.argv[2] === "__browser-guard" && existsSync(browserGuardBundle)) {
 /** Resolve the binary, downloading it on first run if the postinstall was skipped. */
 async function resolveBinary() {
     if (process.env.ENIGMA_BIN_PATH && existsSync(process.env.ENIGMA_BIN_PATH)) return process.env.ENIGMA_BIN_PATH;
+    const standalone = standaloneBinPath();
+    if (standalone) return standalone;
     const existing = installedBinary();
     if (existing) return existing;
     // Lazy path (e.g. `npm i --ignore-scripts`): fetch + verify before first use.

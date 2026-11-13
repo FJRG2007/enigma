@@ -1,20 +1,23 @@
 name: Publish enigma-cli
 
-# Auto-publish to npm. Triggers:
+# Release enigma-cli. Triggers:
 #   - a published GitHub Release (recommended: create a release tagged vX.Y.Z)
 #   - a push to main whose head commit message contains "publish:"
 #   - manual run from the Actions tab (workflow_dispatch)
 #
-# Single-package distribution (opencode-style mechanism, ONE npm package): the `build`
-# matrix compiles one Bun binary per OS on a NATIVE runner (cross-compiling OpenTUI's
-# native FFI core is unreliable). The `publish` job collects their SHA256s into
-# bin/checksums.json, uploads the binaries as assets on the Release tagged v<version>,
-# then publishes the single `enigma-cli` package. At install time its postinstall
-# downloads the host binary from that Release and verifies it against the checksum that
-# shipped inside the (provenance-signed) tarball. No per-platform npm packages.
-#
-# Requires repo secret NPM_TOKEN (npm automation token with publish rights). Uses npm
-# provenance (id-token: write) and uploads Release assets (contents: write).
+# Two independent delivery channels, so one going down never blocks the other:
+#   1. GitHub Release (job `release`, needs only GITHUB_TOKEN). The `build` matrix compiles one
+#      Bun binary per OS on a NATIVE runner (cross-compiling OpenTUI's native FFI core is
+#      unreliable); `release` records their SHA256s in bin/checksums.json, `npm pack`s
+#      enigma-cli (WITH that file inside) and every @enigmax package the CLI fetches on demand,
+#      and uploads binaries + tarballs + a SHA256SUMS covering every asset to the Release tagged
+#      v<version>. scripts/install.sh / install.ps1 and `enigma update` on a standalone install
+#      use only this channel.
+#   2. npm (job `npm`), run only when NPM_TOKEN authenticates. It publishes the single
+#      `enigma-cli` package (postinstall downloads the host binary from the Release above and
+#      verifies it against the checksums.json inside the provenance-signed tarball) and the
+#      @enigmax packages whose version is new. An expired token or a suspended account turns
+#      this into a warning and a skipped job; the Release has already shipped.
 on:
   release:
     types: [published]
@@ -23,17 +26,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  # Prove the npm credential works BEFORE four runners spend two minutes building
-  # binaries for a publish that cannot happen. npm answers an unauthenticated publish
-  # with `E404 ... is not in this registry`, which reads as "no such package" and sends
-  # whoever is on call looking at the wrong thing - so the check names the real cause
-  # itself. (Observed: NPM_TOKEN last rotated 2026-06-01, publishes green through
-  # 2026-08-27 and 404 from 2026-08-31 - a 90-day automation token expiring on schedule.)
-  auth:
+  # Whether the npm credential works. Never fails the run: an npm outage, an expired token or a
+  # suspended account must not stop the GitHub Release. npm answers an unauthenticated publish
+  # with `E404 ... is not in this registry`, which reads as "no such package" and sends whoever
+  # is on call looking at the wrong thing - so the check names the real cause itself. (Observed:
+  # NPM_TOKEN last rotated 2026-06-01, publishes green through 2026-08-27 and 404 from
+  # 2026-08-31 - a 90-day automation token expiring on schedule.)
+  npm-auth:
     # Publish on a release, a manual dispatch, or a push whose head commit message
     # contains "publish:". Plain pushes without that marker are ignored.
     if: >-
@@ -41,6 +43,8 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish:'))
     runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.whoami.outputs.ok }}
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -48,25 +52,31 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: The npm token can publish
+        id: whoami
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::The NPM_TOKEN secret is empty or not set for this repository."
+            echo "::warning::The NPM_TOKEN secret is empty or not set; the GitHub Release ships, npm is skipped."
             echo "Add an npm automation token with publish rights: Settings -> Secrets and variables -> Actions -> NPM_TOKEN."
-            exit 1
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if ! WHO="$(npm whoami 2>&1)"; then
-            echo "::error::The NPM_TOKEN secret is set but npm rejected it, so nothing can be published."
-            echo "npm said: $WHO"
-            echo "Almost always an expired or revoked automation token (they carry an expiry)."
+            echo "::warning::npm rejected NPM_TOKEN, so npm is skipped (the GitHub Release still ships). npm said: $WHO"
+            echo "Almost always an expired or revoked automation token (they carry an expiry), or a suspended account."
             echo "Mint a new one at npmjs.com -> Access Tokens -> Generate -> Automation, then update the NPM_TOKEN secret and re-run this workflow."
-            exit 1
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "Authenticated to npm as $WHO."
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: auth
+    if: >-
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish:'))
     strategy:
       fail-fast: true
       matrix:
@@ -106,27 +116,31 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  publish:
-    needs: [auth, build]
+  release:
+    needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci || npm install
 
-      # Never publish a broken package: typecheck + integrity + guard first.
+      # Never release a broken package: typecheck + integrity + guard first.
       - name: Verify
         run: npm run verify --workspace enigma-cli
 
-      # Build dist/guard.js (the real guard file shipped in the main package).
-      - name: Build guard
-        run: npm run build --workspace enigma-cli
+      # dist/ of enigma-cli (guard, hooks and the other Node bundles it ships) and of the linter,
+      # so both tarballs are complete.
+      - name: Build
+        run: |
+          npm run build --workspace enigma-cli
+          npm run build --workspace @enigmax/linter
 
       - name: Resolve version and tag
         id: meta
@@ -138,9 +152,11 @@ jobs:
       # Guard against tag/version drift when triggered by a release.
       - name: Check version matches release tag
         if: github.event_name == 'release'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          if [ "${{ steps.meta.outputs.tag }}" != "${GITHUB_REF_NAME}" ]; then
-            echo "package.json version (${{ steps.meta.outputs.tag }}) does not match release tag (${GITHUB_REF_NAME})"; exit 1
+          if [ "$TAG" != "${GITHUB_REF_NAME}" ]; then
+            echo "package.json version ($TAG) does not match release tag (${GITHUB_REF_NAME})"; exit 1
           fi
 
       - name: Download platform binaries
@@ -149,8 +165,8 @@ jobs:
           path: packages/enigma-cli/dist-bin
           merge-multiple: true
 
-      # Record each binary's SHA256 in bin/checksums.json. This file ships inside the
-      # npm tarball (covered by provenance) and is what the installer verifies against.
+      # Record each binary's SHA256 in bin/checksums.json. This file ships inside the enigma-cli
+      # tarball (on npm, covered by provenance) and is what the npm installer verifies against.
       - name: Assemble checksums.json
         working-directory: packages/enigma-cli
         run: |
@@ -168,30 +184,84 @@ jobs:
             console.log("checksums.json:", out);
           '
 
-      # Upload the binaries to the Release tagged v<version>, creating that release when
-      # nothing did it first. A release trigger always has one; the `publish:`-on-push and
+      # Everything the standalone installer and the npm-free fallbacks fetch: the binaries, the
+      # enigma-cli tarball (checksums.json inside) and every on-demand @enigmax package, plus one
+      # SHA256SUMS over all of them - the integrity root of the npm-independent path.
+      - name: Pack release assets
+        run: |
+          set -euo pipefail
+          shopt -s extglob
+          mkdir -p release-assets
+          cp packages/enigma-cli/dist-bin/!(*.sha256) release-assets/
+          for ws in enigma-cli @enigmax/dashboard @enigmax/helio @enigmax/orion @enigmax/vega @enigmax/linter; do
+            npm pack --workspace "$ws" --pack-destination release-assets >/dev/null
+          done
+          tar -tzf release-assets/enigma-cli-*.tgz | grep -qx 'package/bin/checksums.json' || { echo "checksums.json missing from the enigma-cli tarball"; exit 1; }
+          (cd release-assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Keep checksums.json for the npm job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: checksums-json
+          path: packages/enigma-cli/bin/checksums.json
+          if-no-files-found: error
+          retention-days: 1
+
+      # Upload the assets to the Release tagged v<version>, creating that release when nothing
+      # did it first. A release trigger always has one; the `publish:`-on-push and
       # workflow_dispatch paths do not, and the upload used to die there with "release not
-      # found" AFTER building every binary, before npm was ever reached. Creating it here
-      # is what makes those two paths self-sufficient, and it is required rather than
-      # cosmetic: the installed CLI downloads its binary from this release, so a version
-      # on npm without one cannot run.
+      # found" AFTER building every binary. Creating it here is what makes those two paths
+      # self-sufficient, and it is required rather than cosmetic: every install channel
+      # downloads its binary from this release.
       #
-      # Creating it with the default GITHUB_TOKEN does NOT re-trigger this workflow -
-      # Actions does not raise events from that token - so there is no second run and no
-      # double publish. The tag is created from the pushed commit as part of this, which
-      # is also what keeps npm and git in sync on the push path.
-      - name: Upload binaries to Release
+      # Creating it with the default GITHUB_TOKEN does NOT re-trigger this workflow - Actions
+      # does not raise events from that token - so there is no second run and no double
+      # publish. The tag is created from the pushed commit as part of this, which is also what
+      # keeps npm and git in sync on the push path.
+      - name: Upload assets to Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          shopt -s extglob
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             echo "no release $TAG yet - creating it from $GITHUB_SHA"
             gh release create "$TAG" --title "$TAG" --generate-notes --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" \
-            packages/enigma-cli/dist-bin/!(*.sha256) --clobber
+          gh release upload "$TAG" release-assets/* --clobber
+
+  # npm runs after the Release exists (the npm package downloads its binary from it) and only
+  # when the token authenticated. A failure here is red on its own job; the Release is already out.
+  npm:
+    needs: [npm-auth, release]
+    if: needs.npm-auth.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build
+        run: npm run build --workspace enigma-cli
+
+      # The same checksums.json the Release's enigma-cli tarball carries.
+      - name: Restore checksums.json
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: checksums-json
+          path: packages/enigma-cli/bin
+
+      - name: Resolve version
+        id: meta
+        run: echo "version=$(node -p "require('./packages/enigma-cli/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Determine if version is new
         id: ver

@@ -15,6 +15,7 @@
  */
 
 import { spawn } from "node:child_process";
+import * as release from "./release-fetch";
 import { isNewer, readJson, enigmaHome } from "./util";
 import { installedLinterVersion } from "./lint";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -56,11 +57,21 @@ async function npmLatest(name: string): Promise<string | null> {
     finally { clearTimeout(t); }
 }
 
-/** Query npm for every installed package and persist the result. Never rejects. */
+/**
+ * Query npm for every installed package and persist the result. Never rejects. A standalone
+ * install, or any package npm could not answer for, reads the latest GitHub release's SHA256SUMS
+ * instead (fetched at most once per refresh), which names every package version it ships.
+ */
 export async function refreshUpdateStatus(cliVersion: string): Promise<void> {
     const pkgs = installedPackages(cliVersion);
+    const standalone = release.installMethod() === "standalone";
+    let sums: Map<string, string> | null | undefined;
+    const releaseLatest = (name: string): string | null => {
+        if (sums === undefined) { try { sums = release.fetchReleaseSums(undefined, FETCH_TIMEOUT_MS / 1000).sums; } catch { sums = null; } }
+        return sums ? release.packageAsset(sums, name)?.version ?? null : null;
+    };
     const packages = await Promise.all(pkgs.map(async (p) => {
-        const latest = await npmLatest(p.name);
+        const latest = (standalone ? null : await npmLatest(p.name)) ?? releaseLatest(p.name);
         return { ...p, latest, hasUpdate: !!latest && isNewer(latest, p.installed) };
     }));
     const status: UpdateStatus = { checkedAt: Date.now(), packages, available: packages.some((p) => p.hasUpdate) };

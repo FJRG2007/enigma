@@ -39,6 +39,27 @@ function printEffective(): void {
 /** Keys `enigma config` handles before the registry: numeric and free-form values. */
 export const VALUE_CONFIG_KEYS = ["statusline-refresh", "token-price", "token-speed", "dashboard-port", "dashboard-bind", "dashboard-bind-address", "plan-session-limit", "plan-weekly-limit", "plan-weekly-sonnet-limit", "plan-weekly-opus-limit", "plan-weekly-reset"];
 
+const nonNegative = (v: string): boolean => Number.isFinite(Number(v)) && Number(v) >= 0;
+const intWithin = (lo: number, hi: number) => (v: string): boolean => Number.isInteger(Number(v)) && Number(v) >= lo && Number(v) <= hi;
+
+/**
+ * The acceptance rule of each VALUE_CONFIG_KEYS entry, in one place: the single-key command and
+ * the batch (`config set` / `config apply`) both ask it, so they can never disagree on a value.
+ */
+export const VALUE_KEY_RULES: Record<string, (value: string) => boolean> = {
+    "token-price": nonNegative,
+    "token-speed": nonNegative,
+    "statusline-refresh": intWithin(0, 60),
+    "dashboard-port": intWithin(0, 65535),
+    "dashboard-bind": (v) => DASHBOARD_BINDS.includes(v as DashboardBind),
+    "dashboard-bind-address": (v) => { const t = v.trim(); return !t || t.toLowerCase() === "none" || isIP(t) !== 0 || HOSTNAME_RE.test(t); },
+    "plan-session-limit": nonNegative,
+    "plan-weekly-limit": nonNegative,
+    "plan-weekly-sonnet-limit": nonNegative,
+    "plan-weekly-opus-limit": nonNegative,
+    "plan-weekly-reset": (v) => /^[a-z]{3}\s+\d{1,2}:\d{2}$/i.test(v),
+};
+
 /**
  * `enigma config` command. With no key on a TTY, opens the interactive TUI; with
  * no key on a non-TTY, prints effective values. With `<key> <on|off>`, writes that
@@ -62,7 +83,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // boolean/choice registry. 0 restores the per-source default prices.
     if (rawKey === "token-price") {
         const n = Number(rawValue);
-        if (rawValue === undefined || !Number.isFinite(n) || n < 0) {
+        if (rawValue === undefined || !VALUE_KEY_RULES["token-price"]!(rawValue)) {
             console.error("Missing/invalid value for 'token-price'. Usage: enigma config token-price <usd-per-1M-input-tokens> (e.g. 3, or 0 for per-source defaults) [-g|-l]");
             return 1;
         }
@@ -78,7 +99,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // know the real model and the figure is explicitly an estimate.
     if (rawKey === "token-speed") {
         const n = Number(rawValue);
-        if (rawValue === undefined || !Number.isFinite(n) || n < 0) {
+        if (rawValue === undefined || !VALUE_KEY_RULES["token-speed"]!(rawValue)) {
             console.error("Missing/invalid value for 'token-speed'. Usage: enigma config token-speed <tokens-per-second> (e.g. 3000, or 0 for the default rate) [-g|-l]");
             return 1;
         }
@@ -95,7 +116,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // enableClaudeStatusline deliberately refuses to touch an existing block.
     if (rawKey === "statusline-refresh") {
         const n = Number(rawValue);
-        if (rawValue === undefined || !Number.isInteger(n) || n < 0 || n > 60) {
+        if (rawValue === undefined || !VALUE_KEY_RULES["statusline-refresh"]!(rawValue)) {
             console.error("Missing/invalid value for 'statusline-refresh'. Usage: enigma config statusline-refresh <0-60> (seconds; 0 = no timer, refresh only on conversation events) [-g|-l]");
             return 1;
         }
@@ -115,7 +136,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // boolean/choice registry. 0 = auto (80, then 24282, then ephemeral). Needs a restart.
     if (rawKey === "dashboard-port") {
         const n = Number(rawValue);
-        if (rawValue === undefined || !Number.isInteger(n) || n < 0 || n > 65535) {
+        if (rawValue === undefined || !VALUE_KEY_RULES["dashboard-port"]!(rawValue)) {
             console.error("Missing/invalid value for 'dashboard-port'. Usage: enigma config dashboard-port <0-65535> (0 = auto: 80, then 24282) [-g|-l]");
             return 1;
         }
@@ -130,7 +151,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // it stays CLI-only on purpose: exposing an admin surface is a decision to make on the
     // host, not a switch to flip inside the very web UI it exposes. Needs a restart.
     if (rawKey === "dashboard-bind") {
-        if (rawValue === undefined || !DASHBOARD_BINDS.includes(rawValue as DashboardBind)) {
+        if (rawValue === undefined || !VALUE_KEY_RULES["dashboard-bind"]!(rawValue)) {
             console.error(`Missing/invalid value for 'dashboard-bind'. Usage: enigma config dashboard-bind <${DASHBOARD_BINDS.join("|")}> [-g|-l]. Anything but loopback is reachable from the network and requires a token.`);
             return 1;
         }
@@ -147,7 +168,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // moved), which listenWithFallback reports on its own.
     if (rawKey === "dashboard-bind-address") {
         const value = rawValue === undefined || rawValue === "" || rawValue.toLowerCase() === "none" ? "" : rawValue.trim();
-        if (value && !isIP(value) && !HOSTNAME_RE.test(value)) {
+        if (!VALUE_KEY_RULES["dashboard-bind-address"]!(value)) {
             console.error("Invalid value for 'dashboard-bind-address'. Usage: enigma config dashboard-bind-address <ip|hostname|none> [-g|-l]. It pins the interface `dashboard-bind custom` listens on.");
             return 1;
         }
@@ -165,7 +186,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     };
     if (rawKey in PLAN_NUMERIC) {
         const n = Number(rawValue);
-        if (rawValue === undefined || !Number.isFinite(n) || n < 0) {
+        if (rawValue === undefined || !VALUE_KEY_RULES[rawKey]!(rawValue)) {
             console.error(`Missing/invalid value for '${rawKey}'. Usage: enigma config ${rawKey} <tokens> (e.g. 1000000, or 0 to unset) [-g|-l]`);
             return 1;
         }
@@ -175,7 +196,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
     if (rawKey === "plan-weekly-reset") {
-        if (rawValue === undefined || !/^[a-z]{3}\s+\d{1,2}:\d{2}$/i.test(rawValue)) {
+        if (rawValue === undefined || !VALUE_KEY_RULES["plan-weekly-reset"]!(rawValue)) {
             console.error("Missing/invalid value for 'plan-weekly-reset'. Usage: enigma config plan-weekly-reset \"<weekday> HH:MM\" (e.g. \"mon 11:00\") [-g|-l]");
             return 1;
         }

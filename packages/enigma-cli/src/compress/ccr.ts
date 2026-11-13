@@ -66,8 +66,9 @@ const EMPTY_STATS: CcrStats = { calls: 0, tokensBefore: 0, tokensAfter: 0, token
 const HISTORY_MAX_BYTES = 512 * 1024;
 const HISTORY_KEEP_LINES = 4000;
 
+/** The compression cache and stats directory; ENIGMA_CCR_DIR moves it (tests, `enigma serve` tenants). */
 function ccrDir(): string {
-    return join(homedir(), ".enigma", "ccr");
+    return process.env.ENIGMA_CCR_DIR || join(homedir(), ".enigma", "ccr");
 }
 
 function historyPath(): string {

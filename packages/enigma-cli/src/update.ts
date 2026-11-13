@@ -10,6 +10,7 @@
 import { tmpdir } from "node:os";
 import * as p from "@clack/prompts";
 import { readConfig } from "./config";
+import * as release from "./release-fetch";
 import { refreshSkillsFromGitHub } from "./skills";
 import { basename, dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -18,6 +19,8 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync }
 
 const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
 const UPDATE_COMMAND = "npm i -g enigma-cli@latest";
+/** What to tell the user to run: a standalone install updates itself, an npm one through npm. */
+const updateCommand = (): string => (release.installMethod() === "standalone" ? "enigma update" : UPDATE_COMMAND);
 // Resolved per call, never at module load (see accounts.ts registryPath): a constant froze
 // to the first importer's home, which in a shared test process can be the real one.
 const cacheFile = (): string => join(enigmaHome(), ".enigma-update-check.json");
@@ -70,17 +73,38 @@ export async function performUpdateCheck(): Promise<void> {
     try { await refreshSkillsFromGitHub(); } catch { /* best-effort */ }
 }
 
-/** Fetch the latest published version (5s bound) and write it to the cache. */
-async function fetchAndCacheLatest(): Promise<void> {
+/** The latest version on the npm registry (5s bound), or null when it cannot be read. */
+async function registryLatest(): Promise<string | null> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
-        const res = await fetch(REGISTRY_URL, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
+        const res = await fetch(process.env.ENIGMA_NPM_REGISTRY ? `${process.env.ENIGMA_NPM_REGISTRY.replace(/\/$/, "")}/enigma-cli/latest` : REGISTRY_URL, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
         const data = res.ok ? (await res.json()) as { version?: string; } : null;
-        if (data?.version) writeFileSync(cacheFile(), JSON.stringify({ latest: data.version, checkedAt: Date.now() }));
+        return typeof data?.version === "string" ? data.version : null;
+    } catch {
+        return null;
     } finally {
         clearTimeout(t);
     }
+}
+
+/**
+ * The latest published version for THIS install: a standalone install reads the GitHub release
+ * (it must not depend on npm at all); an npm install reads the registry and falls back to the
+ * GitHub release when the registry is unreachable, so an npm outage cannot hide an update.
+ */
+export async function latestVersion(method: release.InstallMethod = release.installMethod()): Promise<string | null> {
+    if (method === "npm") {
+        const latest = await registryLatest();
+        if (latest) return latest;
+    }
+    return release.latestReleaseVersion();
+}
+
+/** Fetch the latest published version and write it to the cache. */
+async function fetchAndCacheLatest(): Promise<void> {
+    const latest = await latestVersion();
+    if (latest) writeFileSync(cacheFile(), JSON.stringify({ latest, checkedAt: Date.now() }));
 }
 
 /**
@@ -107,7 +131,7 @@ function paint(text: string, code: string): string {
 function renderUpdateBox(current: string, latest: string): string {
     const lines = [
         { text: `Update available  ${current} -> ${latest}`, color: "1;33" },
-        { text: `Run ${UPDATE_COMMAND} to update`, color: "36" },
+        { text: `Run ${updateCommand()} to update`, color: "36" },
     ];
     const width = Math.max(...lines.map((l) => l.text.length));
     const border = `+${"-".repeat(width + 4)}+`;
@@ -211,6 +235,7 @@ function parkRunningBinary(): void {
  * asset sync in the same command instead of leaving it to the next run.
  */
 export function runUpdate(): boolean {
+    if (release.installMethod() === "standalone") return runStandaloneUpdate();
     const onWindows = process.platform === "win32";
     try {
         parkRunningBinary();
@@ -230,6 +255,62 @@ export function runUpdate(): boolean {
         console.log(`Could not run the update. Run '${UPDATE_COMMAND}' manually.`);
     }
     return false;
+}
+
+/**
+ * Update a standalone (GitHub-release) install: download the latest enigma-cli tarball and this
+ * host's binary, verify both against the release's SHA256SUMS, extract them into a new version
+ * directory and switch `current` to it. No npm involved. Returns whether it succeeded, with the
+ * same contract as runUpdate so the caller runs the new version's `__sync` through the shim.
+ */
+export function runStandaloneUpdate(root: string | null = standaloneRoot()): boolean {
+    if (!root) {
+        console.log("Could not locate this standalone install. Re-run the installer to update.");
+        return false;
+    }
+    try {
+        const version = release.installStandalone(root);
+        try { rmSync(cacheFile(), { force: true }); } catch { /* best-effort */ }
+        console.log(`Updated to enigma-cli ${version} (standalone, ${root}).`);
+        return true;
+    } catch (error) {
+        console.log(`Update did not complete: ${(error as Error).message}`);
+    }
+    return false;
+}
+
+/** The standalone root (the directory holding the version dirs and `current`), or null. */
+export function standaloneRoot(): string | null {
+    const pkg = release.cliPackageRoot();
+    if (!pkg || release.installMethod(pkg) !== "standalone") return null;
+    const root = dirname(pkg);
+    return release.currentStandaloneVersion(root) ? root : null;
+}
+
+/**
+ * How to run the freshly installed version's `__sync`. A standalone install names its new binary
+ * directly with the env the shim would set, so the sync does not depend on the shim being first
+ * on PATH (a container may call enigma by absolute path only); an npm install keeps `enigma`
+ * through the shell, as before.
+ */
+export function newVersionSync(): { command: string; args: string[]; env: NodeJS.ProcessEnv; shell: boolean; } {
+    const root = standaloneRoot();
+    const version = root ? release.currentStandaloneVersion(root) : null;
+    if (!root || !version) return { command: "enigma", args: ["__sync"], env: process.env, shell: process.platform === "win32" };
+    const pkg = join(root, version);
+    return {
+        command: join(pkg, "bin", process.platform === "win32" ? "enigma-bin.exe" : "enigma-bin"),
+        args: ["__sync"],
+        env: {
+            ...process.env,
+            ENIGMA_ASSETS_DIR: join(pkg, "assets"),
+            ENIGMA_GUARD_PATH: join(pkg, "dist", "guard.js"),
+            ENIGMA_GUARDRAILS_PATH: join(pkg, "dist", "guardrails.js"),
+            ENIGMA_TRIM_PATH: join(pkg, "dist", "trim.js"),
+            ENIGMA_VERSION: version,
+        },
+        shell: false,
+    };
 }
 
 /** An enigma-cli installed globally under one Node version, with the node and npm that own it. */
@@ -299,6 +380,8 @@ export function updateRuntimeInstalls(version: string, installs: RuntimeInstall[
  * after an update, or null when npm or the package cannot be read.
  */
 export function installedGlobalVersion(): string | null {
+    const root = standaloneRoot();
+    if (root) return release.currentStandaloneVersion(root);
     try {
         const root = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: process.platform === "win32", windowsHide: true });
         if (root.status !== 0) return null;
@@ -344,7 +427,7 @@ export async function notifyUpdate(current: string, interactive: boolean): Promi
         if (!latest || !isNewer(latest, current)) return;
         process.stdout.write(`\n${renderUpdateBox(current, latest)}\n`);
         if (!interactive) return;
-        const ok = await p.confirm({ message: `Update now with ${UPDATE_COMMAND}?`, initialValue: true });
+        const ok = await p.confirm({ message: `Update now with ${updateCommand()}?`, initialValue: true });
         if (p.isCancel(ok) || !ok) return;
         runUpdate();
     } catch {

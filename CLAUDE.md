@@ -49,6 +49,7 @@ Subsystems (read the one you are touching):
 - `packs.md` - isolated agents, formerly packs (`enigma agent`, `enigma helio|orion|vega`; `enigma pack` deprecated): credential seeding, the three layers of seeding a Claude login, the REA engine and multi-tool agent MCP registration, and the vendored security-audit skill (`/audit`) preserved across Helio refreshes.
 - `recall.md` - local session memory (SQLite + FTS, hybrid search, MCP tools).
 - `code-graph.md` - native code-intelligence engine (`enigma codegraph`): the four modules, the retrieval surfaces (ask/callers/skeleton/map/grep/graph/check), the drawable slice (`codegraph-subgraph.ts`) behind `graph` and the dashboard's Code graph canvas, and the precision fixes in both that must not regress.
+- `host-integration.md` - what a platform embedding enigma calls: `skills list --json`, `install --skip`, `config --json|set|apply`, `memory render`, and `enigma serve` (multi-tenant HTTP API, tenancy by env swap, single-writer rules). Read before touching `src/host-cli.ts` or `src/serve/`.
 - `local-api-server.md` - OpenAI-compatible local API over the installed agents (`enigma api`), adapters, playground.
 - `primitives.md` - the headless component registry (`@enigmax/primitives`, `@enigmax/utils`) and `enigma add`: core+adapter architecture, theming by data attribute, the marquee's twelve measured rules. Read before adding a primitive or a utility.
 - `autoskills.md` - stack detection and community stack-skill installation.

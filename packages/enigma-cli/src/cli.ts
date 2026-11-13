@@ -5,11 +5,14 @@
  */
 
 import * as packs from "./packs";
+import { fail } from "./cli-json";
 import * as acct from "./accounts";
 import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
+import * as updater from "./update";
 import { RELAY_HELP } from "./relay";
 import * as skillsMod from "./skills";
+import { parseSkipParts } from "./install-parts";
 import { isDir, isNewer, readJson } from "./util";
 import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
@@ -39,11 +42,11 @@ import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
+import { runConfigHost, runMemoryCli, runServeCli, skillsListJson, skillsToggleMany } from "./host-cli";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { BUILTIN_RULES, checkPath, formatFindings, readLedger, readReplyLedger, summarizeLedger } from "./guardrails";
 import { API_ROTATIONS, DASHBOARD_BINDS, apiRotationOf, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
-import { checkLatestNow, getAvailableUpdate, installedGlobalVersion, notifyUpdate, performUpdateCheck, runUpdate, runtimeInstalls, updateRuntimeInstalls } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -136,6 +139,21 @@ interface CliOptions extends skillsMod.InstallOptions {
     newToken: boolean;
     /** `guard` / `verify`: emit one JSON document instead of human text. */
     json: boolean;
+    /** `config apply`: the settings file to apply. */
+    file: string | null;
+    /** `memory render`: keep the rules, drop examples. */
+    compact: boolean;
+    /** `memory render`: append every deployable skill. */
+    allSkills: boolean;
+    /** `config --json`: report defaults without reading any config. */
+    defaults: boolean;
+    /** `serve`: the HTTP transport, data root, token file, bind host, code workspace root, body cap. */
+    http: boolean;
+    dataDir: string | null;
+    tokenFile: string | null;
+    host: string | null;
+    workspaceRoot: string | null;
+    maxBody: number | null;
 }
 
 /** A command that launches an agent: a tool name (`claude`, `codex`, ...) or an agent id. */
@@ -163,8 +181,12 @@ function parseArgs(argv: string[]): CliOptions {
         flags: null, flagShapes: null, flagFormats: null, flagCountries: null, flagsOut: null,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, apiRotation: null, expose: false, newToken: false,
-        json: false,
+        json: false, skip: [], file: null, compact: false, allSkills: false, defaults: false,
+        http: false, dataDir: null, tokenFile: null, host: null, workspaceRoot: null, maxBody: null,
     };
+    // A command asked for JSON gets its usage errors as JSON too, so a host parses one shape.
+    const jsonErrors = argv.includes("--json");
+    const usageError = (code: string, message: string, exitCode: number): never => process.exit(fail(code, message, jsonErrors, exitCode));
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
         // A flag whose value is missing is a usage error, not an empty default: a flag the
@@ -173,7 +195,7 @@ function parseArgs(argv: string[]): CliOptions {
         // pretending the flag was honoured.
         const next = (): string => {
             const value = argv[++i];
-            if (value === undefined) { console.error(`Missing value for ${a}`); process.exit(2); }
+            if (value === undefined) usageError("missing_value", `Missing value for ${a}`, 2);
             return value;
         };
         if (i === 0 && COMMANDS.has(a)) {
@@ -259,6 +281,22 @@ function parseArgs(argv: string[]): CliOptions {
             case "--keep-current": opts.keepCurrent = true; break;
             case "--clear": opts.clear = true; break;
             case "--json": opts.json = true; break;
+            case "--skip": {
+                const value = next();
+                try { parseSkipParts([value]); } catch (err) { usageError("unknown_part", (err as Error).message, 1); }
+                opts.skip!.push(value);
+                break;
+            }
+            case "--file": opts.file = next(); break;
+            case "--compact": opts.compact = true; break;
+            case "--skills": opts.allSkills = true; break;
+            case "--defaults": opts.defaults = true; break;
+            case "--http": opts.http = true; break;
+            case "--data-dir": opts.dataDir = next(); break;
+            case "--token-file": opts.tokenFile = next(); break;
+            case "--host": opts.host = next(); break;
+            case "--workspace-root": opts.workspaceRoot = next(); break;
+            case "--max-body": opts.maxBody = Number(next()); break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
@@ -281,7 +319,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "-h": case "--help": opts.help = true; break;
             case "-v": case "--version": opts.version = true; break;
             default:
-                if (a.startsWith("-")) { console.error(`Unknown option: ${a}`); process.exit(1); }
+                if (a.startsWith("-")) usageError("unknown_option", `Unknown option: ${a}`, 1);
                 else if (opts.command) { opts.positionals.push(a); }
                 // A `__`-prefixed command is one enigma wrote into an agent's hook config for
                 // itself, never something a person types - so reaching here means a NEWER
@@ -300,8 +338,8 @@ function parseArgs(argv: string[]): CliOptions {
                 // invocation pays for the registry read.
                 else {
                     const owner = i === 0 ? acct.toolOfAccount(a) : null;
-                    if (!owner) { console.error(`Unknown command: ${a}`); process.exit(1); }
-                    opts.command = owner;
+                    if (!owner) usageError("unknown_command", `Unknown command: ${a}`, 1);
+                    opts.command = owner!;
                     opts.positionals.push(a);
                 }
         }
@@ -327,7 +365,13 @@ Commands:
                        --json emits one document per run; exits 1 on findings, 2 if it could
                        not run at all
   config [key val]     Configure settings: no args opens the interactive menu;
-                       'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
+                       'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on);
+                       'config set k=v k2=v2' / 'config apply --file f.json' set many at once;
+                       'config --json' lists every key with its default and current value
+  memory render        The installed operating contract as plain text for a chat
+                       system prompt (--target generic [--compact] [--skills] [--json])
+  serve --http         Headless JSON API over recall, code graph and compression for a
+                       platform backend (multi-tenant, bearer token from --token-file)
   <tool> [account]     Launch a tool (claude | codex | opencode | kimi) with an account's
                        config (resolution: explicit > active profile > tool active);
                        auto-syncs deployed skills first (see auto-sync config key) and
@@ -361,7 +405,7 @@ Commands:
                          rename <old> <new>         Rename a profile (mappings stay)
                          remove <name>              Delete a profile (accounts stay)
   skills <subcommand>  List skills and choose where each deploys (also in the hub):
-                         list                 List every skill with its state
+                         list [--json]        List every skill with its state
                          disable <name>       Remove from every agent, skip in installs
                          disable <name> <agent>   Turn off for one agent only (e.g. opencode)
                          enable  <name> [agent]   Re-deploy globally, or to one agent
@@ -588,20 +632,31 @@ Deploy the policy skills, the memory file and the slash commands to your agents.
       --offline           Make no network call at all: no skill check, no update notice,
                           no background install of the linter or the dashboard UI. Set
                           ENIGMA_OFFLINE=1 to hold for every enigma command in the image
+      --skip <parts>      Leave these parts out of this run (comma list, repeatable). Parts
+                          are named after their config key: skills, memory, commands, gate,
+                          output-style, minimal-code, dashboard, prompt-secret-guard,
+                          statusline, claude-attribution, claude-survey, claude-trust,
+                          kimi-trust, search-guard, browser-guard, git-push-guard
+                          (commit-hooks), gh-telemetry, permission-bypass (bypass), auto-lint,
+                          guardrails, trim, code-graph, ci-watch, subagent-limit, relay,
+                          verify (stop-hook), compress, recall, mcp
       --dry-run           Show the plan without writing
   -y, --yes               Non-interactive
 
-Hooks and settings: --hooks/--no-hooks apply to this run only. To keep a hook off for
-good use 'enigma config verify|guardrails|trim|lint off'; --assets-from implies --offline.
+Hooks and settings: --hooks/--no-hooks and --skip apply to this run only and write no
+config. To keep a part off for good use 'enigma config <key> off'; --assets-from implies
+--offline.
 
   enigma install --global --all -y
   enigma install --skills-only --no-hooks --offline
+  enigma install --all --yes --skip stop-hook,statusline
   enigma install --ref v1.35.2 -y`,
 
     update: `usage: enigma update [--ref <tag|sha>]
 Fetch newer skills from GitHub (no npm release needed), sync them into every existing
 deployment, then self-update enigma-cli when a newer release is published. Each phase
-is independent: an unreachable GitHub or npm never blocks the others.
+is independent: an unreachable GitHub or npm never blocks the others. An install made by
+the curl/irm script updates from GitHub Releases and never touches npm.
 
       --ref <tag|sha>   Read skills from that ref instead of the default branch`,
 
@@ -664,10 +719,19 @@ commit guard, the convention guardrails and the EOF trimmer.
   -y, --yes     Non-interactive (enables every protection)`,
 
     config: `usage: enigma config [<key> <value>] [-g | -l]
+       enigma config --json [--defaults]
+       enigma config set <key>=<value> [<key>=<value> ...] [-g | -l] [--json]
+       enigma config apply --file <settings.json> [-g | -l] [--json]
 No arguments opens the interactive menu; 'config <key> <on|off>' sets one.
 
   -g, --global   Write to ~/.enigma.json (default)
   -l, --local    Write to this project's .enigma.json
+      --json     Every setting as JSON: key, label, description, kind, choices, scope,
+                 storage, default, current (a secret reports only whether it is set)
+      --defaults With --json: read nothing, report current = default
+  set / apply    Many settings in one process. The whole batch is validated first and
+                 nothing is written when any pair is refused. The file is a JSON object
+                 of "<key>": <value> (true/false = on/off).
 
 Keys: commit-emoji, update-notifier, auto-sync, share-sessions, shared-store, remote-skills, fullscreen, statusline,
 parallel-subagents, subagent-limit, compact-window, subagent-turns, output-style, minimal-code, compress, recall, codegraph, gate,
@@ -704,10 +768,38 @@ Group one account per tool under a profile; the active profile drives launches.
     skills: `usage: enigma skills <subcommand>
 List skills and choose where each one deploys.
 
-  list                      Every skill with its state
-  disable <name> [agent]    Remove everywhere (or from one agent) and skip in installs
-  enable <name> [agent]     Re-deploy globally, or to one agent
-  discard|restore <name>    Aliases of disable/enable`,
+  list [--json] [agent]     Every skill with its state (JSON: {enigmaVersion, skills[]})
+  disable <name...> [agent] Remove everywhere (or from one agent) and skip in installs
+  enable <name...> [agent]  Re-deploy globally, or to one agent
+  discard|restore <name>    Aliases of disable/enable
+
+Several names (or a comma list) are validated together: an unknown one changes nothing.`,
+
+    memory: `usage: enigma memory render --target generic [--compact] [--skills | -s <a,b>] [-p <file>] [--json]
+Print the operating contract enigma installs into CLAUDE.md / AGENTS.md, as plain text for
+a host that is not a CLI agent (a chat system prompt). Harness-only parts (session-memory
+tools, the quality gate, parallel sub-agents) are left out. Output depends only on the
+enigma version and the settings, so it can be cached by its sha256.
+
+      --compact          Keep the rules, drop examples and code samples
+      --skills           Append every enabled skill   -s <names>  Append these skills
+  -p, --path <file>      Write to a file instead of stdout
+      --json             {enigmaVersion, target, compact, skills, bytes, sha256, text|path}`,
+
+    serve: `usage: enigma serve --http --data-dir <dir> --token-file <file> [--host <addr>] [--port <n>]
+                    [--workspace-root <dir>] [--max-body <bytes>]
+Headless JSON API over recall, the code graph, compression and stats, for a host with no
+CLI home. Every /v1 route but /v1/health needs 'Authorization: Bearer <token>' (read from
+--token-file, re-read when it changes) and 'X-Enigma-Tenant: <id>' (a-z, 0-9, _ and -). Each
+tenant's data lives under <data-dir>/tenants/<id>; indexing is confined to
+<workspace-root>/<id> and disabled without --workspace-root.
+
+      --host <addr>      Bind address (default 127.0.0.1)
+      --port <n>         Port (default 24290)
+      --max-body <bytes> Largest request body (default 1048576)
+
+Errors are {"error": {"code", "message"}}. Recall and the index are single-writer per
+tenant: route a tenant to one replica. See docs/notes/host-integration.md.`,
 
     compress: `usage: enigma compress [file] [--command <cmd>] [--type <t>] [--retrieve <hash>] [--stats] [--clear]
 Compress command output, JSON, logs and text to fewer tokens, reversibly (CCR).
@@ -1104,11 +1196,11 @@ async function runUpdateCli(version: string, ref?: string | null): Promise<void>
     // than gating on a cached "is newer" check that a stale registry cache could get wrong.
     // runUpdate() runs `npm cache clean --force` first, so the install ignores the npm cache.
     const s = p.spinner();
-    s.start("Checking npm for the latest enigma-cli...");
-    const latest = await checkLatestNow(version);
+    s.start("Checking for the latest enigma-cli...");
+    const latest = await updater.checkLatestNow(version);
     s.stop(latest ? `Newer enigma-cli available: ${version} -> ${latest}. Installing...` : `enigma-cli ${version}: reinstalling the latest to be sure...`);
     starRepoInBackground();
-    const updated = runUpdate();
+    const updated = updater.runUpdate();
     // The sync above ran on the OLD binary, so it deployed the OLD skills, memory and
     // commands - the assets are bundled INTO the version that was just replaced. Run the
     // NEW binary's sync now, in this same command, or a user who updates and then launches
@@ -1118,23 +1210,22 @@ async function runUpdateCli(version: string, ref?: string | null): Promise<void>
     if (updated) {
         const s2 = p.spinner();
         s2.start("Deploying the new version's skills and memory...");
-        const sync = spawnSync("enigma", ["__sync"], {
-            encoding: "utf8",
-            shell: process.platform === "win32",
-            windowsHide: true,
-        });
+        const inv = updater.newVersionSync();
+        const sync = spawnSync(inv.command, inv.args, { encoding: "utf8", env: inv.env, shell: inv.shell, windowsHide: true });
         const lines = String(sync.stdout || "").split("\n").filter((l) => l.trim());
         if (sync.status === 0) s2.stop(lines.length ? lines.join("; ") : "Skills and memory are up to date.");
         else s2.stop("Skills and memory will sync on the next enigma run.");
         // nvm keeps one global prefix per Node version: an enigma left behind under another
         // version runs whenever that version leads PATH, and rewrites the agents' config with
         // its older defaults on every hook.
-        const target = installedGlobalVersion() ?? latest;
+        // A standalone install is not an npm one: the nvm copies are separate npm installs it does
+        // not own, and npm may not even be reachable from here.
+        const target = updater.standaloneRoot() ? null : updater.installedGlobalVersion() ?? latest;
         if (target) {
-            for (const install of runtimeInstalls().filter((i) => isNewer(target, i.version))) {
+            for (const install of updater.runtimeInstalls().filter((i) => isNewer(target, i.version))) {
                 const rs = p.spinner();
                 rs.start(`Updating enigma-cli ${install.version} under ${install.prefix}...`);
-                rs.stop(`Other Node version: ${updateRuntimeInstalls(target, [install]).join("; ")}`);
+                rs.stop(`Other Node version: ${updater.updateRuntimeInstalls(target, [install]).join("; ")}`);
             }
         }
     }
@@ -2525,12 +2616,17 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
  * from every existing deployment and skips it in future installs and updates;
  * restoring re-deploys it to existing installs immediately. Returns an exit code.
  */
-function runSkillsCli(opts: CliOptions): number {
+function runSkillsCli(opts: CliOptions, version: string): number {
     const [sub, name, agent] = opts.positionals;
+    // Several names at once (`disable a b c [agent]`, `a,b,c`), or any JSON caller, take the
+    // batch path: every name is validated before anything changes, and deployments sync once.
+    const many = opts.positionals.length > 3 || (opts.positionals.length === 3 && !acct.isToolName(agent!)) || (name ?? "").includes(",");
+    if ((sub === "enable" || sub === "disable") && (many || opts.json)) return skillsToggleMany(sub, opts.positionals.slice(1), opts);
     switch (sub) {
         case undefined:
         case "list":
         case "ls": {
+            if (opts.json) return skillsListJson(name, version);
             console.log("Skills:\n");
             for (const s of skillsMod.listSkillsStatus()) {
                 const ver = s.version ? `v${s.version}` : "";
@@ -3120,7 +3216,7 @@ export async function run(argv: string[]): Promise<void> {
     // Hidden internal command, handled before parsing: the detached background
     // update check re-invokes the compiled binary with this argv (a Bun-compiled
     // executable cannot run `node -e` scripts). Silent by contract.
-    if (argv[0] === "__update-check") { await performUpdateCheck(); return; }
+    if (argv[0] === "__update-check") { await updater.performUpdateCheck(); return; }
     // Hidden: the detached background linter install kicked off when auto-lint is
     // enabled (spawnLinterInstall). Silent, best-effort; the runner self-heals.
     if (argv[0] === "__lint-install") { ensureLinterInstalled(); return; }
@@ -3325,28 +3421,33 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "statusline") { printStatusline(); return; }
     // /improve runs inside the agent, not the CLI; `enigma improve [--help]` only
     // explains it. Handled before the generic --help so `improve --help` shows this.
-    if (opts.command === "improve") { printImproveHelp(); await notifyUpdate(version, interactive); return; }
-    if (opts.command === "qa") { printQaHelp(); await notifyUpdate(version, interactive); return; }
+    if (opts.command === "improve") { printImproveHelp(); await updater.notifyUpdate(version, interactive); return; }
+    if (opts.command === "qa") { printQaHelp(); await updater.notifyUpdate(version, interactive); return; }
     // `enigma <cmd> --help` answers about that command; `enigma help` (or --help with no
     // command) prints the manual. A command with no dedicated page falls back to it.
     if (opts.help && opts.command && opts.command !== "help" && printCommandHelp(opts.command)) {
-        await notifyUpdate(version, interactive);
+        await updater.notifyUpdate(version, interactive);
         return;
     }
     if (opts.help || opts.command === "help") {
         const topic = opts.command === "help" ? opts.positionals[0] : undefined;
         if (!topic || !printCommandHelp(topic)) printHelp();
-        await notifyUpdate(version, interactive);
+        await updater.notifyUpdate(version, interactive);
         return;
     }
-    if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
+    if (opts.version || opts.command === "version") { console.log(version); await updater.notifyUpdate(version, interactive); return; }
 
     // Direct (non-menu) maintenance and feature commands. Machine/CI commands
     // (seal, check, config; guard is dispatched earlier) skip the update notice to keep
     // their output clean.
     if (opts.command === "seal") return skillsMod.sealSources();
     if (opts.command === "check") return skillsMod.checkSources();
-    if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
+    if (opts.command === "config") {
+        const hosted = await runConfigHost(opts.positionals, opts, version);
+        process.exit(hosted ?? await runConfigCli(opts.positionals, opts.scope, interactive));
+    }
+    if (opts.command === "memory") { process.exit(await runMemoryCli(opts.positionals, opts, version)); }
+    if (opts.command === "serve") { process.exit(await runServeCli(opts, version)); }
     if (opts.command && acct.isToolName(opts.command)) {
         // Resolve the account up front (explicit > active profile > tool active) so
         // the pre-launch sync targets the same config dir the tool will read.
@@ -3368,7 +3469,7 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
-    if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
+    if (opts.command === "skills") { process.exit(runSkillsCli(opts, version)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "branches") { process.exit(await runBranchesCli(opts.positionals, opts)); }
     if (opts.command === "completion") { process.exit(await runCompletionCli(opts.positionals)); }
@@ -3413,21 +3514,21 @@ export async function run(argv: string[]): Promise<void> {
         p.intro("enigma - install agent skills");
         await skillsMod.installSkills(opts, interactive);
         p.outro("Done.");
-        await notifyUpdate(version, interactive); // stands down by itself when ENIGMA_OFFLINE is set
+        await updater.notifyUpdate(version, interactive); // stands down by itself when ENIGMA_OFFLINE is set
         return;
     }
     if (opts.command === "security") {
         p.intro("enigma - git security hooks");
         const done = await setupGitHooks(opts, interactive);
         p.outro(done ? "Git hooks configured." : "No changes made.");
-        await notifyUpdate(version, interactive);
+        await updater.notifyUpdate(version, interactive);
         return;
     }
 
     // No command: non-interactive default installs skills; a TTY gets the hub.
     if (!interactive) {
         await skillsMod.installSkills(opts, interactive);
-        await notifyUpdate(version, interactive);
+        await updater.notifyUpdate(version, interactive);
         return;
     }
 
@@ -3461,7 +3562,7 @@ export async function run(argv: string[]): Promise<void> {
         // First run = nothing deployed anywhere: the hub preselects the install action
         // and shows a setup banner so the first install is a couple of keystrokes.
         firstRun: !discovered.some((a) => skillsMod.hasDeployment(a, "global") || skillsMod.hasDeployment(a, "local")),
-        update: getAvailableUpdate(version) ?? undefined,
+        update: updater.getAvailableUpdate(version) ?? undefined,
         skills: hubSkills(),
         setSkillDiscarded: (name: string, discarded: boolean) => { skillsMod.discardSkill(name, discarded); return hubSkills(); },
         setSkillAgent: (name: string, agent: string, off: boolean) => { skillsMod.setSkillAgent(name, agent, off); return hubSkills(); },
@@ -3556,5 +3657,5 @@ export async function run(argv: string[]): Promise<void> {
     // "Update now" from the hub: run the full update (skills + npm) in the freed
     // terminal (the running binary is about to be replaced, so do not reopen the hub).
     if (action?.type === "update") { await runUpdateCli(version); return; }
-    await notifyUpdate(version, interactive);
+    await updater.notifyUpdate(version, interactive);
 }

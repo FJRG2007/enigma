@@ -18,6 +18,7 @@
 import { homedir } from "node:os";
 import { isOffline } from "./util";
 import { fileURLToPath } from "node:url";
+import * as release from "./release-fetch";
 import { spawn, spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -88,18 +89,41 @@ function ensureHostDir(): void {
     if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({ name: "enigma-dashboard-host", private: true }, null, 2) + "\n");
 }
 
-/** Run `npm install @enigmax/dashboard@<spec>` in the managed dir. Best-effort, never throws. */
+/**
+ * Install the latest @enigmax/dashboard into the managed dir. Best-effort, never throws.
+ * Two independent sources: npm, and the asset on the latest GitHub release (verified against its
+ * SHA256SUMS, extracted into the same node_modules layout). A standalone install tries GitHub
+ * first; an npm install tries npm first. Whichever fails hands over to the other.
+ */
 function npmInstall(spec: string): void {
+    const sources = release.installMethod() === "standalone" ? [releaseInstall, registryInstall] : [registryInstall, releaseInstall];
+    for (const source of sources) {
+        if (source(spec)) break;
+    }
+    if (isDashboardPkgInstalled()) markFetched();
+}
+
+/** `npm install @enigmax/dashboard@<spec>`; true when npm succeeded. */
+function registryInstall(spec: string): boolean {
     try {
         ensureHostDir();
         // shell:true so Windows resolves npm.cmd; windowsHide so the cmd.exe it spawns never
         // flashes a console window; output suppressed to keep the install quiet. --prefer-online
         // revalidates the registry so a stale npm cache never pins an old @latest.
-        spawnSync("npm", ["install", `@enigmax/dashboard@${spec}`, "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
+        const result = spawnSync("npm", ["install", `@enigmax/dashboard@${spec}`, "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
             cwd: DASHBOARD_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
         });
-        if (isDashboardPkgInstalled()) markFetched();
-    } catch { /* best-effort: a missing npm or no network just leaves the UI un-fetched */ }
+        return result.status === 0 && isDashboardPkgInstalled();
+    } catch { return false; /* best-effort: a missing npm or no network just leaves the UI un-fetched */ }
+}
+
+/** The dashboard tarball from the latest GitHub release; true when it was installed. */
+function releaseInstall(): boolean {
+    try {
+        ensureHostDir();
+        release.installReleasePackage("@enigmax/dashboard", DASHBOARD_INSTALL_DIR);
+        return true;
+    } catch { return false; }
 }
 
 /**

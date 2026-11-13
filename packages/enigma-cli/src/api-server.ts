@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { readUsageCached } from "./usage";
 import { spawn } from "node:child_process";
 import { tokenMatches } from "./dashboard-token";
+import { PayloadTooLargeError, readBody, sendJson } from "./http-util";
 import { apiRotationOf, readConfig, type ApiRotation } from "./config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AccountRotator, classifyAccountError, poolOrder, type WindowUsage } from "./api-rotation";
@@ -347,26 +348,6 @@ function touchSession(id: string | null, turns: number): void {
     const rec = sessions.get(id);
     if (rec) { rec.lastAccessed = now; rec.messageCount += turns; }
     else sessions.set(id, { createdAt: now, lastAccessed: now, messageCount: turns });
-}
-
-function readBody(req: IncomingMessage, limit = 4 * 1024 * 1024): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        req.on("data", (c: Buffer) => {
-            size += c.length;
-            if (size > limit) { reject(new Error("payload too large")); req.destroy(); return; }
-            chunks.push(c);
-        });
-        req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-        req.on("error", reject);
-    });
-}
-
-function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
-    const text = JSON.stringify(body);
-    res.writeHead(status, { ...headers, "content-type": "application/json", "content-length": Buffer.byteLength(text) });
-    res.end(text);
 }
 
 function apiError(res: ServerResponse, status: number, message: string, type = "invalid_request_error"): void {
@@ -801,6 +782,11 @@ export function startApiServer(options: ApiServerOptions): Promise<RunningApi> {
                 if (method === "POST" && path === "/v1/messages") return await handleAnthropicMessages(req, res, defaults);
                 apiError(res, 404, `No route for ${method} ${path}.`, "not_found");
             } catch (err) {
+                // An oversize body is the client's error, answered on a closing connection: the
+                // rest of the upload is never read.
+                if (err instanceof PayloadTooLargeError && !res.headersSent) {
+                    return sendJson(res, 413, { error: { message: err.message, type: "invalid_request_error", code: null, param: null } }, { connection: "close" });
+                }
                 if (!res.headersSent) apiError(res, 500, (err as Error).message, "api_error");
                 else try { res.end(); } catch { /* already closed */ }
             }

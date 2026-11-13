@@ -22,6 +22,7 @@
 
 import { homedir } from "node:os";
 import * as acct from "./accounts";
+import * as release from "./release-fetch";
 import { isDir, readJson, resolveBin } from "./util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -173,16 +174,35 @@ function ensureHostDir(id: string): void {
     if (!existsSync(manifest)) writeFileSync(manifest, `${JSON.stringify({ name: `enigma-pack-${id}-host`, private: true }, null, 2)}\n`);
 }
 
-/** Run `npm install <pkg>@<spec>` in the pack's managed dir. Best-effort, never throws. */
+/**
+ * Install the pack bundle `<pkg>@<spec>` into the pack's managed dir. Best-effort, never throws.
+ * npm and the asset on the latest GitHub release (SHA256SUMS-verified, same node_modules layout)
+ * are independent sources: a standalone install tries GitHub first, an npm install npm first,
+ * and a failure of one hands over to the other.
+ */
 function npmInstall(id: string, spec: string): void {
     const pack = getPack(id);
     if (!pack) return;
-    try {
-        ensureHostDir(id);
-        spawnSync("npm", ["install", `${pack.pkg}@${spec}`, "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
-            cwd: installDir(id), shell: true, stdio: "ignore", timeout: 180000, windowsHide: true,
-        });
-    } catch { /* best-effort: a missing npm or no network just leaves the pack un-fetched */ }
+    const registry = (): boolean => {
+        try {
+            ensureHostDir(id);
+            const result = spawnSync("npm", ["install", `${pack.pkg}@${spec}`, "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
+                cwd: installDir(id), shell: true, stdio: "ignore", timeout: 180000, windowsHide: true,
+            });
+            return result.status === 0 && isPackInstalled(id);
+        } catch { return false; /* best-effort: a missing npm or no network just leaves the pack un-fetched */ }
+    };
+    const github = (): boolean => {
+        try {
+            ensureHostDir(id);
+            release.installReleasePackage(pack.pkg, installDir(id));
+            return true;
+        } catch { return false; }
+    };
+    const sources = release.installMethod() === "standalone" ? [github, registry] : [registry, github];
+    for (const source of sources) {
+        if (source()) break;
+    }
 }
 
 /** Fetch the pack bundle if absent (latest). Returns true when present afterwards. */
@@ -714,7 +734,7 @@ export function ensurePackContext(id: string, tool: string = acct.DEFAULT_TOOL, 
     if (!pack) throw new Error(`Unknown agent '${id}'.`);
     if (!acct.isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
     const seedAccount = resolvePackAccount(id, tool, account);
-    if (!ensurePackInstalled(id)) throw new Error(`Could not fetch ${pack.label} (${pack.pkg}). Check your network and npm.`);
+    if (!ensurePackInstalled(id)) throw new Error(`Could not fetch ${pack.label} (${pack.pkg}). Check your network, npm, or the GitHub release.`);
     if (!isPackEnabled(id)) enablePack(id);
     if (!isPackEngineReady(id)) throw new Error(`The ${pack.label} engine is not installed. Run: enigma agent setup ${id}`);
     const dir = deployPack(id, tool);
@@ -732,7 +752,7 @@ export async function launchPack(id: string, tool: string = acct.DEFAULT_TOOL, p
     try { seedAccount = resolvePackAccount(id, tool, account); }
     catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 1; }
     if (!ensurePackInstalled(id)) {
-        process.stderr.write(`Could not fetch ${pack.label} (${pack.pkg}). Check your network and npm.\n`);
+        process.stderr.write(`Could not fetch ${pack.label} (${pack.pkg}). Check your network, npm, or the GitHub release.\n`);
         return 1;
     }
     if (!isPackEnabled(id)) enablePack(id);

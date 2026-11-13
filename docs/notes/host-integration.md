@@ -1,0 +1,35 @@
+# Host integration (a platform embedding enigma)
+
+For a platform that runs enigma for its own users (Polaris: coding-agent sessions and a chat backend). Every surface here is machine-facing: one JSON document on stdout under `--json`, no prompts, no TTY, and `{"error": {"code", "message"}}` with exit 1 (bad input) or 2 (could not run). Code: `src/host-cli.ts` (dispatch), `src/cli-json.ts` (the error shape), `src/settings-host.ts`, `src/memory-render.ts`, `src/install-parts.ts`, `src/serve/`. Tests: `tests/host/`.
+
+## The commands
+
+| Command | What a host gets |
+|---|---|
+| `enigma skills list --json [agent]` | `{schemaVersion, enigmaVersion, agent, skills:[{name, description, version, provider, disableable, disabled, disabledFor?}]}`. Reads the package's own assets: no install, no home needed (then nothing is disabled). With an agent, `disabled` is that agent's real state. |
+| `enigma skills enable\|disable <name...> [agent] [--json]` | Several names (or `a,b,c`) validated together, one sync at the end. An unknown name changes nothing. The single-name form keeps its old output. |
+| `enigma install --all --yes --skip <part,...>` | Leaves parts out of ONE run and writes no config. Part names are the config keys (`install-parts.ts`), plus aliases `stop-hook` (verify), `commit-hooks` (git-push-guard), `bypass`. Unknown part -> error listing all of them. |
+| `enigma config --json [--defaults]` | Every registry setting plus the value keys of settings.ts: `{key, category, label, description, kind, choices, scope, storage, secret, default, current, set?}`. `--defaults` reads nothing (current = default). |
+| `enigma config set k=v ...` / `config apply --file f.json` | Many settings in one process. ALL pairs are validated first (`checkChange`, which reuses each setting's own `checkValue` / `VALUE_KEY_RULES`) and nothing is written if one fails. A write that fails part way restores both .enigma.json files. |
+| `enigma memory render --target generic [--compact] [--skills\|-s a,b] [--json]` | The deployed memory under the current config, minus harness-only blocks (recall, gate, parallel-subagents) and, when no skill is appended, minus the "load the matching skill" instructions. Deterministic per (version, settings); `--json` carries `sha256` to cache by. |
+| `enigma serve --http ...` | The HTTP API below. |
+
+## Decisions worth knowing
+
+- **`default` comes from `CONFIG_DEFAULTS` by the kebab-to-camel convention** (`fieldOf`), not from a hand list. A setting stored in another tool's config (agent settings, the commit guard file, gh) reports `storage: "external"` and `default: null`, and its `current` is read from that tool, so it can differ from null even with no home. `tests/host/settings-host.test.ts` fails when a new key breaks the convention without being a known external one.
+- **Value settings validate through `Setting.checkValue`**, added to every value setting whose `writeValue` can refuse (subagent-limit, relay-at, compact-window, subagent-turns, gate-trivial-lines, api-port). A new refusing value setting without it would pass batch validation and fail at write time, which the rollback catches but the caller sees as `write_failed` instead of `invalid_batch`.
+- **`--skip` and the MCP entry**: there is ONE server entry for compress, recall and the code graph, so a partial skip cannot narrow it. It is written unless `mcp` is skipped or every MCP feature that is on was skipped; a partial skip prints which tools still follow the config.
+- **Compact is honest, not magic**: it drops fenced samples, example sections, `Example:/Bad:/Good:/Not:` paragraphs and `e.g.` asides. Measured at 1.72.2: memory 15.6 KB -> 15.6 KB (default config has few examples), all skills 360 KB -> 349 KB. The skills are mostly rules; a chat should pick skills with `-s`, not ship all of them.
+
+## `enigma serve`
+
+`enigma serve --http --data-dir <dir> --token-file <file> [--host 127.0.0.1] [--port 24290] [--workspace-root <dir>] [--max-body 1048576]`
+
+- **Auth**: `Authorization: Bearer <token>` on every `/v1` route but `/v1/health`. The token is the single line of `--token-file` (at least 32 characters, no whitespace), compared in constant time, and re-read when the file's mtime/size changes, so rotation needs no restart. Never an env var.
+- **Tenancy**: `X-Enigma-Tenant: <id>`, lowercase `[a-z0-9][a-z0-9_-]{0,63}`, Windows device names refused. Lowercase only, so two ids cannot share a directory on a case-insensitive filesystem; the server refuses rather than folds. Data lives in `<data-dir>/tenants/<id>/{recall,codegraph,ccr}`.
+- **How isolation works**: the stores resolve their root from `ENIGMA_RECALL_DIR` / `ENIGMA_CODEGRAPH_DIR` / `ENIGMA_CCR_DIR` at call time, so `withTenant` points them at the tenant, runs the handler, and restores. Safe ONLY because every handler is synchronous (one event-loop turn); `withTenant` throws on a handler that returns a promise. Recall keeps one sqlite handle per path, LRU-capped at 64.
+- **Indexing** is confined to `<workspace-root>/<tenant>` after resolving symlinks (`confineRoot`), and disabled without `--workspace-root`. A code graph query never falls back to the server's cwd: it takes `project` or the tenant's only project.
+- **Bounds**: body cap (413 with `connection: close`), unknown body fields refused, every list paginated (`limit` <= 100, opaque `cursor`, scan depth 1000), rendered text capped at 256 KB with `truncated: true`. Grep is always a literal match: a caller-supplied regex is a backtracking hazard on a shared server.
+- **Error codes**: unauthorized, missing_tenant, invalid_tenant, not_found, method_not_allowed, unsupported_media_type, invalid_json, invalid_body, invalid_cursor, payload_too_large, recall_unavailable, not_indexed, project_not_found, project_required, indexing_disabled, forbidden_root, not_stored, internal.
+- **Routes** (POST JSON unless noted): `GET /v1/health`, `GET /v1/stats`, `/v1/recall/{search,get,timeline,remember,forget}`, `/v1/codegraph/{index,projects,search,architecture,ask,trace,skeleton,map,grep}`, `/v1/compress`, `/v1/retrieve`. Schemas are the `ROUTES` table in `src/serve/routes.ts`.
+- **Scaling**: one request at a time per process (the stores are synchronous; an index of a large repo blocks that process). Replicas are fine for reads, but recall (sqlite, WAL) and the code graph index are SINGLE-WRITER PER TENANT: route each tenant to one replica (sticky by tenant id), and never put the data dir on NFS/SMB, where sqlite locking is unreliable. Recall needs the Bun binary (bun:sqlite); under Node, recall routes answer 503 `recall_unavailable`.

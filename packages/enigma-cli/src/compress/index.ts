@@ -20,6 +20,9 @@ import { estimateTokens } from "./tokens";
 import { ccrMarker, recordStats, retrieve, store } from "./ccr";
 
 export type { ContentType } from "./detect";
+
+/** Every content type a caller may force instead of auto-detection (MCP schema, `enigma serve`). */
+export const CONTENT_TYPES: readonly ContentType[] = ["json", "code", "log", "diff", "markdown", "text"];
 export type { CcrStats, SourceStats, HistoryPoint } from "./ccr";
 export { retrieve, readStats, readHistory, clearCcr, ccrCacheStats } from "./ccr";
 

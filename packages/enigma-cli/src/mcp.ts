@@ -27,11 +27,10 @@ import * as cgQuery from "./codegraph-query";
 import type { ContentType } from "./compress";
 import * as cgFormat from "./codegraph-format";
 import { OBSERVATION_TYPES } from "./recall/types";
-import { compress, retrieve, readStats } from "./compress";
+import { CONTENT_TYPES, compress, retrieve, readStats } from "./compress";
 import { indexProject, listProjects, searchGraph, codeGraphArchitecture, ensureProjectForCwd } from "./codegraph";
 
 const PROTOCOL_VERSION = "2025-06-18";
-const CONTENT_TYPES: ContentType[] = ["json", "code", "log", "diff", "markdown", "text"];
 
 interface JsonRpcRequest {
     jsonrpc?: string;
