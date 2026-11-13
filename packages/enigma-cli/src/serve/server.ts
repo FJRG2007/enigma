@@ -95,11 +95,11 @@ export function createServeHandler(options: ServeOptions): (req: IncomingMessage
                 if (method !== "GET") return fail(res, 405, "method_not_allowed", "use GET");
                 return sendJson(res, 200, { status: "ok", service: "enigma-serve", version: options.version, recall: recallAvailable() }, SECURITY_HEADERS);
             }
-            const route = ROUTES[path];
-            if (!route) return fail(res, 404, "not_found", `no route ${path}`);
             if (!tokenMatches(token(), bearerOf(req.headers.authorization))) {
                 return fail(res, 401, "unauthorized", "missing or wrong bearer token");
             }
+            const route = ROUTES[path];
+            if (!route) return fail(res, 404, "not_found", `no route ${path}`);
             if (method !== route.method) return fail(res, 405, "method_not_allowed", `use ${route.method}`);
             const tenantHeader = req.headers["x-enigma-tenant"];
             const tenantId = Array.isArray(tenantHeader) ? undefined : tenantHeader;
@@ -119,9 +119,9 @@ export function createServeHandler(options: ServeOptions): (req: IncomingMessage
                 body = parsed.value;
             }
 
-            const ctx: RouteContext = { tenant, workspaceRoot, maxText: options.maxText };
             const dir = tenantDir(options.dataDir, tenant);
-            const result = withTenant(dir, () => route.run(body, ctx));
+            const ctx: RouteContext = { tenant, workspaceRoot, maxText: options.maxText, dir };
+            const result = route.runAsync ? await route.runAsync(body, ctx) : withTenant(dir, () => route.run(body, ctx));
             return sendJson(res, 200, result ?? null, SECURITY_HEADERS);
         } catch (err) {
             if (err instanceof ServeError) return fail(res, err.status, err.code, err.message);

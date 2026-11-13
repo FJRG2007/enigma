@@ -41,15 +41,18 @@ export function tenantDir(dataDir: string, id: string): string {
 
 const OVERRIDES = ["ENIGMA_RECALL_DIR", "ENIGMA_CODEGRAPH_DIR", "ENIGMA_CCR_DIR"] as const;
 
+/** The store overrides that root every store in the tenant's directory. */
+export function tenantEnv(dir: string): Record<(typeof OVERRIDES)[number], string> {
+    return { ENIGMA_RECALL_DIR: join(dir, "recall"), ENIGMA_CODEGRAPH_DIR: join(dir, "codegraph"), ENIGMA_CCR_DIR: join(dir, "ccr") };
+}
+
 /**
  * Run `fn` with every store rooted in the tenant's directory, then restore the environment
  * exactly as it was. Synchronous by contract (see the module comment).
  */
 export function withTenant<T>(dir: string, fn: () => T): T {
     const saved = OVERRIDES.map((k) => [k, process.env[k]] as const);
-    process.env.ENIGMA_RECALL_DIR = join(dir, "recall");
-    process.env.ENIGMA_CODEGRAPH_DIR = join(dir, "codegraph");
-    process.env.ENIGMA_CCR_DIR = join(dir, "ccr");
+    Object.assign(process.env, tenantEnv(dir));
     try {
         const out = fn();
         if (out && typeof (out as { then?: unknown; }).then === "function") throw new Error("withTenant: handlers must be synchronous");

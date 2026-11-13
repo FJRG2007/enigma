@@ -65,13 +65,14 @@ async function npmLatest(name: string): Promise<string | null> {
 export async function refreshUpdateStatus(cliVersion: string): Promise<void> {
     const pkgs = installedPackages(cliVersion);
     const standalone = release.installMethod() === "standalone";
-    let sums: Map<string, string> | null | undefined;
-    const releaseLatest = (name: string): string | null => {
-        if (sums === undefined) { try { sums = release.fetchReleaseSums(undefined, FETCH_TIMEOUT_MS / 1000).sums; } catch { sums = null; } }
-        return sums ? release.packageAsset(sums, name)?.version ?? null : null;
+    let sums: Promise<Map<string, string> | null> | undefined;
+    const releaseLatest = async (name: string): Promise<string | null> => {
+        sums ??= release.fetchLatestSumsAsync(FETCH_TIMEOUT_MS).catch(() => null);
+        const got = await sums;
+        return got ? release.packageAsset(got, name)?.version ?? null : null;
     };
     const packages = await Promise.all(pkgs.map(async (p) => {
-        const latest = (standalone ? null : await npmLatest(p.name)) ?? releaseLatest(p.name);
+        const latest = (standalone ? null : await npmLatest(p.name)) ?? await releaseLatest(p.name);
         return { ...p, latest, hasUpdate: !!latest && isNewer(latest, p.installed) };
     }));
     const status: UpdateStatus = { checkedAt: Date.now(), packages, available: packages.some((p) => p.hasUpdate) };

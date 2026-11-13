@@ -3,13 +3,15 @@
  * MCP server gives a local agent, as JSON over HTTP for a host with no CLI home (a chat backend).
  *
  * Every handler is synchronous and runs inside withTenant, so the stores it touches are the
- * calling tenant's and nobody else's. Handlers validate their body with an explicit schema,
+ * calling tenant's and nobody else's. Indexing is the one exception: it runs in a child process
+ * given the tenant's store overrides directly (see index-job.ts). Handlers validate their body with an explicit schema,
  * cap every list they return, and throw ServeError with a stable code for anything the caller
  * can act on.
  */
 
 import * as recall from "../recall";
-import { confineRoot } from "./tenant";
+import { runIndexJob } from "./index-job";
+import { confineRoot, tenantEnv } from "./tenant";
 import * as cgQuery from "../codegraph-query";
 import * as cgFormat from "../codegraph-format";
 import { ccrCacheStats } from "../compress/ccr";
@@ -17,7 +19,7 @@ import { parseBody, type Schema } from "./schema";
 import { OBSERVATION_TYPES } from "../recall/types";
 import { compress, retrieve, readStats } from "../compress";
 import { CONTENT_TYPES, type ContentType } from "../compress";
-import { codeGraphArchitecture, indexProject, listProjects, searchGraph } from "../codegraph";
+import { codeGraphArchitecture, listProjects, searchGraph } from "../codegraph";
 
 /** An error the client can act on: an HTTP status plus a stable machine code. */
 export class ServeError extends Error {
@@ -34,14 +36,36 @@ export interface RouteContext {
     workspaceRoot: string | null;
     /** Largest `text` a response may carry, in characters. */
     maxText: number;
+    /** The tenant's data directory, which every store of this request is rooted in. */
+    dir: string;
 }
 
-export interface Route {
+interface RouteBase {
     method: "GET" | "POST";
     /** Request-body schema; GET routes take none. */
     schema?: Schema;
-    run(body: Record<string, unknown>, ctx: RouteContext): unknown;
 }
+
+/** Runs inside withTenant, in one turn of the event loop. */
+interface SyncRoute extends RouteBase {
+    run(body: Record<string, unknown>, ctx: RouteContext): unknown;
+    runAsync?: never;
+}
+
+/**
+ * Work too slow for the request turn, run outside withTenant. It must reach the tenant's stores
+ * only through `ctx.dir` (never process.env, which other requests swap meanwhile).
+ */
+interface AsyncRoute extends RouteBase {
+    run?: never;
+    runAsync(body: Record<string, unknown>, ctx: RouteContext): Promise<unknown>;
+}
+
+export type Route = SyncRoute | AsyncRoute;
+
+/** Index jobs running now: one per tenant, and a few at most across the server. */
+const indexing = new Set<string>();
+const MAX_INDEX_JOBS = 2;
 
 /** Most items one page of a list may hold, and the deepest a cursor may reach. */
 const PAGE_MAX = 100;
@@ -174,11 +198,14 @@ export const ROUTES: Record<string, Route> = {
     "/v1/codegraph/index": {
         method: "POST",
         schema: { root: { type: "string", max: 1000, required: true } },
-        run(b, ctx) {
+        async runAsync(b, ctx) {
             if (!ctx.workspaceRoot) throw new ServeError(403, "indexing_disabled", "this server was started without --workspace-root, so it indexes nothing");
             const root = confineRoot(ctx.workspaceRoot, ctx.tenant, b.root as string);
             if (!root) throw new ServeError(403, "forbidden_root", "root must be an existing directory inside this tenant's workspace");
-            return indexProject(root);
+            if (indexing.has(ctx.tenant)) throw new ServeError(409, "index_running", "an index for this tenant is already running - retry when it finishes");
+            if (indexing.size >= MAX_INDEX_JOBS) throw new ServeError(503, "busy", "the server is indexing for other tenants - retry shortly");
+            indexing.add(ctx.tenant);
+            try { return await runIndexJob(root, tenantEnv(ctx.dir)); } finally { indexing.delete(ctx.tenant); }
         },
     },
     "/v1/codegraph/projects": {

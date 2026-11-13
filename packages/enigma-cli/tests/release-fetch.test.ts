@@ -185,3 +185,12 @@ test("version check: npm installs still prefer the registry, standalone never as
         registry.close();
     }
 });
+
+test("the async SHA256SUMS read the dashboard uses finds package versions without blocking", async () => {
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-7.8.9.tgz": cliTarball("7.8.9"), "enigmax-dashboard-0.3.0.tgz": dashTarball("0.3.0") }));
+    const sums = await release.fetchLatestSumsAsync(5000);
+    expect(release.packageAsset(sums, "enigma-cli")?.version).toBe("7.8.9");
+    expect(release.packageAsset(sums, "@enigmax/dashboard")?.version).toBe("0.3.0");
+    process.env.ENIGMA_DOWNLOAD_BASE = "http://example.invalid/r";
+    await expect(release.fetchLatestSumsAsync(5000)).rejects.toThrow(/non-HTTPS/);
+});

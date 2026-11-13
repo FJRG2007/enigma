@@ -3301,6 +3301,13 @@ export async function run(argv: string[]): Promise<void> {
         const { runCiWatchHook } = await import("./ci-watch");
         process.exit(runCiWatchHook(payload, argv[1] || "PostToolUse"));
     }
+    // Hidden: one `enigma serve` index job. The server runs it in a child so a large tree never
+    // stalls the requests of every other tenant; stdout carries the project entry as JSON.
+    if (argv[0] === "__codegraph-index") {
+        const { indexProject } = await import("./codegraph");
+        process.stdout.write(JSON.stringify(indexProject(argv[1] || "")));
+        return;
+    }
     if (argv[0] === "__ci-watch") {
         const { runCiWatchPoll } = await import("./ci-watch");
         process.exit(await runCiWatchPoll(argv[1] || "", argv[2] || ""));

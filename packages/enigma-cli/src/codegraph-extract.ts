@@ -15,8 +15,8 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { extname, join, relative, resolve } from "node:path";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { extname, join, relative, resolve, sep } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { DOC_LANG_BY_EXT, DOC_LANGS, extractDocFile } from "./codegraph-extract-docs";
 
 /** Code kinds, then the doc/schema/config ones: a markdown `section`, a SQL or Prisma `table`, a YAML/TOML `key`. */
@@ -425,7 +425,7 @@ export function extractFile(lang: string, content: string): { symbols: CodeSymbo
  */
 function gitList(root: string, args: string[]): string | null {
     try {
-        return execFileSync("git", ["-C", root, "ls-files", ...args, "-z"], {
+        return execFileSync("git", ["-c", "core.fsmonitor=false", "-C", root, "ls-files", ...args, "-z"], {
             encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
         });
     } catch { return null; }
@@ -492,6 +492,18 @@ function walk(root: string): { files: string[]; truncated: boolean; } {
     return { files: ordered, truncated: code.length >= MAX_FILES || visited >= MAX_ENTRIES };
 }
 
+/**
+ * Read a file of the tree at `root` only when its real path stays inside that tree. git lists a
+ * committed symlink as an ordinary entry, so following it blindly would let a link such as
+ * `leak.ts -> /etc/passwd` put any file on the disk into the graph and the source it serves.
+ */
+export function readInsideRoot(root: string, path: string): string {
+    const base = realpathSync(root);
+    const real = realpathSync(resolve(root, path));
+    if (real !== base && !real.startsWith(base.endsWith(sep) ? base : base + sep)) throw new Error(`${path} resolves outside ${root}`);
+    return readFileSync(real, "utf8");
+}
+
 /** Repo-relative, forward-slashed path - the one path form every stored id and query uses. */
 export function relPath(root: string, abs: string): string {
     return relative(root, abs).split("\\").join("/");
@@ -515,7 +527,7 @@ export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; 
         try { const st = statSync(abs); size = st.size; mtimeMs = st.mtimeMs; } catch { continue; }
         if (size > MAX_FILE_BYTES) { truncated = true; continue; }
         let content: string;
-        try { content = readFileSync(abs, "utf8"); } catch { continue; }
+        try { content = readInsideRoot(root, abs); } catch { continue; }
         const lang = LANG_BY_EXT[extname(abs).toLowerCase()];
         const { symbols, imports } = extractFile(lang, content);
         files.push({

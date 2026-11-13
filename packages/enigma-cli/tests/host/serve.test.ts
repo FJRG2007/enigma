@@ -5,6 +5,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
+import { spawnSync } from "node:child_process";
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 
@@ -83,6 +84,11 @@ test("bodies are validated against the route schema", async () => {
     expect((await call("/v1/nope", {})).status).toBe(404);
 });
 
+test("an unauthenticated client cannot tell real routes from unknown ones", async () => {
+    expect((await call("/v1/nope", {}, { token: "" })).status).toBe(401);
+    expect((await call("/v1/stats", undefined, { token: "" })).status).toBe(401);
+});
+
 test("an oversize body is answered 413", async () => {
     const r = await call("/v1/compress", { content: "a".repeat(10_000) });
     expect(r.status).toBe(413);
@@ -101,10 +107,35 @@ test("indexing is confined to the tenant's own workspace", async () => {
     expect((await call("/v1/codegraph/ask", { query: "hello" }, { tenant: "other" })).json.error.code).toBe("not_indexed");
 });
 
+test("an index runs off the request loop, one per tenant at a time", async () => {
+    const first = call("/v1/codegraph/index", { root: "repo" });
+    const health = await fetch(`${base}/v1/health`);
+    expect(health.status).toBe(200);
+    const second = await call("/v1/codegraph/index", { root: "repo" });
+    expect(second.json.error.code).toBe("index_running");
+    expect((await first).status).toBe(200);
+});
+
 test("a symlink inside the workspace cannot point the indexer outside it", () => {
     const link = join(workspace, "acme", "escape");
     try { symlinkSync(root, link, "junction"); } catch { return; } // no symlink privilege here
     expect(tenant.confineRoot(workspace, "acme", "escape")).toBeNull();
+});
+
+test("a symlinked file never lets the graph read outside the indexed root", async () => {
+    const secret = join(root, "secret.ts");
+    writeFileSync(secret, "export const leakedSecretValue = 1;\n");
+    const repo = join(workspace, "acme", "repo");
+    try { symlinkSync(secret, join(repo, "src", "leak.ts"), "file"); } catch { return; } // no symlink privilege here
+    // Tracked by git, so the listing the indexer prefers names the link like any other file.
+    spawnSync("git", ["init", "-q", repo]);
+    spawnSync("git", ["-C", repo, "add", "-A"]);
+    const { readInsideRoot } = await import("../../src/codegraph-extract");
+    expect(() => readInsideRoot(repo, "src/leak.ts")).toThrow(/outside/);
+    expect(readInsideRoot(repo, "src/a.ts")).toContain("hello");
+    expect((await call("/v1/codegraph/index", { root: "repo" })).status).toBe(200);
+    const grep = await call("/v1/codegraph/grep", { pattern: "leakedSecretValue" });
+    expect(grep.json.text ?? "").not.toContain("leakedSecretValue = 1");
 });
 
 test("rendered text is capped and says so", async () => {

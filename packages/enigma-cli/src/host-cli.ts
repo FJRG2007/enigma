@@ -51,8 +51,9 @@ export interface HostOptions {
 export function skillsListJson(agent: string | undefined, version: string): number {
     if (agent && !acct.isToolName(agent)) return fail("unknown_agent", `Unknown agent '${agent}'. Use one of: ${acct.TOOL_NAMES.join(", ")}.`, true);
     try {
+        const entries = new Map(skillsMod.inspectSkills().map((e) => [e.name, e]));
         const skills = skillsMod.listSkillsStatus().map((s) => {
-            const entry = skillsMod.inspectSkills().find((e) => e.name === s.name);
+            const entry = entries.get(s.name);
             return {
                 name: s.name,
                 description: s.description,

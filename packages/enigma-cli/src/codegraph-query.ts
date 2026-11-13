@@ -14,9 +14,8 @@
  * it was at the last index. Rendering lives in codegraph-format.ts; this module returns data.
  */
 
-import { join } from "node:path";
 import * as cg from "./codegraph";
-import { readFileSync } from "node:fs";
+import { readInsideRoot } from "./codegraph-extract";
 import * as rank from "./codegraph-rank";
 
 // --- shared plumbing -----------------------------------------------------------------
@@ -74,7 +73,7 @@ const MAX_SPAN_LINES = 80;
 
 function sliceSpan(root: string, path: string, from: number, to: number): string | null {
     try {
-        const lines = readFileSync(join(root, path), "utf8").split("\n");
+        const lines = readInsideRoot(root, path).split("\n");
         const start = Math.max(1, from);
         const end = Math.min(lines.length, to);
         const slice = lines.slice(start - 1, end);
@@ -684,7 +683,7 @@ export function codeGraphGrep(pattern: string, opts: GrepOptions = {}): GrepResu
 
     for (const file of files) {
         let text: string;
-        try { text = readFileSync(join(loaded.graph.root, file.path), "utf8"); } catch { truncatedFiles++; continue; }
+        try { text = readInsideRoot(loaded.graph.root, file.path); } catch { truncatedFiles++; continue; }
         const spans = spansByFile.get(file.path) ?? [];
         const lines = text.split("\n");
         for (let i = 0; i < lines.length; i++) {

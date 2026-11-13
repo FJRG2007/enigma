@@ -21,6 +21,8 @@
  */
 
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -127,6 +129,21 @@ export function fetchReleaseSums(version?: string, timeoutSec = 30): ReleaseSums
     if (version && cli.version !== version) throw new Error(`release at ${base} is enigma-cli ${cli.version}, not ${version}`);
     if (!process.env.ENIGMA_DOWNLOAD_BASE) base = `${RELEASES_URL}/download/v${cli.version}`;
     return { base, version: cli.version, sums };
+}
+
+/**
+ * The latest release's SHA256SUMS without blocking the event loop, for a long-lived server
+ * (the dashboard) that only reads version numbers from it and must not stall on the network.
+ */
+export async function fetchLatestSumsAsync(timeoutMs = 30000): Promise<Map<string, string>> {
+    if (process.env.ENIGMA_OFFLINE === "1") throw new Error("offline (ENIGMA_OFFLINE=1)");
+    const url = `${releaseBase()}/${SUMS_FILE}`;
+    assertAllowedUrl(url);
+    if (/^file:\/\//i.test(url)) return parseSums(await readFile(fileURLToPath(url), "utf8"));
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { "user-agent": "enigma-cli-update-check" } });
+    if (!/^https:\/\//i.test(res.url || url)) throw new Error(`refusing non-HTTPS redirect: ${res.url}`);
+    if (!res.ok) throw new Error(`download failed: ${url} (HTTP ${res.status})`);
+    return parseSums(await res.text());
 }
 
 /** The latest enigma-cli version published as a GitHub release, or null when unreachable. */

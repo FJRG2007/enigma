@@ -26,7 +26,7 @@ import { inDegree, tokenize } from "./codegraph-rank";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DOC_LANGS, DOC_REFERENCE_LANGS, markdownCodeMentions } from "./codegraph-extract-docs";
 import { WALK_RELATIONS, type BodyIndex, type CodeEdge, type EdgeRelation, type GraphNode } from "./codegraph-types";
-import { relPath, scanFiles, statSourceFiles, type CodeFile, type CodeSymbol, type SymbolKind } from "./codegraph-extract";
+import { readInsideRoot, relPath, scanFiles, statSourceFiles, type CodeFile, type CodeSymbol, type SymbolKind } from "./codegraph-extract";
 
 export { scanFiles } from "./codegraph-extract";
 export { WALK_RELATIONS } from "./codegraph-types";
@@ -185,7 +185,7 @@ const INDEX_ORDER = orders(INDEX_NAMES, LANG_INDEX);
 
 /** The module path of a Go project, read from go.mod - the only non-guessy way to tell its own packages from the ecosystem's. */
 function goModulePath(root: string): string | null {
-    try { return /^\s*module\s+(\S+)/m.exec(readFileSync(join(root, "go.mod"), "utf8"))?.[1] ?? null; } catch { return null; }
+    try { return /^\s*module\s+(\S+)/m.exec(readInsideRoot(root, "go.mod"))?.[1] ?? null; } catch { return null; }
 }
 
 /**
@@ -447,7 +447,7 @@ function buildEdges(
 
     for (const f of files) {
         let content = "";
-        try { content = readFileSync(join(root, f.path), "utf8"); } catch { continue; }
+        try { content = readInsideRoot(root, f.path); } catch { continue; }
         const spans = spansByFile.get(f.path) ?? [];
         const declLines = new Set(f.symbols.map((s) => s.line));
         const lines = content.split("\n");
