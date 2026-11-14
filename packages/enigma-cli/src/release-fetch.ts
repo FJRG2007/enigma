@@ -21,10 +21,10 @@
  */
 
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve, sep } from "node:path";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";

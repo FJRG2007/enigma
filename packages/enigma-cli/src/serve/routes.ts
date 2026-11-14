@@ -11,15 +11,14 @@
 
 import * as recall from "../recall";
 import { runIndexJob } from "./index-job";
-import { confineRoot, tenantEnv } from "./tenant";
 import * as cgQuery from "../codegraph-query";
 import * as cgFormat from "../codegraph-format";
 import { ccrCacheStats } from "../compress/ccr";
+import { confineRoot, tenantEnv } from "./tenant";
 import { parseBody, type Schema } from "./schema";
 import { OBSERVATION_TYPES } from "../recall/types";
-import { compress, retrieve, readStats } from "../compress";
-import { CONTENT_TYPES, type ContentType } from "../compress";
 import { codeGraphArchitecture, listProjects, searchGraph } from "../codegraph";
+import { CONTENT_TYPES, compress, readStats, retrieve, type ContentType } from "../compress";
 
 /** An error the client can act on: an HTTP status plus a stable machine code. */
 export class ServeError extends Error {
