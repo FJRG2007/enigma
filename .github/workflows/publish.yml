@@ -24,6 +24,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      npm:
+        description: Also publish to npm (off ships the GitHub Release only)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -231,9 +236,10 @@ jobs:
 
   # npm runs after the Release exists (the npm package downloads its binary from it) and only
   # when the token authenticated. A failure here is red on its own job; the Release is already out.
+  # A manual run with npm unticked skips it: the Release ships without touching the npm account.
   npm:
     needs: [npm-auth, release]
-    if: needs.npm-auth.outputs.ok == 'true'
+    if: needs.npm-auth.outputs.ok == 'true' && (github.event_name != 'workflow_dispatch' || inputs.npm)
     runs-on: ubuntu-latest
     permissions:
       contents: read
