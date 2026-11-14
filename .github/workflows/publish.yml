@@ -201,7 +201,8 @@ jobs:
           for ws in enigma-cli @enigmax/dashboard @enigmax/helio @enigmax/orion @enigmax/vega @enigmax/linter; do
             npm pack --workspace "$ws" --pack-destination release-assets >/dev/null
           done
-          tar -tzf release-assets/enigma-cli-*.tgz | grep -qx 'package/bin/checksums.json' || { echo "checksums.json missing from the enigma-cli tarball"; exit 1; }
+          # Not `grep -q`: it exits on the first match, tar dies of SIGPIPE, and pipefail fails the step.
+          tar -tzf release-assets/enigma-cli-*.tgz | grep -x 'package/bin/checksums.json' >/dev/null || { echo "checksums.json missing from the enigma-cli tarball"; exit 1; }
           (cd release-assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
 
       - name: Keep checksums.json for the npm job
