@@ -19,7 +19,7 @@ process.env.HOME = HOME;
 delete process.env.ENIGMA_OFFLINE;
 
 const release = await import("../src/release-fetch");
-const { latestVersion } = await import("../src/update");
+const { latestVersion, runStandaloneUpdate } = await import("../src/update");
 
 afterAll(() => { rmSync(HOME, { recursive: true, force: true }); });
 
@@ -164,6 +164,19 @@ test("a standalone update with a tampered binary leaves current untouched", () =
     expect(() => release.installStandalone(root)).toThrow(/Checksum mismatch/);
     expect(release.currentStandaloneVersion(root)).toBe("1.0.1");
     expect(existsSync(join(root, "1.0.2"))).toBe(false);
+});
+
+test("enigma update on a standalone install already on the latest release downloads nothing", () => {
+    const root = join(HOME, "standalone");
+    // A binary whose checksum cannot match: downloading it would fail the update.
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-1.0.1.tgz": cliTarball("1.0.1"), [binaryAsset]: Buffer.from("x") }, { [binaryAsset]: "f".repeat(64) }));
+    const lines: string[] = [];
+    const log = console.log;
+    console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
+    try { expect(runStandaloneUpdate(root)).toBe(false); }
+    finally { console.log = log; }
+    expect(lines.join("\n")).toContain("already the latest release");
+    expect(release.currentStandaloneVersion(root)).toBe("1.0.1");
 });
 
 test("version check: npm installs fall back to the GitHub release when the registry is down", async () => {

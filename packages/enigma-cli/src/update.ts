@@ -269,7 +269,14 @@ export function runStandaloneUpdate(root: string | null = standaloneRoot()): boo
         return false;
     }
     try {
-        const version = release.installStandalone(root);
+        // The version comes straight from the release's SHA256SUMS, with no registry cache that
+        // could be stale, so an install already on it is current: skip re-downloading the binary.
+        const latest = release.fetchReleaseSums();
+        if (release.currentStandaloneVersion(root) === latest.version) {
+            console.log(`enigma-cli ${latest.version} is already the latest release (standalone, ${root}).`);
+            return false;
+        }
+        const version = release.installStandalone(root, undefined, latest);
         try { rmSync(cacheFile(), { force: true }); } catch { /* best-effort */ }
         console.log(`Updated to enigma-cli ${version} (standalone, ${root}).`);
         return true;
