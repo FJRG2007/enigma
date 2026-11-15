@@ -685,6 +685,54 @@ export function mirrorClaudeTrust(accountDir: string): boolean {
 }
 
 /**
+ * Claude Code's built-in terse output style, the `outputStyle` value in settings.json.
+ * Verified in the 2.1.325 client, which ships it beside Explanatory and Learning.
+ */
+const CONCISE_STYLE = "Concise";
+
+/**
+ * Puts Claude Code in its terse posture: the Concise output style in `settingsPath` and
+ * verbose output off in `statePath` (the client keeps `verbose` in `.claude.json`, written
+ * by its /config "Verbose output" toggle, not in settings.json). Off removes the style only
+ * when it is still the one enigma wrote and leaves `verbose` alone, since false is also the
+ * client's default and a user's own value. Refuses a file it cannot parse rather than
+ * replacing it: `.claude.json` holds the login and per-project state. Returns true when a
+ * file changed, so the sync path stays a no-op once applied.
+ */
+export function applyClaudeConcise(settingsPath: string, statePath: string, on: boolean): boolean {
+    let changed = false;
+    const settings = existsSync(settingsPath) ? readJson<Record<string, unknown>>(settingsPath) : {};
+    if (settings !== null) {
+        if (on && settings.outputStyle !== CONCISE_STYLE) {
+            writeClaudeSettings(settingsPath, { ...settings, outputStyle: CONCISE_STYLE });
+            changed = true;
+        } else if (!on && settings.outputStyle === CONCISE_STYLE) {
+            const rest = { ...settings };
+            delete rest.outputStyle;
+            writeClaudeSettings(settingsPath, rest);
+            changed = true;
+        }
+    }
+    if (!on) return changed;
+    const state = existsSync(statePath) ? readJson<Record<string, unknown>>(statePath) : {};
+    if (state !== null && state.verbose !== false) {
+        writeClaudeSettings(statePath, { ...state, verbose: false });
+        changed = true;
+    }
+    return changed;
+}
+
+/** Applies or removes the terse posture in the default account's Claude files. */
+export function setClaudeConcise(on: boolean): boolean {
+    return applyClaudeConcise(claudeSettingsPath("global"), claudeStatePath(), on);
+}
+
+/** Mirrors the terse posture into a managed account's config dir, presence and absence. */
+export function mirrorClaudeConcise(accountDir: string): boolean {
+    return applyClaudeConcise(join(accountDir, "settings.json"), join(accountDir, ".claude.json"), readConfig().config.claudeConcise);
+}
+
+/**
  * Mirror the enigma-managed settings.json knobs from the user's global Claude
  * settings into a managed account's config dir, so an account launched via
  * `enigma claude <account>` behaves like the default one. Mirrored knobs:

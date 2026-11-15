@@ -6,6 +6,7 @@
 
 import * as conf from "./config";
 import * as p from "@clack/prompts";
+import * as claudeCfg from "./claude";
 import { setKimiTrust } from "./kimi";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -20,7 +21,6 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { getTool, listAccounts } from "./accounts";
 import { dirname, join, resolve } from "node:path";
-import { ensureClaudeBypassGuard } from "./claude";
 import { applyBrowserGuard } from "./browser-guard";
 import { claudeGlobalSettings } from "./claude-hooks";
 import { applyPostEditWiring } from "./post-edit-deploy";
@@ -44,7 +44,6 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync
 import { applyBrowserGuardGlobal, CODEX_TRUST_NOTICE, mirrorBrowserGuardWiring } from "./browser-guard-deploy";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
-import { claudeSettingsPath, disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeSearchGuard, setClaudeTrust } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -1273,29 +1272,32 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const claudeScope = chosenAgents.some((a) => a.name === "claude") ? scope : null;
     const applyClaudeConfig = (): void => {
         if (!claudeScope || opts.dryRun) return;
-        if (!skipped("claude-attribution") && disableClaudeAttribution(claudeScope)) {
+        if (!skipped("claude-attribution") && claudeCfg.disableClaudeAttribution(claudeScope)) {
             reporter.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
         }
-        if (!skipped("browser-guard") && applyBrowserGuard(claudeSettingsPath(claudeScope), true) === "changed") {
+        if (!skipped("browser-guard") && applyBrowserGuard(claudeCfg.claudeSettingsPath(claudeScope), true) === "changed") {
             reporter.info("Claude Code: a shell command that would open a visible browser window is now refused (agents test headless).");
         }
-        if (!skipped("git-push-guard") && applyPushGuard(claudeSettingsPath(claudeScope), true) === "changed") {
+        if (!skipped("git-push-guard") && applyPushGuard(claudeCfg.claudeSettingsPath(claudeScope), true) === "changed") {
             reporter.info("Claude Code: a git push that would erase commits other people pushed is now refused.");
         }
-        if (!skipped("claude-survey") && disableClaudeFeedbackSurvey(claudeScope)) {
+        if (!skipped("claude-survey") && claudeCfg.disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
-        if (!opts.noStatusline && !skipped("statusline") && conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
+        if (!opts.noStatusline && !skipped("statusline") && conf.readConfig().config.statusline && claudeCfg.enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
-        if (!skipped("search-guard") && conf.readConfig().config.searchGuard && setClaudeSearchGuard(claudeScope, true).changed) {
+        if (!skipped("search-guard") && conf.readConfig().config.searchGuard && claudeCfg.setClaudeSearchGuard(claudeScope, true).changed) {
             reporter.info("Claude Code: a 'find' across the whole disk is now refused (undo with 'enigma config search-guard off').");
         }
         // Workspace trust: pre-answer the "do you trust this folder" prompt (default on).
         // Only ever applied when the flag is on - a user who turned it off keeps the prompt,
         // and the workspaces they already trusted are left alone either way.
-        if (!skipped("claude-trust") && conf.readConfig().config.claudeTrust && !getClaudeTrust() && setClaudeTrust(true)) {
+        if (!skipped("claude-trust") && conf.readConfig().config.claudeTrust && !claudeCfg.getClaudeTrust() && claudeCfg.setClaudeTrust(true)) {
             reporter.info("Claude Code: workspace trust pre-answered, so it stops asking in every folder (undo with 'enigma config claude-trust off').");
+        }
+        if (!skipped("claude-concise") && conf.readConfig().config.claudeConcise && claudeCfg.setClaudeConcise(true)) {
+            reporter.info("Claude Code: Concise output style on, verbose output off (undo with 'enigma config claude-concise off').");
         }
     };
 
@@ -1784,21 +1786,21 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // bypass, and like the rest of this block they are settings.json wiring an existing
         // install only receives here. Silent: nothing the agent is allowed to do changes except
         // wiping a machine or force-pushing main.
-        if (agent.name === "claude" && hasDeployment(agent, "global")) ensureClaudeBypassGuard("global");
+        if (agent.name === "claude" && hasDeployment(agent, "global")) claudeCfg.ensureClaudeBypassGuard("global");
         // Same reasoning: the status bar is on by default and is settings.json WIRING, not a
         // file the copy loop above touches, so an existing deployment has to pick it up on
         // update rather than only on an explicit install. Gated on the config flag, so a bar
         // the user turned off stays off, and `enableClaudeStatusline` never replaces a custom
         // one - which makes this safe to re-run on every sync.
         if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.statusline
-            && enableClaudeStatusline("global")) {
+            && claudeCfg.enableClaudeStatusline("global")) {
             notices.push("Status bar is on: Claude Code now shows the enigma badge, context and cost, plus live gate progress during a run. Turn off with 'enigma config statusline off'.");
         }
         // Same again for the whole-machine-search refusal: deny rules are settings.json wiring
         // rather than a copied file, so an existing install only picks them up here. Gated on
         // the flag, and the write touches nothing but enigma's own entries.
         if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.searchGuard
-            && setClaudeSearchGuard("global", true).changed) {
+            && claudeCfg.setClaudeSearchGuard("global", true).changed) {
             notices.push("Whole-machine searches are refused: a 'find' from /, your home or a drive root is blocked before it starts. Turn off with 'enigma config search-guard off'.");
         }
         // Workspace trust, same reasoning again - and this is the path that makes the setting
@@ -1809,10 +1811,16 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // the notice is gated on the blanket not being in place yet, while the per-workspace
         // entry keeps being added quietly as new directories show up.
         if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.claudeTrust) {
-            const firstTime = !getClaudeTrust();
-            if (setClaudeTrust(true) && firstTime) {
+            const firstTime = !claudeCfg.getClaudeTrust();
+            if (claudeCfg.setClaudeTrust(true) && firstTime) {
                 notices.push("Workspace trust is pre-answered: Claude Code no longer asks whether you trust a folder. Turn off with 'enigma config claude-trust off'.");
             }
+        }
+        // The terse posture, same path: settings.json and .claude.json values an existing install
+        // only gains here. Gated on the flag, so a deliberate off stays off.
+        if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.claudeConcise
+            && claudeCfg.setClaudeConcise(true)) {
+            notices.push("Claude Code is set to the Concise output style with verbose output off. Turn off with 'enigma config claude-concise off'.");
         }
         // Kimi's trust prompt, same path and same reasoning. It keys trust by exact directory
         // with no inheritance, so there is nothing to say "already covered" about: the write

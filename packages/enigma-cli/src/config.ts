@@ -198,6 +198,14 @@ export interface EnigmaConfig {
      */
     claudeTrust: boolean;
     /**
+     * Keep Claude Code terse (default on, Claude Code only): its built-in `Concise` output
+     * style (`outputStyle` in settings.json) and verbose output off (`verbose` in
+     * `.claude.json`). Same intent/effect split as `claudeTrust`: this records the choice,
+     * Claude's own files carry the effect, so a deliberate off is never re-applied by the
+     * next install or sync. See applyClaudeConcise in claude.ts.
+     */
+    claudeConcise: boolean;
+    /**
      * Pre-answer Kimi Code's "Trust this folder?" prompt (default on, Kimi Code only). Same
      * intent/effect split as `claudeTrust`, with one difference forced by the client: Kimi
      * keys trust by exact directory and inherits nothing from parents, so the effect is a
@@ -488,7 +496,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, gitPushGuard: true, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, gitPushGuard: true, claudeTrust: true, claudeConcise: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     gateTrivialLines: 20,
     subagentLimit: 2, compactWindow: 400_000, subagentTurns: 60, relay: true, relayAt: 300_000,

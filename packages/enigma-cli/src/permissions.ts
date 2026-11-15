@@ -22,7 +22,7 @@ import { kimiHome, mirrorKimiTrust } from "./kimi";
 import { enigmaHome, isDir, readJson } from "./util";
 import { readConfig, setBypassDisabled } from "./config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
+import { enableClaudeBypass, getClaudeBypass, mirrorClaudeConcise, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
 
 /** Agents that expose a permission-bypass switch. */
 export const BYPASS_SUPPORTED = ["claude", "codex", "opencode", "kimi"];
@@ -145,7 +145,8 @@ export function setBypass(name: string, scope: "global" | "local", on: boolean, 
  * Mirror enigma-managed agent-native settings from the user's default/global
  * config into a managed account's config dir, so `enigma <tool> <account>`
  * behaves like the default account: Claude's settings.json knobs (attribution,
- * bypass, statusline) plus its workspace trust (a second file, `.claude.json`),
+ * bypass, statusline, Concise style) plus its workspace trust and verbose flag (a second
+ * file, `.claude.json`),
  * Codex's approval_policy/sandbox_mode in config.toml, opencode's "*" permission
  * catch-all in opencode.json, and Kimi's default_permission_mode in config.toml.
  * Mirrors presence AND absence (turning a knob off propagates); every other account
@@ -156,6 +157,7 @@ export function mirrorAccountSettings(toolName: string, accountDir: string): voi
         case "claude":
             mirrorClaudeSettings(accountDir);
             mirrorClaudeTrust(accountDir);
+            mirrorClaudeConcise(accountDir);
             return;
         case "codex":
             mirrorTomlKeys(codexConfigPath(), join(accountDir, "config.toml"), ["approval_policy", "sandbox_mode"]);

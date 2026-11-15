@@ -301,6 +301,17 @@ function setTrust(on: boolean, scope: Scope): ApplyResult {
 }
 
 /**
+ * Persist the terse-Claude preference and apply it to Claude's own files now. Same
+ * intent/effect split as `setTrust`: without the flag an off could not be told from a
+ * machine that never had it, and the next install or sync would put the style back.
+ */
+function setConcise(on: boolean, scope: Scope): ApplyResult {
+    const path = conf.setEnigmaToggle("claudeConcise", on, scope);
+    claudeCfg.setClaudeConcise(on);
+    return { path, changed: true };
+}
+
+/**
  * The same for Kimi Code. Turning it ON trusts the current directory immediately, so the
  * setting takes effect where the user is standing rather than only at the next launch;
  * turning it OFF only stops the pre-answer, since a Kimi trust document is per-directory
@@ -532,6 +543,15 @@ const RAW_CATEGORIES: Category[] = [
                 checkValue: (value) => { parseSubagentTurns(value); },
             },
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "shorter replies, sized to the question (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", conf.OUTPUT_STYLES, "full", true),
+            {
+                key: "claude-concise",
+                label: "Concise Claude Code",
+                hint: "Claude Code's Concise output style and verbose output off; Claude Code only; enigma default: on",
+                // verbose lives in Claude's user-global .claude.json; a local write could not reach it.
+                globalOnly: true,
+                read: () => conf.readConfig().config.claudeConcise,
+                write: (value, scope) => setConcise(value, scope),
+            },
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", conf.MINIMAL_CODE_LEVELS, "full", false, "off", true),
             {
                 key: "logo-color-policy",

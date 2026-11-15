@@ -22,6 +22,7 @@ const {
     syncClaudeStatuslineRefresh,
     claudeWorkspaceKey, getClaudeTrust, trustClaudeWorkspaces, untrustClaudeWorkspaces, mirrorClaudeTrust,
     setClaudeSearchGuard, getClaudeSearchGuard, SEARCH_GUARD_DENY,
+    applyClaudeConcise, mirrorClaudeConcise,
 } = await import("../src/claude");
 
 const GLOBAL = join(HOME, ".claude", "settings.json");
@@ -410,4 +411,54 @@ test("turning the search guard off on a file that had nothing else leaves no hus
     // An empty `deny` array and an empty `permissions` object both read as configuration
     // that is there, so neither is left behind.
     expect(JSON.parse(readFileSync(GLOBAL, "utf8")).permissions).toBeUndefined();
+});
+
+test("concise sets the output style and verbose off, keeping every other key", () => {
+    writeJson(STATE, { verbose: true, oauthAccount: { emailAddress: "fixture@example.test" } });
+    expect(applyClaudeConcise(GLOBAL, STATE, true)).toBe(true);
+    expect(readJson(GLOBAL)).toEqual({ env: { FOO: "bar" }, outputStyle: "Concise" });
+    expect(readJson(STATE)).toEqual({ verbose: false, oauthAccount: { emailAddress: "fixture@example.test" } });
+    // Idempotent: the sync path runs it on every launch.
+    expect(applyClaudeConcise(GLOBAL, STATE, true)).toBe(false);
+});
+
+test("concise replaces another style while on, and off removes only its own", () => {
+    writeJson(GLOBAL, { outputStyle: "Explanatory" });
+    expect(applyClaudeConcise(GLOBAL, STATE, true)).toBe(true);
+    expect(readJson(GLOBAL).outputStyle).toBe("Concise");
+
+    expect(applyClaudeConcise(GLOBAL, STATE, false)).toBe(true);
+    expect(readJson(GLOBAL).outputStyle).toBeUndefined();
+    // verbose false is also the client's default, so off leaves it as it is.
+    expect(readJson(STATE).verbose).toBe(false);
+
+    writeJson(GLOBAL, { outputStyle: "Learning" });
+    expect(applyClaudeConcise(GLOBAL, STATE, false)).toBe(false);
+    expect(readJson(GLOBAL).outputStyle).toBe("Learning");
+});
+
+test("concise never overwrites a file it cannot parse", () => {
+    writeFileSync(STATE, "{ not json");
+    applyClaudeConcise(GLOBAL, STATE, true);
+    expect(readFileSync(STATE, "utf8")).toBe("{ not json");
+    expect(readJson(GLOBAL).outputStyle).toBe("Concise");
+});
+
+test("the concise setting records intent and reaches managed accounts", async () => {
+    const { ALL_SETTINGS } = await import("../src/settings-registry");
+    const setting = ALL_SETTINGS.find((s) => s.key === "claude-concise");
+    expect(setting).toBeDefined();
+    expect(setting!.globalOnly).toBe(true);
+    expect(setting!.read("global")).toBe(true);
+
+    const accountDir = join(HOME, ".enigma", "claude", "concise");
+    mkdirSync(accountDir, { recursive: true });
+    expect(mirrorClaudeConcise(accountDir)).toBe(true);
+    expect(readJson(join(accountDir, "settings.json")).outputStyle).toBe("Concise");
+    expect(readJson(join(accountDir, ".claude.json")).verbose).toBe(false);
+
+    expect(setting!.write(false, "global")).toMatchObject({ changed: true });
+    expect(setting!.read("global")).toBe(false);
+    expect(mirrorClaudeConcise(accountDir)).toBe(true);
+    expect(readJson(join(accountDir, "settings.json")).outputStyle).toBeUndefined();
 });

@@ -540,7 +540,8 @@ Config keys: commit-emoji, update-notifier, auto-sync, share-sessions, shared-st
              compact-window (100k-1000k|auto), subagent-turns (10-500|off),
              output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
-             claude-survey, claude-trust, kimi-trust, gh-telemetry, permission-bypass,
+             claude-survey, claude-trust, claude-concise, kimi-trust, gh-telemetry,
+             permission-bypass,
              bypass-claude, bypass-codex, bypass-opencode, bypass-kimi
 
 Install options:
@@ -636,7 +637,7 @@ Deploy the policy skills, the memory file and the slash commands to your agents.
                           are named after their config key: skills, memory, commands, gate,
                           output-style, minimal-code, dashboard, prompt-secret-guard,
                           statusline, claude-attribution, claude-survey, claude-trust,
-                          kimi-trust, search-guard, browser-guard, git-push-guard
+                          claude-concise, kimi-trust, search-guard, browser-guard, git-push-guard
                           (commit-hooks), gh-telemetry, permission-bypass (bypass), auto-lint,
                           guardrails, trim, code-graph, ci-watch, subagent-limit, relay,
                           verify (stop-hook), compress, recall, mcp

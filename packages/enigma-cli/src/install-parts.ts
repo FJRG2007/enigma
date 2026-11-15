@@ -29,6 +29,7 @@ export const INSTALL_PARTS: readonly InstallPart[] = [
     { name: "claude-attribution", description: "turning off Claude Code commit/PR attribution" },
     { name: "claude-survey", description: "turning off the Claude Code feedback survey" },
     { name: "claude-trust", description: "pre-answering Claude Code workspace trust" },
+    { name: "claude-concise", description: "Claude Code's Concise output style and verbose off" },
     { name: "kimi-trust", description: "pre-answering Kimi Code workspace trust" },
     { name: "search-guard", description: "refusing a find across the whole disk" },
     { name: "browser-guard", description: "refusing shell commands that open a visible browser" },
