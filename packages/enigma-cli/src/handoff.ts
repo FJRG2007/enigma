@@ -70,14 +70,55 @@ function paths(dir: string): { root: string; text: string; meta: string; } {
     return { root, text: join(storeDir(), `${key}.md`), meta: join(storeDir(), `${key}.json`) };
 }
 
-/** Save the handoff for the project containing `dir`. Throws on an empty or oversized page. */
-export function saveHandoff(dir: string, text: string, now = Date.now()): Handoff {
-    const body = text.replace(/^\uFEFF/, "").trim();
-    if (!body) throw new Error("the handoff is empty - write the goal, what is done, what is next and how to verify it");
-    if (Buffer.byteLength(body) > MAX_HANDOFF_BYTES) throw new Error(`the handoff is over ${MAX_HANDOFF_BYTES / 1024} KB - it is a page for the next session, not the transcript`);
+/** How many of the user's last messages a handoff carries verbatim. */
+export const RECENT_MESSAGES = 10;
+
+/** Per message and in total: the appendix is a reminder of the last asks, not the transcript. */
+const MESSAGE_CHARS = 2000;
+const APPENDIX_BYTES = 12 * 1024;
+
+/** Heading of the section enigma appends; the model never writes it. */
+export const RECENT_HEADING = "## Recent user messages (verbatim, oldest first)";
+
+/**
+ * The section that carries the user's last messages verbatim, newest kept first when the budget
+ * runs out. Each line is quoted so a message's own headings cannot pose as handoff sections.
+ */
+function recentSection(messages: string[]): string {
+    const items: string[] = [];
+    let bytes = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i]!.trim();
+        const text = m.length > MESSAGE_CHARS ? `${m.slice(0, MESSAGE_CHARS)} ... [truncated]` : m;
+        const item = text.split("\n").map((l) => `> ${l}`.trimEnd()).join("\n");
+        bytes += Buffer.byteLength(item) + 2;
+        if (bytes > APPENDIX_BYTES) break;
+        items.unshift(item);
+    }
+    if (!items.length) return "";
+    return [
+        RECENT_HEADING,
+        "",
+        "Every ask in these that is not under Done is still pending - including small ones.",
+        "",
+        items.join("\n\n"),
+    ].join("\n");
+}
+
+/**
+ * Save the handoff for the project containing `dir`. Throws on an empty or oversized page.
+ * `recent` (the user's last messages, oldest first) is appended verbatim under RECENT_HEADING.
+ */
+export function saveHandoff(dir: string, text: string, now = Date.now(), recent: string[] = []): Handoff {
+    // A re-save of a page copied from `enigma handoff show` would otherwise carry the old appendix twice.
+    const written = text.replace(/^\uFEFF/, "").split(RECENT_HEADING)[0]!.trim();
+    if (!written) throw new Error("the handoff is empty - write the goal, what is done, what is next and how to verify it");
+    if (Buffer.byteLength(written) > MAX_HANDOFF_BYTES) throw new Error(`the handoff is over ${MAX_HANDOFF_BYTES / 1024} KB - it is a page for the next session, not the transcript`);
+    const appendix = recentSection(recent);
+    const body = appendix ? `${written}\n\n${appendix}` : written;
     const p = paths(dir);
     mkdirSync(storeDir(), { recursive: true });
-    const meta: HandoffMeta = { savedAt: now, root: p.root, consumedAt: null, done: DONE_RE.test(body) };
+    const meta: HandoffMeta = { savedAt: now, root: p.root, consumedAt: null, done: DONE_RE.test(written) };
     writeFileSync(p.text, `${body}\n`);
     writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`);
     // The newest save, at a fixed path: the Claude Code relay mod runs with no shell and no hashing,
@@ -133,7 +174,7 @@ export function resumeText(h: Handoff, now = Date.now()): string {
     return [
         // A new session can also open on a different task the same day, so the user's own message
         // wins: the handoff is continued unasked only when nothing else was asked for.
-        `[enigma] Handoff from the previous session in this project (saved ${ageOf(h.savedAt, now)}). That session was cleared to save tokens; this page is everything it left. If the user's message is a continuation (or empty, or "continue"), continue the work it describes now, starting from its next step, without asking whether to. If the user asks for something else, do that instead and mention in one line that this unfinished handoff is kept (\`enigma handoff show\`).`,
+        `[enigma] Handoff from the previous session in this project (saved ${ageOf(h.savedAt, now)}). That session was cleared to save tokens; this page is everything it left. If the user's message is a continuation (or empty, or "continue"), continue the work it describes now, starting from its next step, without asking whether to. If the user asks for something else, do that instead and mention in one line that this unfinished handoff is kept (\`enigma handoff show\`). Before continuing, check every item under Pending and every ask in "${RECENT_HEADING.slice(3)}" against Done: anything not done is still owed, however small.`,
         "",
         h.text,
     ].join("\n");

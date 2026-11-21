@@ -262,23 +262,69 @@ export function userTyped(transcriptPath: string, needle: string): boolean | nul
     } catch { return null; }
     const wanted = needle.toLowerCase();
     for (const line of raw.split("\n")) {
-        if (!line.includes("\"user\"")) continue;
-        let entry: { isMeta?: unknown; isSidechain?: unknown; message?: { role?: string; content?: unknown; }; };
-        try { entry = JSON.parse(line); } catch { continue; }
-        // A subagent prompt is text the agent wrote, and isMeta text is the harness's (including
-        // this hook's own block message, quoting the very address under test).
-        if (entry.isMeta === true || entry.isSidechain === true) continue;
-        const content = entry.message?.role === "user" ? entry.message.content : undefined;
-        if (typeof content === "string") { if (humanText(content).toLowerCase().includes(wanted)) return true; continue; }
-        if (!Array.isArray(content)) continue;
-        for (const block of content) {
-            if (!block || typeof block !== "object") continue;
-            const b = block as { type?: string; text?: string; };
-            if (b.type !== "text" || typeof b.text !== "string") continue;
-            if (humanText(b.text).toLowerCase().includes(wanted)) return true;
-        }
+        for (const text of humanBlocks(line)) if (text.toLowerCase().includes(wanted)) return true;
     }
     return false;
+}
+
+/**
+ * The text blocks a PERSON wrote in one transcript line, or [] when the line is not a human
+ * prompt. A subagent prompt (`isSidechain`) is text the agent wrote, and `isMeta` text is the
+ * harness's (including hook feedback); a tool_result is content the session produced. Shared by
+ * `userTyped` (provenance) and `recentUserMessages` (handoffs), so both agree on what a user said.
+ */
+function humanBlocks(line: string): string[] {
+    if (!line.includes("\"user\"")) return [];
+    let entry: { type?: unknown; isMeta?: unknown; isSidechain?: unknown; message?: { role?: string; content?: unknown; }; };
+    try { entry = JSON.parse(line); } catch { return []; }
+    // Only a `user` record is a prompt: an `api-request-blob` record carries a whole API request,
+    // whose user-role messages hold injected skill text and every earlier prompt again.
+    if (entry.type !== "user" || entry.isMeta === true || entry.isSidechain === true) return [];
+    const content = entry.message?.role === "user" ? entry.message.content : undefined;
+    if (typeof content === "string") return [humanText(content)];
+    if (!Array.isArray(content)) return [];
+    const out: string[] = [];
+    for (const block of content) {
+        if (!block || typeof block !== "object") continue;
+        const b = block as { type?: string; text?: string; };
+        if (b.type === "text" && typeof b.text === "string") out.push(humanText(b.text));
+    }
+    return out;
+}
+
+/** How much of a transcript's tail `recentUserMessages` reads: long tool output sits between prompts. */
+const RECENT_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The last `count` messages the user typed in a transcript, oldest first, harness text stripped.
+ *
+ * WHY. A handoff written by the model alone summarizes the big task and drops the small asks of
+ * the last few turns ("also fix X", "leave Y for later"); carrying the user's own words verbatim
+ * is the deterministic part of the bridge, so a cleared session can check each one against Done.
+ */
+export function recentUserMessages(transcriptPath: string, count: number): string[] {
+    const out: string[] = [];
+    const lines = tail(transcriptPath, RECENT_BYTES).split("\n");
+    for (let i = lines.length - 1; i >= 0 && out.length < count; i--) {
+        const text = humanBlocks(lines[i]!).join("\n").trim();
+        if (text) out.push(text);
+    }
+    return out.reverse();
+}
+
+/** The transcript of one Claude Code session, by id, under any account's projects dir; null when absent. */
+export function transcriptOf(sessionId: string): string | null {
+    // The id names a file: anything but a plain token could walk out of the projects dir.
+    if (!/^[\w-]+$/.test(sessionId)) return null;
+    for (const { dir } of claudeProjectsDirs()) {
+        let projects: string[];
+        try { projects = readdirSync(dir); } catch { continue; }
+        for (const project of projects) {
+            const path = join(dir, project, `${sessionId}.jsonl`);
+            if (existsSync(path)) return path;
+        }
+    }
+    return null;
 }
 
 /**

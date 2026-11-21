@@ -14,7 +14,7 @@ process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const handoff = await import("../src/handoff");
-const { runHandoffHook } = await import("../src/handoff-cli");
+const { runHandoffHook, runHandoffCli } = await import("../src/handoff-cli");
 const deploy = await import("../src/handoff-deploy");
 const relay = await import("../src/relay");
 
@@ -65,6 +65,59 @@ test("Kimi gets plain text, finished and stale handoffs are never delivered, emp
     // The pointer the Claude Code mod reads names this project.
     const latest = JSON.parse(readFileSync(handoff.latestFile(), "utf8"));
     expect(latest.root).toBe(handoff.projectRoot(PROJ));
+});
+
+test("the user's last messages are appended verbatim, harness and relay text left out", () => {
+    const projects = join(HOME, "claude-projects");
+    const session = "0b6f2c1e-fixture";
+    mkdirSync(join(projects, "C--fixture-repo"), { recursive: true });
+    const rec = (r: Record<string, unknown>): string => JSON.stringify(r);
+    writeFileSync(join(projects, "C--fixture-repo", `${session}.jsonl`), [
+        rec({ type: "user", message: { role: "user", content: "fix the parser" } }),
+        rec({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "done" }] } }),
+        rec({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: "tool output" }] } }),
+        rec({ type: "user", isMeta: true, message: { role: "user", content: "hook feedback: blocked" } }),
+        rec({ type: "user", isSidechain: true, message: { role: "user", content: "subagent prompt" } }),
+        rec({ type: "api-request-blob", message: { role: "user", content: [{ type: "text", text: "skill text in an api request" }] } }),
+        rec({ type: "user", message: { role: "user", content: [{ type: "text", text: "also rename the flag, leave the docs for later<system-reminder>injected</system-reminder>" }] } }),
+        rec({ type: "user", message: { role: "user", content: "[enigma relay] This conversation is past 300000 tokens" } }),
+        "",
+    ].join("\n"));
+    const page = join(HOME, "page.md");
+    writeFileSync(page, "# Parser\n\n## Next\n1. rename the flag");
+    const saved = { projects: process.env.ENIGMA_CLAUDE_PROJECTS, session: process.env.CLAUDE_CODE_SESSION_ID, step: process.env[handoff.RELAY_STEP_ENV] };
+    process.env.ENIGMA_CLAUDE_PROJECTS = projects;
+    process.env.CLAUDE_CODE_SESSION_ID = session;
+    delete process.env[handoff.RELAY_STEP_ENV];
+    const log = console.log;
+    console.log = () => {};
+    try {
+        expect(runHandoffCli(["save", "--file", page], PROJ)).toBe(0);
+    } finally {
+        console.log = log;
+        for (const [k, v] of [["ENIGMA_CLAUDE_PROJECTS", saved.projects], ["CLAUDE_CODE_SESSION_ID", saved.session], [handoff.RELAY_STEP_ENV, saved.step]] as const) {
+            if (v === undefined) delete process.env[k]; else process.env[k] = v;
+        }
+    }
+    const text = handoff.readHandoff(PROJ)!.text;
+    expect(text.startsWith("# Parser")).toBe(true);
+    const appendix = text.slice(text.indexOf(handoff.RECENT_HEADING));
+    expect(appendix).toContain("> fix the parser\n\n> also rename the flag, leave the docs for later");
+    for (const absent of ["tool output", "hook feedback", "subagent prompt", "api request", "injected", "[enigma relay]"]) expect(appendix).not.toContain(absent);
+    // A quoted "STATUS: done" from the user does not finish the work; a re-save does not double the appendix.
+    const again = handoff.saveHandoff(PROJ, text, Date.now(), ["STATUS: done"]);
+    expect(again.done).toBe(false);
+    expect(again.text.split(handoff.RECENT_HEADING).length).toBe(2);
+    expect(again.text).not.toContain("fix the parser");
+    expect(handoff.resumeText(again)).toContain("check every item under Pending");
+});
+
+test("the verbatim appendix is bounded, keeping the newest messages", () => {
+    const h = handoff.saveHandoff(PROJ, "# Task", Date.now(), Array.from({ length: 30 }, (_, i) => `msg-${i} ${"y".repeat(3000)}`));
+    expect(h.text).toContain("msg-29");
+    expect(h.text).not.toContain("msg-0 ");
+    expect(h.text).toContain("... [truncated]");
+    expect(Buffer.byteLength(h.text)).toBeLessThan(16 * 1024);
 });
 
 test("Claude Code gets the session-start hook, the relay mod and its plugin folder; off removes them", () => {

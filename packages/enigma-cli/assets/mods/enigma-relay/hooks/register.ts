@@ -18,7 +18,8 @@ interface Latest { root: string; savedAt: number; done: boolean; text: string; m
 const ASK = [
     "[enigma relay] This conversation is past %TOKENS% tokens and every call re-reads all of it.",
     "Run the /handoff procedure now: save the handoff for the work in progress with `enigma handoff save`",
-    "(goal, done, next, decisions, verify, files), then stop. If the work is finished, save it with the line",
+    "(goal, done, next, pending, recent context, decisions, verify, files), then stop. List under Pending every ask",
+    "from the last turns that is not finished, however small. If the work is finished, save it with the line",
     "`STATUS: done`. enigma clears the context and continues from the handoff on its own.",
 ].join(" ");
 

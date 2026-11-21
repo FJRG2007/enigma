@@ -24,6 +24,12 @@ enigma handoff save <<'EOF'
 1. <the very next action, concrete enough to start without re-reading anything>
 2. <then>
 
+## Pending
+- <every other thing the user asked for that is not finished, however small: "also X", "leave Y for later", a question you still owe an answer to, a follow-up you promised>
+
+## Recent context
+- <what the last few messages were about: the point under discussion, what the user just reported or corrected, what they were waiting on>
+
 ## Decisions
 - <a choice already made and why, so the next session does not reopen it>
 
@@ -39,7 +45,9 @@ Rules for the page:
 
 - It is everything the next session gets. Name exact paths, symbols, commands and the user's own requirements; do not paste transcript, diffs or file contents - the next session can open files.
 - Keep it to one page (the store refuses over 32 KB).
-- Unfinished or unverified items go under Next, never under Done.
+- Unfinished or unverified items go under Next or Pending, never under Done.
+- Before saving, walk the user's messages from the last few turns one by one: each ask is either under Done (finished and verified) or under Next/Pending. A small ask from the last turns is the item most often lost across a clear.
+- enigma appends the user's last messages verbatim (Claude Code) under "Recent user messages"; do not copy them yourself, but do not rely on them in place of Pending either.
 - If the work is finished and nothing is left to resume, add the line `STATUS: done`; it is then kept but not delivered.
 - If the user named a different next task, the handoff is for that task: put it as the goal and keep only what it needs from this one.
 

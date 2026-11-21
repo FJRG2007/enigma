@@ -9,6 +9,7 @@
 
 import * as handoff from "./handoff";
 import { readFileSync } from "node:fs";
+import * as transcripts from "./claude-transcripts";
 
 export const HANDOFF_HELP = `usage: enigma handoff <save | show | status | clear>
 Hand the work to the next session, so the context can be cleared without losing it.
@@ -59,6 +60,24 @@ export function runHandoffHook(host: string, raw: string, now = Date.now()): num
     return 0;
 }
 
+/** Prompts enigma itself submits (the relay's ask and its "continue"): not something the user asked. */
+const INJECTED = /^\[enigma( relay)?\]/;
+
+/**
+ * The user's last messages in the Claude Code session running `enigma handoff save`, oldest first,
+ * or [] when there is no session to read (another host, an `enigma relay` step whose only prompt
+ * is the relay's own, a missing transcript). Claude Code exports the session id to its tools.
+ */
+function recentMessages(): string[] {
+    const session = process.env.CLAUDE_CODE_SESSION_ID;
+    if (!session || process.env[handoff.RELAY_STEP_ENV]) return [];
+    const transcript = transcripts.transcriptOf(session);
+    if (!transcript) return [];
+    return transcripts.recentUserMessages(transcript, handoff.RECENT_MESSAGES * 2)
+        .filter((m) => !INJECTED.test(m))
+        .slice(-handoff.RECENT_MESSAGES);
+}
+
 /** `enigma handoff ...`. Returns the exit code. */
 export function runHandoffCli(argv: string[], cwd = process.cwd()): number {
     const [sub, ...rest] = argv;
@@ -71,7 +90,7 @@ export function runHandoffCli(argv: string[], cwd = process.cwd()): number {
                 return 1;
             }
             try {
-                const h = handoff.saveHandoff(cwd, text);
+                const h = handoff.saveHandoff(cwd, text, Date.now(), recentMessages());
                 console.log(h.done
                     ? "Handoff saved as finished work (STATUS: done): it will not be resumed."
                     : "Handoff saved. Clear the context (/clear, or /new) and the next session continues from it.");
