@@ -18,7 +18,7 @@ function cli(args: string[], home: string | null): { status: number | null; stdo
     const missing = join(dir, "does-not-exist");
     const h = home ?? missing;
     const env = { ...process.env, HOME: h, USERPROFILE: h, ENIGMA_CONFIG_HOME: h, ENIGMA_OFFLINE: "1", ENIGMA_VERSION: "" };
-    const run = spawnSync("bun", [ENTRY, ...args], { cwd: dir, env, encoding: "utf8", input: "", shell: process.platform === "win32" });
+    const run = spawnSync("bun", [ENTRY, ...args], { windowsHide: true, cwd: dir, env, encoding: "utf8", input: "", shell: process.platform === "win32" });
     let json: unknown = null;
     try { json = JSON.parse(run.stdout); } catch { /* not JSON */ }
     return { status: run.status, stdout: run.stdout, stderr: run.stderr, json };

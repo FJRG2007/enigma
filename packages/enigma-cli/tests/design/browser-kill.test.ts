@@ -15,7 +15,7 @@ function alive(pid: number): boolean {
 
 test.skipIf(process.platform === "win32")("a browser's helper processes die with it", async () => {
     // A stand-in browser: a group leader that leaves a long-lived helper behind, as Chrome does.
-    const child = spawn("sh", ["-c", "sleep 60 & echo $!; wait"], { stdio: ["ignore", "pipe", "ignore"], detached: true });
+    const child = spawn("sh", ["-c", "sleep 60 & echo $!; wait"], { windowsHide: true, stdio: ["ignore", "pipe", "ignore"], detached: true });
     const helper = await new Promise<number>((resolve) => child.stdout!.once("data", (chunk) => resolve(Number(String(chunk).trim()))));
     expect(alive(helper)).toBe(true);
 

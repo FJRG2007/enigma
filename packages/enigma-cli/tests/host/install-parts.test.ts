@@ -46,7 +46,7 @@ function install(extra: string[]): { settings: Record<string, unknown>; commands
     const home = mkdtempSync(join(tmpdir(), "enigma-skip-"));
     try {
         const env = { ...process.env, HOME: home, USERPROFILE: home, ENIGMA_CONFIG_HOME: home, ENIGMA_OFFLINE: "1", GIT_CONFIG_GLOBAL: join(home, ".gitconfig") };
-        const run = spawnSync("bun", [ENTRY, "install", "--all", "--yes", "-g", ...extra], { cwd: home, env, encoding: "utf8", shell: process.platform === "win32" });
+        const run = spawnSync("bun", [ENTRY, "install", "--all", "--yes", "-g", ...extra], { windowsHide: true, cwd: home, env, encoding: "utf8", shell: process.platform === "win32" });
         const file = join(home, ".claude", "settings.json");
         const dir = join(home, ".claude", "commands");
         return {
@@ -80,7 +80,7 @@ test("--skip with an unknown part fails before installing anything, as JSON unde
     const home = mkdtempSync(join(tmpdir(), "enigma-skip-bad-"));
     try {
         const env = { ...process.env, HOME: home, USERPROFILE: home, ENIGMA_CONFIG_HOME: home, ENIGMA_OFFLINE: "1" };
-        const run = spawnSync("bun", [ENTRY, "install", "--all", "--yes", "--skip", "nope", "--json"], { cwd: home, env, encoding: "utf8", shell: process.platform === "win32" });
+        const run = spawnSync("bun", [ENTRY, "install", "--all", "--yes", "--skip", "nope", "--json"], { windowsHide: true, cwd: home, env, encoding: "utf8", shell: process.platform === "win32" });
         expect(run.status).toBe(1);
         expect(JSON.parse(run.stdout).error.code).toBe("unknown_part");
         expect(existsSync(join(home, ".claude"))).toBe(false);

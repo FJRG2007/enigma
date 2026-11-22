@@ -128,8 +128,8 @@ test("a symlinked file never lets the graph read outside the indexed root", asyn
     const repo = join(workspace, "acme", "repo");
     try { symlinkSync(secret, join(repo, "src", "leak.ts"), "file"); } catch { return; } // no symlink privilege here
     // Tracked by git, so the listing the indexer prefers names the link like any other file.
-    spawnSync("git", ["init", "-q", repo]);
-    spawnSync("git", ["-C", repo, "add", "-A"]);
+    spawnSync("git", ["init", "-q", repo], { windowsHide: true });
+    spawnSync("git", ["-C", repo, "add", "-A"], { windowsHide: true });
     const { readInsideRoot } = await import("../../src/codegraph-extract");
     expect(() => readInsideRoot(repo, "src/leak.ts")).toThrow(/outside/);
     expect(readInsideRoot(repo, "src/a.ts")).toContain("hello");

@@ -34,7 +34,7 @@ afterAll(() => {
 });
 
 function run(dir: string, ...args: string[]): string {
-    return execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+    return execFileSync("git", args, { windowsHide: true, cwd: dir, encoding: "utf8" }).trim();
 }
 
 function commit(dir: string, name: string): void {

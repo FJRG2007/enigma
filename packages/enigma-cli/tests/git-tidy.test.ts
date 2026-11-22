@@ -31,7 +31,7 @@ afterAll(() => {
 });
 
 function git(dir: string, ...args: string[]): string {
-    return execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return execFileSync("git", args, { windowsHide: true, cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
 function commit(dir: string, name: string, body = name): void {
@@ -330,7 +330,7 @@ test("every deletion is written down with the command that undoes it", async () 
     expect(entry!.repo).toBe(dir);
 
     // The recorded restore command actually restores it.
-    execFileSync("git", restoreCommand("feat/logged", entry!.sha).split(" ").slice(1), { cwd: dir });
+    execFileSync("git", restoreCommand("feat/logged", entry!.sha).split(" ").slice(1), { windowsHide: true, cwd: dir });
     expect(git(dir, "rev-parse", "feat/logged")).toBe(sha);
 });
 

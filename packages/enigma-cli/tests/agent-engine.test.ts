@@ -137,7 +137,7 @@ test("a second session waits for the install another one holds instead of runnin
     // Stands in for the session holding the lock: it finishes the install, then releases.
     const pkg = join(root, "engine", "node_modules", "rea-agents");
     const finish = `setTimeout(() => { const fs = require("fs"); fs.mkdirSync(${JSON.stringify(pkg)}, { recursive: true }); fs.writeFileSync(${JSON.stringify(join(pkg, "package.json"))}, JSON.stringify({ version: "6.5.0" })); fs.rmSync(${JSON.stringify(lock)}, { recursive: true }); }, 800);`;
-    const child = spawn(process.execPath, ["-e", finish], { stdio: "ignore" });
+    const child = spawn(process.execPath, ["-e", finish], { windowsHide: true, stdio: "ignore" });
     const started = Date.now();
     expect(ensureEngine(root, { package: "rea-agents", version: "6.5.0" })).toBeNull();
     expect(Date.now() - started).toBeLessThan(30_000);

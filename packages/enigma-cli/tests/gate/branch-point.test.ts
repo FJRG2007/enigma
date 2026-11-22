@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 const DIR = mkdtempSync(join(tmpdir(), "enigma-branch-point-"));
 afterAll(() => { try { rmSync(DIR, { recursive: true, force: true }); } catch { /* best effort */ } });
 
-const git = (...args: string[]): string => execFileSync("git", args, { cwd: DIR, encoding: "utf8" }).trim();
+const git = (...args: string[]): string => execFileSync("git", args, { windowsHide: true, cwd: DIR, encoding: "utf8" }).trim();
 
 test("a new branch is sized from where it left the default branch", async () => {
     git("init", "-q", "-b", "main");

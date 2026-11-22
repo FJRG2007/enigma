@@ -26,7 +26,7 @@ const dirs: string[] = [HOME];
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 
 function git(dir: string, ...args: string[]): string {
-    return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@e.test", ...args], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@e.test", ...args], { windowsHide: true, cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
 function tmp(label: string): string {
@@ -143,8 +143,8 @@ function sharedBranch(): { remote: string; work: string; mate: string; } {
 test("a teammate's commit on a shared branch stops the force push instead of being erased", async () => {
     const { remote, work, mate } = sharedBranch();
     writeFileSync(join(mate, "alerts.txt"), "usage alerts\n");
-    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "add", "-A"], { cwd: mate });
-    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "commit", "-q", "-m", "feat: usage alerts"], { cwd: mate });
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "add", "-A"], { windowsHide: true, cwd: mate });
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "commit", "-q", "-m", "feat: usage alerts"], { windowsHide: true, cwd: mate });
     git(mate, "push", "-q", "origin", "develop");
     const before = git(remote, "rev-parse", "develop");
     // The run's own rewrite of develop, which no longer contains the remote tip.
@@ -173,8 +173,8 @@ test("a rewrite of the user's own commits on a working branch still pushes", asy
 test("the CI fix push stops on a teammate's commit instead of forcing over it", async () => {
     const { remote, work, mate } = sharedBranch();
     writeFileSync(join(mate, "alerts.txt"), "usage alerts\n");
-    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "add", "-A"], { cwd: mate });
-    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "commit", "-q", "-m", "feat: usage alerts"], { cwd: mate });
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "add", "-A"], { windowsHide: true, cwd: mate });
+    execFileSync("git", ["-c", "user.name=Mate", "-c", "user.email=mate@e.test", "commit", "-q", "-m", "feat: usage alerts"], { windowsHide: true, cwd: mate });
     git(mate, "push", "-q", "origin", "develop");
     const before = git(remote, "rev-parse", "develop");
     writeFileSync(join(work, "ci.txt"), "ci fix\n");

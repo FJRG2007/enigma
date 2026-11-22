@@ -164,7 +164,7 @@ test("eject leaves nothing of the repo under the gate root", async () => {
     paths.ensureDirs();
     const checkout = join(ROOT, "eject-checkout");
     mkdirSync(checkout, { recursive: true });
-    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: checkout, stdio: "ignore" });
+    execFileSync("git", ["init", "-q", "-b", "main"], { windowsHide: true, cwd: checkout, stdio: "ignore" });
     // The record has to be keyed the way eject looks it up, which is the resolved root.
     const absRoot = findMainRepoRoot(checkout);
 

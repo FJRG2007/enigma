@@ -52,7 +52,7 @@ test("a rename is judged by both names", () => {
 
 test("measureChange reads what HEAD adds on top of a base", () => {
     const dir = mkdtempSync(join(tmpdir(), "enigma-trivial-"));
-    const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+    const git = (...args: string[]) => execFileSync("git", args, { windowsHide: true, cwd: dir, encoding: "utf8" }).trim();
     try {
         git("init", "-q");
         git("config", "user.email", "test@example.com");

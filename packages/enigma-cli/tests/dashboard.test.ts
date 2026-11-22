@@ -45,7 +45,7 @@ async function freePort(): Promise<number> {
 
 /** A live process that is emphatically NOT the dashboard, standing in for a recycled pid. */
 function decoy(): { pid: number; alive: () => boolean; kill: () => void; } {
-    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { windowsHide: true, stdio: "ignore" });
     child.on("error", () => { /* the assertions fail on their own if it never started */ });
     return {
         pid: child.pid!,
@@ -413,7 +413,7 @@ test("restartDashboardDaemon leaves a FOREGROUND dashboard alone", () => {
     // on and respawns it detached: the terminal comes back and the dashboard keeps serving with
     // no Ctrl+C left to reach it. A live pid is needed here - the guard has to reject the record
     // before anything is killed.
-    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { windowsHide: true, stdio: "ignore" });
     child.on("error", () => { /* the assertions below fail on their own if it never started */ });
     const pidfile = join(homedir(), ".enigma", "dashboard.json");
     mkdirSync(join(homedir(), ".enigma"), { recursive: true });

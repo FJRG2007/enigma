@@ -20,7 +20,7 @@ function tmp(label: string): string {
 }
 
 function git(dir: string, email: string, ...args: string[]): string {
-    return execFileSync("git", ["-c", "user.name=x", "-c", `user.email=${email}`, "-c", "core.autocrlf=false", ...args], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return execFileSync("git", ["-c", "user.name=x", "-c", `user.email=${email}`, "-c", "core.autocrlf=false", ...args], { windowsHide: true, cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
 function commit(dir: string, email: string, file: string, message: string): void {
@@ -273,7 +273,7 @@ test("an empty or merge commit of a teammate counts as lost, even beside an empt
 test("signature lines from log.showSignature do not make a teammate's empty commit read as kept", async () => {
     const { me, mate } = scenario();
     const key = join(tmp("key"), "key");
-    execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key], { stdio: "ignore" });
+    execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key], { windowsHide: true, stdio: "ignore" });
     writeFileSync(join(mate, "signed.txt"), "feat: signed\n");
     git(mate, "mate@e.test", "add", "-A");
     git(mate, "mate@e.test", "-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "commit", "-q", "-S", "-m", "feat: signed");
