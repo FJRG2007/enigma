@@ -56,7 +56,7 @@ import { enigmaHome, readJson, findGitRoot, isGateAgentRun } from "./util";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { DEFAULT_TRIVIAL_LINES, MAX_TRIVIAL_FILES, isSensitivePath, isTrivialChange } from "./gate/triviality";
-import { lastAssistantMessage, sessionStartedAt, userTyped } from "./claude-transcripts";
+import { type StalledSubagent, lastAssistantMessage, sessionStartedAt, stalledSubagents, userTyped } from "./claude-transcripts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
@@ -2370,6 +2370,15 @@ function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capp
     ].join("\n");
 }
 
+/** The order given when the turn ends with subagents stopped at their turn limit and never resumed. */
+export function stalledMessage(agents: StalledSubagent[]): string {
+    return [
+        "enigma verify: these subagents stopped at their turn limit with the work unfinished, and nothing has resumed them:",
+        ...agents.slice(0, 10).map((a) => `  - ${a.name} (task id ${a.id})`),
+        "Do not report them as running. For each: SendMessage its task id to continue it (it gets fresh turns on the same context), or finish the work yourself, or tell the user it is dropped and why.",
+    ].join("\n");
+}
+
 /** Audit rounds per prompt. Enough for a review that fixed something to be reviewed once more. */
 const MAX_AUDIT_ROUNDS = 3;
 
@@ -2564,6 +2573,16 @@ export function runVerifyHook(payload?: string): number {
             const handed: VerifyGap = { kind: "stop-short", detail: handedBack };
             if (!mayBlock(issueKey(session, [handed]), session)) return 0;
             hookSink(`${handBackMessage(handedBack)}\n`);
+            return 2;
+        }
+        // A subagent cut at its turn limit (enigma's own `subagent-turns` cap) hands back a partial
+        // result and waits for a SendMessage that, measured, often never came: the parent kept
+        // reporting it as "still running" and the work sat unfinished until the user asked. Checked
+        // with or without a claim - the message rarely mentions it - on its own budget channel, keyed
+        // by the set of stalled agents so a new cut is reported even after an older one ran out.
+        const stalled = raw.permission_mode === "plan" || typeof raw.transcript_path !== "string" ? [] : stalledSubagents(raw.transcript_path);
+        if (stalled.length && mayBlock(`subagents:${session}:${stalled.map((a) => a.id).join(",")}`, session, "subagents")) {
+            hookSink(`${stalledMessage(stalled)}\n`);
             return 2;
         }
         // The same failure aimed at the gate, and the most reported one: the turn ends reporting

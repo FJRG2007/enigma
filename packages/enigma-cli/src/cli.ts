@@ -3516,8 +3516,8 @@ export async function run(argv: string[]): Promise<void> {
         process.exit(await runChecksCli(opts.positionals));
     }
     if (opts.command === "handoff") {
-        const { runHandoffCli } = await import("./handoff-cli");
-        process.exit(runHandoffCli(opts.positionals));
+        const { handoffDir, runHandoffCli } = await import("./handoff-cli");
+        process.exit(runHandoffCli(opts.positionals, handoffDir()));
     }
     if (opts.command === "relay") {
         const { runRelayCli } = await import("./relay");

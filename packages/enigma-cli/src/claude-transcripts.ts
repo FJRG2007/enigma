@@ -312,6 +312,55 @@ export function recentUserMessages(transcriptPath: string, count: number): strin
     return out.reverse();
 }
 
+/** A background subagent whose last word was a cut at its turn limit, with nothing done about it since. */
+export interface StalledSubagent { id: string; name: string; }
+
+/** One subagent report: the task id and the `Agent "<name>" <outcome>` summary Claude Code writes. */
+const AGENT_NOTICE = /<task-notification>[\s\S]*?<task-id>([\w-]+)<\/task-id>[\s\S]*?<summary>Agent "([^"]*)" ([^<]*)<\/summary>/g;
+
+/**
+ * Background subagents this session left stopped at their turn limit (`subagent-turns`, the
+ * agent definition's maxTurns) and never resumed, oldest first.
+ *
+ * WHY. The cap stops a subagent with a partial result and Claude Code tells the parent to
+ * SendMessage the task id to continue; measured on one project's sessions (2026-11), 23 of 279
+ * background agents ended that way with no SendMessage, TaskStop or later report, and the parent
+ * went on reporting the work as "still running". Their state is in the transcript only: no hook
+ * event fires for a cut subagent (subagents.md). Each agent's LAST event decides: a later report
+ * (finished, failed, waiting) replaces the cut, and a SendMessage to it or a TaskStop of it is the
+ * parent having acted on it. Only the tail is read, so a cut older than RECENT_BYTES is missed -
+ * this check stands down there rather than read a transcript without bound on every stop.
+ */
+export function stalledSubagents(transcriptPath: string): StalledSubagent[] {
+    const last = new Map<string, StalledSubagent | null>();
+    for (const line of tail(transcriptPath, RECENT_BYTES).split("\n")) {
+        const notice = line.includes("<task-notification>");
+        if (!notice && !line.includes("\"tool_use\"")) continue;
+        let entry: { type?: unknown; isSidechain?: unknown; message?: { content?: unknown; }; };
+        try { entry = JSON.parse(line); } catch { continue; }
+        if (entry.isSidechain === true) continue;
+        const content = entry.message?.content;
+        const blocks: unknown[] = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
+        for (const block of blocks) {
+            if (!block || typeof block !== "object") continue;
+            const b = block as { type?: string; text?: unknown; name?: string; input?: Record<string, unknown>; };
+            if (entry.type === "assistant" && b.type === "tool_use") {
+                const target = b.name === "SendMessage" ? b.input?.to : b.name === "TaskStop" ? b.input?.task_id ?? b.input?.shell_id : undefined;
+                if (typeof target === "string" && last.has(target)) last.set(target, null);
+                continue;
+            }
+            // Only a `user` record is a report as it arrived: an api-request-blob replays old ones.
+            if (entry.type !== "user" || b.type !== "text" || typeof b.text !== "string" || !notice) continue;
+            for (const m of b.text.matchAll(AGENT_NOTICE)) {
+                const [, id, name, outcome] = m;
+                last.delete(id!);
+                last.set(id!, /\bturn limit\b/.test(outcome!) ? { id: id!, name: name! } : null);
+            }
+        }
+    }
+    return [...last.values()].filter((a): a is StalledSubagent => a !== null);
+}
+
 /** The transcript of one Claude Code session, by id, under any account's projects dir; null when absent. */
 export function transcriptOf(sessionId: string): string | null {
     // The id names a file: anything but a plain token could walk out of the projects dir.

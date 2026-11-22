@@ -105,17 +105,45 @@ function recentSection(messages: string[]): string {
     ].join("\n");
 }
 
+/** Heading of the section listing subagents cut at their turn limit; enigma writes it, never the model. */
+export const STALLED_HEADING = "## Subagents stopped unfinished (resume or finish each)";
+
+/** A subagent left stopped at its turn limit: its task id and the name it was launched with. */
+export interface StalledAgent { id: string; name: string; }
+
+/**
+ * The cut subagents, by id, so the cleared session can resume them: the model-written page tends to
+ * call them "still running", and a session that believes that waits for a report that never comes.
+ */
+function stalledSection(agents: StalledAgent[]): string {
+    if (!agents.length) return "";
+    return [
+        STALLED_HEADING,
+        "",
+        "Each stopped at its turn limit with partial work. SendMessage its id to continue it (fresh turns, same context); if that fails, finish the work yourself.",
+        "",
+        ...agents.slice(0, 20).map((a) => `- \`${a.id}\` ${a.name.replace(/\s+/g, " ").slice(0, 200)}`),
+    ].join("\n");
+}
+
+/** The page the model wrote, without any section enigma appended to an earlier save of it. */
+function writtenPart(text: string): string {
+    let page = text.replace(/^\uFEFF/, "");
+    for (const heading of [STALLED_HEADING, RECENT_HEADING]) page = page.split(heading)[0]!;
+    return page.trim();
+}
+
 /**
  * Save the handoff for the project containing `dir`. Throws on an empty or oversized page.
- * `recent` (the user's last messages, oldest first) is appended verbatim under RECENT_HEADING.
+ * `recent` (the user's last messages, oldest first) is appended verbatim under RECENT_HEADING,
+ * and `stalled` (subagents cut at their turn limit) under STALLED_HEADING.
  */
-export function saveHandoff(dir: string, text: string, now = Date.now(), recent: string[] = []): Handoff {
+export function saveHandoff(dir: string, text: string, now = Date.now(), recent: string[] = [], stalled: StalledAgent[] = []): Handoff {
     // A re-save of a page copied from `enigma handoff show` would otherwise carry the old appendix twice.
-    const written = text.replace(/^\uFEFF/, "").split(RECENT_HEADING)[0]!.trim();
+    const written = writtenPart(text);
     if (!written) throw new Error("the handoff is empty - write the goal, what is done, what is next and how to verify it");
     if (Buffer.byteLength(written) > MAX_HANDOFF_BYTES) throw new Error(`the handoff is over ${MAX_HANDOFF_BYTES / 1024} KB - it is a page for the next session, not the transcript`);
-    const appendix = recentSection(recent);
-    const body = appendix ? `${written}\n\n${appendix}` : written;
+    const body = [written, stalledSection(stalled), recentSection(recent)].filter(Boolean).join("\n\n");
     const p = paths(dir);
     mkdirSync(storeDir(), { recursive: true });
     const meta: HandoffMeta = { savedAt: now, root: p.root, consumedAt: null, done: DONE_RE.test(written) };

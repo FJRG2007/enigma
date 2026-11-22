@@ -8,8 +8,8 @@
  */
 
 import * as handoff from "./handoff";
-import { readFileSync } from "node:fs";
 import * as learn from "./checks-learn";
+import { existsSync, readFileSync } from "node:fs";
 import * as transcripts from "./claude-transcripts";
 
 export const HANDOFF_HELP = `usage: enigma handoff <save | show | status | clear>
@@ -72,14 +72,29 @@ const INJECTED = /^\[enigma( relay)?\]/;
  * or [] when there is no session to read (another host, an `enigma relay` step whose only prompt
  * is the relay's own, a missing transcript). Claude Code exports the session id to its tools.
  */
-function recentMessages(): string[] {
-    const session = process.env.CLAUDE_CODE_SESSION_ID;
-    if (!session || process.env[handoff.RELAY_STEP_ENV]) return [];
-    const transcript = transcripts.transcriptOf(session);
+function recentMessages(transcript: string | null): string[] {
     if (!transcript) return [];
     return transcripts.recentUserMessages(transcript, handoff.RECENT_MESSAGES * 2)
         .filter((m) => !INJECTED.test(m))
         .slice(-handoff.RECENT_MESSAGES);
+}
+
+/** The transcript of the Claude Code session running this command, or null (another host, a relay step). */
+function sessionTranscript(): string | null {
+    const session = process.env.CLAUDE_CODE_SESSION_ID;
+    if (!session || process.env[handoff.RELAY_STEP_ENV]) return null;
+    return transcripts.transcriptOf(session);
+}
+
+/**
+ * Where the handoff is filed. The agent's shell can sit in a scratch worktree or any other folder,
+ * while the session that resumes it starts in the project: a save keyed by the shell's folder was
+ * never delivered (seen: pages filed under a scratchpad path). Claude Code exports the project to
+ * its tools as CLAUDE_PROJECT_DIR; other hosts fall back to the working directory.
+ */
+export function handoffDir(cwd = process.cwd(), env = process.env): string {
+    const project = env.CLAUDE_PROJECT_DIR;
+    return project && existsSync(project) ? project : cwd;
 }
 
 /** `enigma handoff ...`. Returns the exit code. */
@@ -94,7 +109,9 @@ export function runHandoffCli(argv: string[], cwd = process.cwd()): number {
                 return 1;
             }
             try {
-                const h = handoff.saveHandoff(cwd, text, Date.now(), recentMessages());
+                const transcript = sessionTranscript();
+                const stalled = transcript ? transcripts.stalledSubagents(transcript) : [];
+                const h = handoff.saveHandoff(cwd, text, Date.now(), recentMessages(transcript), stalled);
                 console.log(h.done
                     ? "Handoff saved as finished work (STATUS: done): it will not be resumed."
                     : "Handoff saved. Clear the context (/clear, or /new) and the next session continues from it.");
