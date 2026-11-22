@@ -96,7 +96,8 @@ function ensureHostDir(): void {
  * first; an npm install tries npm first. Whichever fails hands over to the other.
  */
 function npmInstall(spec: string): void {
-    const sources = release.installMethod() === "standalone" ? [releaseInstall, registryInstall] : [registryInstall, releaseInstall];
+    const github = (): boolean => releaseInstall();
+    const sources = release.installMethod() === "standalone" ? [github, registryInstall] : [registryInstall, github];
     for (const source of sources) {
         if (source(spec)) break;
     }
@@ -118,10 +119,10 @@ function registryInstall(spec: string): boolean {
 }
 
 /** The dashboard tarball from the latest GitHub release; true when it was installed. */
-function releaseInstall(): boolean {
+function releaseInstall(sums?: release.ReleaseSums): boolean {
     try {
         ensureHostDir();
-        release.installReleasePackage("@enigmax/dashboard", DASHBOARD_INSTALL_DIR);
+        release.installReleasePackage("@enigmax/dashboard", DASHBOARD_INSTALL_DIR, sums);
         return true;
     } catch { return false; }
 }
@@ -150,6 +151,9 @@ export function installedDashboardVersion(): string | null {
 export function refreshDashboardPkg(): boolean {
     const before = installedDashboardVersion();
     npmInstall("latest");
+    // npm can "succeed" on a stale @latest when a publish reached GitHub but not the registry.
+    const newer = release.newerReleaseOf("@enigmax/dashboard", installedDashboardVersion());
+    if (newer) releaseInstall(newer);
     return installedDashboardVersion() !== before;
 }
 

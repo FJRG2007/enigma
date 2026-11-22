@@ -28,6 +28,7 @@
  */
 
 import { kimiHome } from "./kimi";
+import * as release from "./release-fetch";
 import { isDir, isOffline, enigmaHome } from "./util";
 import { applyKimiHook } from "./kimi-hooks";
 import { join, dirname, basename } from "node:path";
@@ -89,11 +90,24 @@ export function ensureLinterInstalled(): boolean {
 /** Force-refresh @enigmax/linter to the latest published version (used by `enigma update`). */
 export function refreshLinterPkg(): void {
     if (!isLinterInstalled()) return;
-    try {
-        spawnSync("npm", ["install", "@enigmax/linter@latest", "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
+    const install = (spec: string): void => {
+        spawnSync("npm", ["install", spec, "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
             cwd: LINT_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
         });
-    } catch { /* best-effort */ }
+    };
+    try { install("@enigmax/linter@latest"); } catch { /* best-effort */ }
+    // npm can "succeed" on a stale @latest when a publish reached GitHub but not the registry. The
+    // linter has dependencies, so the verified release tarball goes through npm rather than being
+    // extracted in place.
+    const newer = release.newerReleaseOf("@enigmax/linter", installedLinterVersion());
+    const asset = newer ? release.packageAsset(newer.sums, "@enigmax/linter") : null;
+    if (!newer || !asset) return;
+    const tarball = join(LINT_INSTALL_DIR, asset.asset);
+    try {
+        writeFileSync(tarball, release.fetchVerified(newer, asset.asset));
+        install(tarball);
+    } catch { /* the npm install stands */ }
+    finally { rmSync(tarball, { force: true }); }
 }
 
 /**

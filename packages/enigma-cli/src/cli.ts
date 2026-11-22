@@ -1206,7 +1206,7 @@ async function runUpdateCli(version: string, ref?: string | null): Promise<void>
     const latest = await updater.checkLatestNow(version);
     s.stop(latest ? `Newer enigma-cli available: ${version} -> ${latest}. Installing...` : `enigma-cli ${version}: reinstalling the latest to be sure...`);
     starRepoInBackground();
-    const updated = updater.runUpdate();
+    const updated = await updater.runUpdate();
     // The sync above ran on the OLD binary, so it deployed the OLD skills, memory and
     // commands - the assets are bundled INTO the version that was just replaced. Run the
     // NEW binary's sync now, in this same command, or a user who updates and then launches

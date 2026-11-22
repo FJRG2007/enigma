@@ -90,15 +90,21 @@ async function registryLatest(): Promise<string | null> {
 
 /**
  * The latest published version for THIS install: a standalone install reads the GitHub release
- * (it must not depend on npm at all); an npm install reads the registry and falls back to the
- * GitHub release when the registry is unreachable, so an npm outage cannot hide an update.
+ * (it must not depend on npm at all); an npm install takes the NEWER of the registry and the
+ * GitHub release. Both channels are fed by the same release workflow, so either one alone can lag
+ * or fail (an npm outage, a blocked publish) without hiding an update that the other one has.
  */
 export async function latestVersion(method: release.InstallMethod = release.installMethod()): Promise<string | null> {
-    if (method === "npm") {
-        const latest = await registryLatest();
-        if (latest) return latest;
-    }
-    return release.latestReleaseVersion();
+    const github = release.latestReleaseVersion();
+    if (method !== "npm") return github;
+    return newestOf(await registryLatest(), github);
+}
+
+/** The newer of two versions, either of which may be unknown. */
+export function newestOf(a: string | null, b: string | null): string | null {
+    if (!a) return b;
+    if (!b) return a;
+    return isNewer(b, a) ? b : a;
 }
 
 /** Fetch the latest published version and write it to the cache. */
@@ -225,32 +231,83 @@ function parkRunningBinary(): void {
     }
 }
 
+/** Where the verified release tarball of one version is kept, so every Node runtime installs the same file. */
+export function releaseTarballPath(version: string): string {
+    return join(enigmaHome(), "releases", `enigma-cli-${version}.tgz`);
+}
+
+/**
+ * Download the enigma-cli tarball of a GitHub release, verify it against that release's SHA256SUMS
+ * and keep it at releaseTarballPath. Older kept tarballs are removed. Throws on any failure.
+ */
+export function fetchReleaseTarball(sums: release.ReleaseSums = release.fetchReleaseSums()): string {
+    const asset = release.packageAsset(sums.sums, "enigma-cli");
+    if (!asset) throw new Error("the release lists no enigma-cli tarball");
+    const buffer = release.fetchVerified(sums, asset.asset);
+    const path = releaseTarballPath(asset.version);
+    mkdirSync(dirname(path), { recursive: true });
+    for (const old of readdirSync(dirname(path))) {
+        if (old !== basename(path)) { try { rmSync(join(dirname(path), old), { force: true }); } catch { /* still in use */ } }
+    }
+    writeFileSync(path, buffer);
+    return path;
+}
+
+/** How npm is started: npm.cmd needs the shell on Windows; never a visible console window. */
+function npm(args: string[]): boolean {
+    return spawnSync("npm", args, { stdio: "inherit", shell: process.platform === "win32", windowsHide: true }).status === 0;
+}
+
+/** Install the verified tarball of a GitHub release through npm. */
+function installFromRelease(sums: release.ReleaseSums): boolean {
+    let tarball: string;
+    try { tarball = fetchReleaseTarball(sums); } catch (error) {
+        console.log(`Could not download the GitHub release: ${(error as Error).message}`);
+        return false;
+    }
+    return npm(["i", "-g", tarball]);
+}
+
+/** Install enigma-cli@latest from the npm registry, with a clean cache so no stale tarball is reused. */
+function installFromRegistry(): boolean {
+    // Best-effort cache clean; its exit status does not block the install.
+    npm(["cache", "clean", "--force"]);
+    return npm(["i", "-g", "enigma-cli@latest"]);
+}
+
 /**
  * Run the global update in place, reporting the outcome without ever throwing.
- * Clears the npm cache first so a stale cached tarball is never reused, then
- * installs the latest. OS-agnostic: npm is resolved through the shell on Windows
- * (where it is npm.cmd) and spawned directly elsewhere.
  *
- * Returns whether the install succeeded, so the caller can run the NEW version's
- * asset sync in the same command instead of leaving it to the next run.
+ * Two channels, newest first, each the other's fallback: the npm registry and the GitHub release
+ * (its tarball verified against the release's SHA256SUMS before npm installs it). The release is
+ * used when it is newer than the registry - a publish that reached GitHub but not npm (seen: an
+ * npm account suspension blocked every publish while the releases kept shipping) - or when the
+ * registry install fails; the registry is used when the release cannot be read or installed.
+ *
+ * Returns whether the install succeeded, so the caller can run the NEW version's asset sync in the
+ * same command instead of leaving it to the next run.
  */
-export function runUpdate(): boolean {
+export async function runUpdate(): Promise<boolean> {
     if (release.installMethod() === "standalone") return runStandaloneUpdate();
-    const onWindows = process.platform === "win32";
     try {
         parkRunningBinary();
-        // Best-effort cache clean; ignore its exit status so a clean-only failure
-        // does not block the install.
-        spawnSync("npm", ["cache", "clean", "--force"], { stdio: "inherit", shell: onWindows });
-        const result = spawnSync("npm", ["i", "-g", "enigma-cli@latest"], { stdio: "inherit", shell: onWindows });
-        if (result.status === 0) {
-            // Drop the cached check so the freshly installed version re-reads the
-            // registry on its next run instead of trusting a pre-update snapshot.
+        const registry = await registryLatest();
+        let sums: release.ReleaseSums | null = null;
+        try { sums = release.fetchReleaseSums(); } catch { /* GitHub unreachable: the registry alone */ }
+        const releaseFirst = sums !== null && (!registry || isNewer(sums.version, registry));
+        const order: Array<() => boolean> = releaseFirst
+            ? [() => installFromRelease(sums!), installFromRegistry]
+            : [installFromRegistry, ...(sums ? [() => installFromRelease(sums!)] : [])];
+        for (const [i, install] of order.entries()) {
+            if (i > 0) console.log("That did not work; trying the other release channel.");
+            if (!install()) continue;
+            // Drop the cached check so the freshly installed version re-reads the channels on its
+            // next run instead of trusting a pre-update snapshot.
             try { rmSync(cacheFile(), { force: true }); } catch { /* best-effort */ }
             console.log("Updated to the latest enigma-cli.");
             return true;
         }
-        console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually.`);
+        console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually, or install the tarball from https://github.com/FJRG2007/enigma/releases/latest.`);
     } catch {
         console.log(`Could not run the update. Run '${UPDATE_COMMAND}' manually.`);
     }
@@ -373,7 +430,10 @@ export function updateRuntimeInstalls(version: string, installs: RuntimeInstall[
     const lines: string[] = [];
     for (const install of installs) {
         if (!isNewer(version, install.version)) continue;
-        const result = spawnSync(install.node, [install.npmCli, "i", "-g", `enigma-cli@${version}`, "--prefix", install.prefix], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", windowsHide: true });
+        // The verified release tarball when this version came from GitHub: it may not be on npm.
+        const tarball = releaseTarballPath(version);
+        const spec = existsSync(tarball) ? tarball : `enigma-cli@${version}`;
+        const result = spawnSync(install.node, [install.npmCli, "i", "-g", spec, "--prefix", install.prefix], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", windowsHide: true });
         if (result.status === 0) { lines.push(`${install.prefix}: enigma-cli ${install.version} -> ${version}`); continue; }
         const stderr = String(result.stderr || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
         const reason = result.error?.message ?? stderr.find((l) => /^npm (error|ERR!)/.test(l)) ?? stderr.find((l) => /Error\b/.test(l)) ?? stderr[0];
@@ -436,7 +496,7 @@ export async function notifyUpdate(current: string, interactive: boolean): Promi
         if (!interactive) return;
         const ok = await p.confirm({ message: `Update now with ${updateCommand()}?`, initialValue: true });
         if (p.isCancel(ok) || !ok) return;
-        runUpdate();
+        await runUpdate();
     } catch {
         // An update notice is purely informational; never let it break the command.
     }

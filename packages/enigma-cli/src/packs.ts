@@ -218,6 +218,12 @@ export function ensurePackInstalled(id: string): boolean {
 export function refreshPack(id: string): boolean {
     const before = installedPackVersion(id);
     npmInstall(id, "latest");
+    // npm can "succeed" on a stale @latest when a publish reached GitHub but not the registry.
+    const pack = getPack(id);
+    const newer = pack ? release.newerReleaseOf(pack.pkg, installedPackVersion(id)) : null;
+    if (pack && newer) {
+        try { ensureHostDir(id); release.installReleasePackage(pack.pkg, installDir(id), newer); } catch { /* the npm install stands */ }
+    }
     return installedPackVersion(id) !== before;
 }
 

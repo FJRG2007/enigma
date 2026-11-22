@@ -19,7 +19,7 @@ process.env.HOME = HOME;
 delete process.env.ENIGMA_OFFLINE;
 
 const release = await import("../src/release-fetch");
-const { latestVersion, runStandaloneUpdate } = await import("../src/update");
+const { latestVersion, runStandaloneUpdate, newestOf, fetchReleaseTarball, releaseTarballPath } = await import("../src/update");
 
 afterAll(() => { rmSync(HOME, { recursive: true, force: true }); });
 
@@ -197,6 +197,45 @@ test("version check: npm installs still prefer the registry, standalone never as
     } finally {
         registry.close();
     }
+});
+
+test("version check: a GitHub release newer than a stale registry wins", async () => {
+    const { createServer } = await import("node:http");
+    const registry = createServer((_req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ version: "1.0.0" })); });
+    await new Promise<void>((r) => registry.listen(0, "127.0.0.1", r));
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-4.5.6.tgz": cliTarball("4.5.6") }));
+    process.env.ENIGMA_NPM_REGISTRY = `http://127.0.0.1:${(registry.address() as { port: number; }).port}`;
+    try {
+        expect(await latestVersion("npm")).toBe("4.5.6");
+    } finally {
+        registry.close();
+    }
+    expect(newestOf(null, "1.2.3")).toBe("1.2.3");
+    expect(newestOf("1.10.0", "1.9.9")).toBe("1.10.0");
+    expect(newestOf(null, null)).toBeNull();
+});
+
+test("the release tarball is verified, kept for the other runtimes, and older ones pruned", () => {
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-2.0.0.tgz": cliTarball("2.0.0") }));
+    const first = fetchReleaseTarball();
+    expect(first).toBe(releaseTarballPath("2.0.0"));
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-2.0.1.tgz": cliTarball("2.0.1") }));
+    expect(fetchReleaseTarball()).toBe(releaseTarballPath("2.0.1"));
+    expect(existsSync(first)).toBe(false);
+    const good = cliTarball("2.0.2");
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-2.0.2.tgz": good }, { "enigma-cli-2.0.2.tgz": "0".repeat(64) }));
+    expect(() => fetchReleaseTarball()).toThrow(/Checksum mismatch/);
+    expect(existsSync(releaseTarballPath("2.0.2"))).toBe(false);
+});
+
+test("a package refresh takes the release only when it is newer than what npm left", () => {
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(fakeRelease({ "enigma-cli-3.0.0.tgz": cliTarball("3.0.0"), "enigmax-dashboard-0.3.0.tgz": dashTarball("0.3.0") }));
+    expect(release.newerReleaseOf("@enigmax/dashboard", "0.2.9")?.version).toBe("3.0.0");
+    expect(release.newerReleaseOf("@enigmax/dashboard", null)).not.toBeNull();
+    expect(release.newerReleaseOf("@enigmax/dashboard", "0.3.0")).toBeNull();
+    expect(release.newerReleaseOf("@enigmax/linter", "0.0.1")).toBeNull();
+    process.env.ENIGMA_DOWNLOAD_BASE = fileUrl(join(HOME, "no-such-release"));
+    expect(release.newerReleaseOf("@enigmax/dashboard", "0.0.1")).toBeNull();
 });
 
 test("the async SHA256SUMS read the dashboard uses finds package versions without blocking", async () => {

@@ -21,6 +21,7 @@
  */
 
 import { tmpdir } from "node:os";
+import { isNewer } from "./util";
 import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -144,6 +145,32 @@ export async function fetchLatestSumsAsync(timeoutMs = 30000): Promise<Map<strin
     if (!/^https:\/\//i.test(res.url || url)) throw new Error(`refusing non-HTTPS redirect: ${res.url}`);
     if (!res.ok) throw new Error(`download failed: ${url} (HTTP ${res.status})`);
     return parseSums(await res.text());
+}
+
+/** The latest release's sums, read once per process: one `enigma update` refreshes several packages. */
+let latestSums: { from: string; sums: ReleaseSums | null; } | undefined;
+
+/**
+ * The latest GitHub release when it carries `pkgName` at a version newer than `installed` (or any
+ * version when nothing is installed), else null - also when GitHub cannot be read.
+ *
+ * WHY. Every package is published to npm AND attached to the GitHub release by the same workflow,
+ * and either channel alone can stall: an npm publish blocked (seen: an account suspension) leaves
+ * `npm install <pkg>@latest` succeeding on the OLD version, so a refresh that only falls back on
+ * failure never notices. A refresh compares against the release after npm and takes it when newer.
+ */
+export function newerReleaseOf(pkgName: string, installed: string | null): ReleaseSums | null {
+    // Keyed by where it was read from, so a mirror override is never answered from another source.
+    const from = releaseBase();
+    if (latestSums?.from !== from) {
+        let sums: ReleaseSums | null = null;
+        try { sums = fetchReleaseSums(); } catch { /* GitHub unreachable */ }
+        latestSums = { from, sums };
+    }
+    const sums = latestSums.sums;
+    const found = sums ? packageAsset(sums.sums, pkgName) : null;
+    if (!sums || !found) return null;
+    return !installed || isNewer(found.version, installed) ? sums : null;
 }
 
 /** The latest enigma-cli version published as a GitHub release, or null when unreachable. */
