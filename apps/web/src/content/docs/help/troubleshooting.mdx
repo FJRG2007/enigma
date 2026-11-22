@@ -36,7 +36,7 @@ Turn on both `usage-stats` and `usage-api`. The probe reads your local Claude Co
 
 ## Update didn't change anything
 
-`enigma update` pulls the latest published versions; if you are already on them, nothing changes. Skills can update from GitHub between releases when `remote-skills` is on. Re-run `enigma update` after a release lands on npm.
+`enigma update` installs the newest release from npm or GitHub, whichever is ahead, so a delayed npm publish does not hold it back; if you are already on the latest, nothing changes. Skills can update from GitHub between releases when `remote-skills` is on. An install older than 1.77.0 only reads npm: reinstall once with the install command on the start page and it updates itself from then on.
 
 ## Report a bug
 

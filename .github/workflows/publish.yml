@@ -203,6 +203,10 @@ jobs:
           done
           # Not `grep -q`: it exits on the first match, tar dies of SIGPIPE, and pipefail fails the step.
           tar -tzf release-assets/enigma-cli-*.tgz | grep -x 'package/bin/checksums.json' >/dev/null || { echo "checksums.json missing from the enigma-cli tarball"; exit 1; }
+          # The same tarball under a fixed name, so `releases/latest/download/enigma-cli.tgz` is a
+          # stable URL for npm/pnpm/yarn/bun installs that never depend on the npm registry. The
+          # versioned name stays the one every installer and updater reads the version from.
+          cp release-assets/enigma-cli-*.tgz release-assets/enigma-cli.tgz
           (cd release-assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
 
       - name: Keep checksums.json for the npm job

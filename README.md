@@ -53,7 +53,7 @@ Or one-shot through npm, no global install, no prompts - deploy the skills to ev
 supported agent at user level:
 
 ```bash
-npx enigma-cli@latest install --all --yes
+npx --yes --package=https://github.com/FJRG2007/enigma/releases/latest/download/enigma-cli.tgz enigma install --all --yes
 ```
 
 <table>
@@ -65,7 +65,7 @@ npx enigma-cli@latest install --all --yes
 Senior-engineering policies (security, testing, git, style, debugging...) on **Claude Code, OpenAI Codex, opencode and Kimi Code**. Unlike a static skill, each one adapts to the agent, re-renders from your config, loads only when the task needs it, and updates itself. Discard any you don't want - it's gone everywhere until you restore it.
 
 ```bash
-npx enigma-cli@latest install --all --yes
+npx --yes --package=https://github.com/FJRG2007/enigma/releases/latest/download/enigma-cli.tgz enigma install --all --yes
 ```
 
 </td>

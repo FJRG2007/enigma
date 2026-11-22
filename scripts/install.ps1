@@ -9,7 +9,7 @@
 # `enigma update` later updates it the same way.
 #
 # Environment:
-#   ENIGMA_INSTALL=npm              install with `npm install -g enigma-cli@latest` instead
+#   ENIGMA_INSTALL=npm              install with npm (the release tarball, not the registry) instead
 #   ENIGMA_INSTALL_VERSION=1.2.3    pin a release (default: the latest)
 #   ENIGMA_DOWNLOAD_BASE=<url>      mirror holding ONE release's assets (https:// or file://)
 #   ENIGMA_PREFIX=<dir>             where versions live (default %LOCALAPPDATA%\enigma\cli)
@@ -71,7 +71,7 @@
         Write-Host "enigma: installing enigma-cli globally..."
         $installed = $false
         foreach ($attempt in 1, 2) {
-            cmd /c "npm install -g enigma-cli@latest"
+            cmd /c "npm install -g https://github.com/FJRG2007/enigma/releases/latest/download/enigma-cli.tgz"
             if ($LASTEXITCODE -eq 0) { $installed = $true; break }
             if ($attempt -eq 1) {
                 Write-Host "enigma: install failed (exit $LASTEXITCODE) - a running enigma may be locking the binary. Stopping it and retrying once..."

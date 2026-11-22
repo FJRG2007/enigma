@@ -40,15 +40,18 @@ export async function copyText(text: string): Promise<boolean> {
 // ── Install command (shared by the landing hero and /start) ──────────────────────────
 
 // curl is the recommended script; npm is the preferred package manager, with pnpm/yarn/bun
-// for those who use them; npx is one-shot. Single source of truth for both pages.
+// for those who use them; npx is one-shot. Single source of truth for both pages. The package
+// managers install the latest GitHub release tarball rather than the registry name, so a fresh
+// install is never older than the release and `enigma update` keeps it current either way.
+const RELEASE_TGZ = "https://github.com/FJRG2007/enigma/releases/latest/download/enigma-cli.tgz";
 export const INSTALL_METHODS: Record<string, string> = {
     curl: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
     powershell: "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex",
-    npm: "npm install -g enigma-cli@latest && enigma install",
-    pnpm: "pnpm add -g enigma-cli@latest && enigma install",
-    yarn: "yarn global add enigma-cli@latest && enigma install",
-    bun: "bun add -g enigma-cli@latest && enigma install",
-    npx: "npx enigma-cli@latest install --all --yes",
+    npm: `npm install -g ${RELEASE_TGZ} && enigma install`,
+    pnpm: `pnpm add -g ${RELEASE_TGZ} && enigma install`,
+    yarn: `yarn global add ${RELEASE_TGZ} && enigma install`,
+    bun: `bun add -g ${RELEASE_TGZ} && enigma install`,
+    npx: `npx --yes --package=${RELEASE_TGZ} enigma install --all --yes`,
 };
 // The visitor's last-chosen method, so /start shows the same one they picked on the landing.
 export const INSTALL_STORE_KEY = "enigma-install-method";

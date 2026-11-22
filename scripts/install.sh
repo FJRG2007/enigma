@@ -9,7 +9,7 @@
 # an `enigma` command to ~/.local/bin. `enigma update` later updates it the same way.
 #
 # Environment:
-#   ENIGMA_INSTALL=npm              install with `npm install -g enigma-cli@latest` instead
+#   ENIGMA_INSTALL=npm              install with npm (the release tarball, not the registry) instead
 #   ENIGMA_INSTALL_VERSION=1.2.3    pin a release (default: the latest)
 #   ENIGMA_DOWNLOAD_BASE=<url>      mirror holding ONE release's assets (https:// or file://)
 #   ENIGMA_PREFIX=<dir>             where versions live (default ~/.enigma/cli)
@@ -69,7 +69,7 @@ install_npm() {
   say "installing enigma-cli globally..."
   # A global install needs write access to npm's prefix, which a system Node on macOS does
   # not grant without sudo. That is not fatal here: npx runs the same package without one.
-  if npm install -g enigma-cli@latest; then
+  if npm install -g https://github.com/FJRG2007/enigma/releases/latest/download/enigma-cli.tgz; then
     global_install=yes
   else
     global_install=no
@@ -84,7 +84,7 @@ install_npm() {
     if [ "$global_install" = yes ]; then
       echo "enigma: 'enigma' is not on this shell's PATH yet - using npx (open a new shell to get the command)." >&2
     fi
-    run_enigma() { npx --yes enigma-cli@latest "$@"; }
+    run_enigma() { npx --yes --package=https://github.com/FJRG2007/enigma/releases/latest/download/enigma-cli.tgz enigma "$@"; }
   fi
   setup run_enigma "$@"
 }
