@@ -282,6 +282,8 @@ Each module must handle only one responsibility, such as:
 - Optimize for long-term maintainability.
 - Prefer low-complexity and low-dependency solutions.
 - Reduce redundant computation and duplication.
+- Speed is a requirement, not a later optimization. When choosing the stack for a new project, or for a component on a hot path (startup, input latency, memory, throughput), take the fastest option proven for that job and justify a slower one by a concrete requirement: Rust (or Go) for CPU-bound services, CLIs, workers and native modules; a native or GPU-accelerated UI (Zed's GPUI, behind Discord's 2026 desktop rewrite, or Tauri) over Electron for a desktop app; WebAssembly for heavy computation in the browser; a compiled, streaming runtime over an interpreted one where startup is felt.
+- In an existing project, never switch the stack unasked: optimize within it first, and when the runtime itself is the bottleneck, propose the migration with measured gains (cold start, RAM, p95 latency) rather than performing it. Measure before and after either way.
 - API, request, and caching optimization specifics live in backend-policy (server) and frontend-policy (client).
 
 ---

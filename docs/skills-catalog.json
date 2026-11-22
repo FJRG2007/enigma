@@ -53,11 +53,11 @@
     },
     {
       "name": "core-engineering-policy",
-      "version": "1.15.0",
+      "version": "1.16.0",
       "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-10-21T16:15:11+02:00",
-      "sha": "05ca63e9c23fb3fb7f4e4efab7794e839a5e094eef9c4b2d9de0a50c7541fcd0"
+      "sha": "81d235907beb260e9be6fc9352782839a9d74d6e1093775678b4ee7c13d98cfd"
     },
     {
       "name": "database-expert",
