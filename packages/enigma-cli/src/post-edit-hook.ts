@@ -72,6 +72,14 @@ export async function runPostEditHook(payload: string): Promise<number> {
     // A lint finding blocks like a guardrails BLOCK does, and for the same reason - the model is
     // about to redo the write - so the blast radius below would describe an edit being taken back.
     if (blocked === 2) return 2;
+    // Convention checks: start the background judge now, so its verdict is on disk before the
+    // turn ends. Only a glob test when no check applies; never waits on anything.
+    if (config.checks !== false) {
+        try {
+            const { scheduleForEdit } = await import("./checks-judge");
+            scheduleForEdit(payload);
+        } catch { /* checks are an extra; an edit never fails over them */ }
+    }
     if (config.codeGraph) {
         try {
             const { runCodeGraphHook } = await import("./codegraph-hook");

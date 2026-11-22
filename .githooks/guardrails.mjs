@@ -1571,9 +1571,17 @@ var BUILTIN_RULES = [
     //     deliberately absent: those are primary buttons whose job is to be read.
     // (3) Case-insensitive on the tag, so a <Button> component matches too; the backreference
     //     keeps the closing tag paired with the opening one.
-    pattern: "^(?!.*enigma:).*<(button)\\b[^>]*>\\s*(?:Copy|Remove|Delete|Edit|Rename|Duplicate|Download|Share|Refresh|Reload)\\s*</\\1>",
-    absent: "enigma:allow-text-actions",
-    message: 'Action button labelled with a word. A repeated row or card action (copy, edit, rename, duplicate, remove, delete, download, share, refresh) reads faster and costs far less width as an ICON button: drop the visible word for a single icon taken from the project\'s one icon set, and keep the action reachable without sight - aria-label="<Action> <what it acts on>" for the accessible name, title="<Action>" for the hover tooltip, aria-hidden="true" on the icon itself (an <img> icon carries the same text as its alt instead). Keep a written label only where the design or the user asks for one, or on a primary/confirmation button whose whole job is to be read - then mark the line with an `enigma:` note, or add `enigma:allow-text-actions` to the file (frontend-policy).',
+    // Coded, not a regex: the regex this replaced required the whole element on one line with
+    // no '>' before the label, so it never matched the shape agents write most -
+    // `<Button onClick={() => remove(id)}>Remove</Button>` (the arrow's '>') or a label on its
+    // own line - and the defect kept shipping in new apps with the rule switched on.
+    // textActionButtons reads the tag through {...} and quotes, across lines, and also covers
+    // add/new/create and two-word labels ("Delete tool"). A button holding any element (svg,
+    // Icon) is icon-plus-label and passes. DIFF stage: the wider recall finds a backlog in
+    // existing UIs, and the turn-end sweep reports only the buttons a change adds.
+    stage: "diff",
+    fileCheck: "fe-icon-action-button",
+    message: 'Action button labelled with a word. A repeated row or card action (copy, edit, rename, duplicate, remove, delete, download, share, refresh, archive) reads faster and costs far less width as an ICON button: drop the visible word for a single icon taken from the project\'s one icon set, and keep the action reachable without sight - aria-label="<Action> <what it acts on>" for the accessible name, title="<Action>" for the hover tooltip, aria-hidden="true" on the icon itself (an <img> icon carries the same text as its alt instead). A creating or primary action (add, new, create) gets the icon PLUS its label, never the bare word. Keep a word-only button only where the design or the user asks for one - then mark the line with an `enigma:` note, or add `enigma:allow-text-actions` to the file (frontend-policy).',
     severity: "block",
     skill: "frontend-policy"
   },
@@ -1959,14 +1967,11 @@ var BUILTIN_RULES = [
     id: "proc-windows-hide",
     label: "Spawned process must not pop a console window",
     files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs", "*.jsx"],
-    // Tests run in a terminal that already has a console, so a flashing window is not a
-    // defect there. Same two-form generated/vendored excludes as the rules above.
+    // Tests and scratch scripts are IN scope. They used to be exempt on the premise that a test
+    // runs in a terminal with a console; an agent runs them from a tool shell with none, and
+    // one test suite spawning git without the flag put a window on the user's screen per call,
+    // in a loop, until they could not work. Only generated and vendored code is excluded.
     excludeFiles: [
-      "*.test.*",
-      "*.spec.*",
-      "**/tests/**",
-      "**/__tests__/**",
-      "**/fixtures/**",
       "*.min.js",
       "*.d.ts",
       "**/dist/**",
@@ -2832,6 +2837,7 @@ var FILE_CHECKS = {
   "fe-mutation-without-optimistic": (content) => mutationWithoutOptimisticUpdate(content),
   "perf-unbounded-fanout": (content) => unboundedFanout(content),
   "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
+  "fe-icon-action-button": (content) => textActionButtons(content),
   "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
   "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
   "fe-unbounded-remote-list": (content) => unboundedRemoteList(content),
@@ -2909,15 +2915,23 @@ var FIXERS = {
 };
 function applyFixes(file, findings, stage = "edit") {
   const fixable = findings.filter((f) => f.line && FIXERS[f.ruleId]);
-  if (!fixable.length) return { fixed: [], remaining: findings };
+  const whole = findings.filter((f) => f.line && CONTENT_FIXERS[f.ruleId]);
+  if (!fixable.length && !whole.length) return { fixed: [], remaining: findings };
   let content;
   try {
     content = readFileSync2(file, "utf8");
   } catch {
     return { fixed: [], remaining: findings };
   }
-  const lines = content.split("\n");
   const fixed = [];
+  for (const id of new Set(whole.map((f) => f.ruleId))) {
+    const after = CONTENT_FIXERS[id](content, new Set(whole.filter((f) => f.ruleId === id).map((f) => f.line)));
+    if (after !== content) {
+      content = after;
+      fixed.push(...whole.filter((f) => f.ruleId === id));
+    }
+  }
+  const lines = content.split("\n");
   for (const f of fixable) {
     const idx = f.line - 1;
     const before = lines[idx];
@@ -2939,6 +2953,9 @@ function applyFixes(file, findings, stage = "edit") {
     return { fixed, remaining: [] };
   }
 }
+var CONTENT_FIXERS = {
+  "proc-windows-hide": (content, lines) => addWindowsHide(content, lines)
+};
 var SPAWNERS = /* @__PURE__ */ new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
 function spawnerBindings(content) {
   const names = /* @__PURE__ */ new Set();
@@ -2952,22 +2969,127 @@ function spawnerBindings(content) {
   return [...names];
 }
 function missingWindowsHide(content) {
-  const names = spawnerBindings(content);
-  if (names.length === 0) return [];
-  const out = [];
-  const call = new RegExp(`(?<![.\\w$])(${names.join("|")})\\s*\\(`, "g");
-  for (const m of content.matchAll(call)) {
-    let i = m.index + m[0].length;
-    for (let depth = 1; i < content.length && depth > 0; i++) {
-      if (content[i] === "(") depth++;
-      else if (content[i] === ")") depth--;
+  return unhiddenSpawns(content).map((s) => ({ line: content.slice(0, s.start).split("\n").length, detail: s.name }));
+}
+function spawnArguments(content, open) {
+  const args = [];
+  let depth = 0;
+  let from = open + 1;
+  const limit = Math.min(content.length, open + 8e3);
+  for (let i = open + 1; i < limit; i++) {
+    const ch = content[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      for (i++; i < content.length && content[i] !== ch; i++) if (content[i] === "\\") i++;
+    } else if (ch === "/" && content[i + 1] === "/") {
+      const eol = content.indexOf("\n", i);
+      i = eol === -1 ? content.length : eol;
+    } else if (ch === "/" && content[i + 1] === "*") {
+      const end = content.indexOf("*/", i + 2);
+      i = end === -1 ? content.length : end + 1;
+    } else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if ((ch === ")" || ch === "]" || ch === "}") && depth > 0) depth--;
+    else if (ch === "," && depth === 0) {
+      args.push({ from, to: i });
+      from = i + 1;
+    } else if (ch === ")" && depth === 0) {
+      if (content.slice(from, i).trim()) args.push({ from, to: i });
+      return { args, close: i };
     }
-    const eol = content.indexOf("\n", i);
+  }
+  return null;
+}
+function unhiddenSpawns(content) {
+  const bindings = spawnerBindings(content);
+  if (bindings.length === 0) return [];
+  const original = spawnerOriginals(content);
+  const out = [];
+  const call = new RegExp(`(?<![.\\w$])(${bindings.join("|")})\\s*\\(`, "g");
+  const quoted = inLiteral(content);
+  for (const m of content.matchAll(call)) {
+    if (quoted(m.index)) continue;
+    const open = m.index + m[0].length - 1;
+    const parsed = spawnArguments(content, open);
+    if (!parsed) continue;
+    const eol = content.indexOf("\n", parsed.close);
     const text = content.slice(m.index, eol === -1 ? content.length : eol);
     if (/windowsHide|enigma:|"inherit"|'inherit'/.test(text)) continue;
-    if (!text.includes("{")) continue;
-    if (/\{[^{}]*\.\.\.[A-Za-z_$]/.test(text)) continue;
-    out.push({ line: content.slice(0, m.index).split("\n").length, detail: m[1] });
+    const args = parsed.args.map((a) => ({ ...a, src: content.slice(a.from, a.to).trim() }));
+    const callback = (src) => /^(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/.test(src);
+    const slot = /^exec(?:Sync)?$/.test(original.get(m[1]) ?? m[1]) ? 1 : 2;
+    const literal = args.findIndex((a, i) => i >= 1 && a.src.startsWith("{"));
+    if (literal !== -1) {
+      if (/\.\.\.[A-Za-z_$]/.test(args[literal].src)) continue;
+      out.push({ start: m.index, name: m[1], objectOpen: content.indexOf("{", args[literal].from) + 1, insertAt: -1 });
+      continue;
+    }
+    const positional = args.filter((a) => !callback(a.src));
+    if (positional.length === 0 || positional.length > slot) continue;
+    const firstCallback = args.find((a) => callback(a.src));
+    out.push({ start: m.index, name: m[1], objectOpen: -1, insertAt: firstCallback ? firstCallback.from : args[args.length - 1].to });
+  }
+  return out;
+}
+function inLiteral(content) {
+  const spans = [];
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    let end = -1;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      let j = i + 1;
+      for (; j < content.length && content[j] !== ch; j++) {
+        if (content[j] === "\\") j++;
+        else if (ch !== "`" && content[j] === "\n") break;
+      }
+      end = j;
+    } else if (ch === "/" && content[i + 1] === "/") {
+      const eol = content.indexOf("\n", i);
+      end = eol === -1 ? content.length : eol;
+    } else if (ch === "/" && content[i + 1] === "*") {
+      const close = content.indexOf("*/", i + 2);
+      end = close === -1 ? content.length : close + 1;
+    }
+    if (end !== -1) {
+      spans.push([i, end]);
+      i = end;
+    }
+  }
+  return (index) => {
+    let lo = 0, hi = spans.length - 1;
+    while (lo <= hi) {
+      const mid = lo + hi >> 1;
+      const [from, to] = spans[mid];
+      if (index < from) hi = mid - 1;
+      else if (index > to) lo = mid + 1;
+      else return true;
+    }
+    return false;
+  };
+}
+function spawnerOriginals(content) {
+  const map = /* @__PURE__ */ new Map();
+  const stmt = /(?:import|(?:const|let|var))\s*\{([^}]*)\}\s*(?:from\s*|=\s*require\(\s*)["'](?:node:)?child_process["']/g;
+  for (const m of content.matchAll(stmt)) {
+    for (const part of m[1].split(",")) {
+      const [orig, alias] = part.trim().split(/\s+as\s+/).map((s) => s.trim());
+      if (orig && SPAWNERS.has(orig)) map.set(alias || orig, orig);
+    }
+  }
+  return map;
+}
+function addWindowsHide(content, lines) {
+  let out = content;
+  for (const s of unhiddenSpawns(content).reverse()) {
+    if (lines && !lines.has(lineOfOffset(content, s.start))) continue;
+    if (s.objectOpen !== -1) {
+      const gap = /^\s*/.exec(out.slice(s.objectOpen))[0];
+      const at = s.objectOpen + gap.length;
+      const prop = out[at] === "}" ? gap.includes("\n") ? "windowsHide: true," : " windowsHide: true " : gap.includes("\n") ? `windowsHide: true,${gap}` : `${gap ? "" : " "}windowsHide: true, `;
+      out = `${out.slice(0, at)}${prop}${out.slice(at)}`;
+    } else {
+      const rest = out.slice(s.insertAt);
+      const lead = /^\s*/.exec(rest)[0];
+      out = s.insertAt === 0 || !/[,(]\s*$/.test(out.slice(0, s.insertAt)) ? `${out.slice(0, s.insertAt)}, { windowsHide: true }${rest}` : `${out.slice(0, s.insertAt)}${lead}{ windowsHide: true },${lead || " "}${rest.slice(lead.length)}`;
+    }
   }
   return out;
 }
@@ -3095,6 +3217,55 @@ function textareaSizeBounds(content) {
     if (!lower) missing.push("no minimum size: no rows, min-height or fixed height");
     if (!upper && !fixed) missing.push("no maximum size: no max-height, and it can be dragged or grows with its content");
     if (missing.length) out.push({ line: i + 1, detail: missing.join("; ") });
+  }
+  return out;
+}
+function elementsOf(content, tag) {
+  const out = [];
+  const open = new RegExp(`<(${tag})\\b`, "g");
+  for (let m = open.exec(content); m; m = open.exec(content)) {
+    let i = m.index + m[0].length;
+    let depth = 0;
+    let quote = "";
+    for (; i < content.length; i++) {
+      const c = content[i];
+      if (quote) {
+        if (c === quote) quote = "";
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") {
+        if (depth === 0 || c === "`") quote = c;
+        continue;
+      }
+      if (c === "{") depth++;
+      else if (c === "}") depth = Math.max(0, depth - 1);
+      else if (c === ">" && depth === 0) break;
+    }
+    if (i >= content.length) break;
+    const attrs = content.slice(m.index + m[0].length, i);
+    const line = content.slice(0, m.index).split("\n").length;
+    if (attrs.endsWith("/")) {
+      out.push({ line, attrs, children: "" });
+      continue;
+    }
+    const close = content.indexOf(`</${m[1]}`, i + 1);
+    if (close < 0) continue;
+    out.push({ line, attrs, children: content.slice(i + 1, close) });
+    open.lastIndex = i + 1;
+  }
+  return out;
+}
+var TEXT_ACTION = /^(?:copy|remove|delete|edit|rename|duplicate|clone|download|share|refresh|reload|archive|trash|add|new|create)(?:\s+[a-z][\w-]*){0,2}$/i;
+function textActionButtons(content) {
+  if (content.includes("enigma:allow-text-actions")) return [];
+  const lines = content.split("\n");
+  const out = [];
+  for (const el of elementsOf(content, "button|Button")) {
+    if (/[<{]/.test(el.children)) continue;
+    const text = el.children.replace(/\s+/g, " ").trim();
+    if (!TEXT_ACTION.test(text)) continue;
+    if (/enigma:/.test(lines[el.line - 1] ?? "")) continue;
+    out.push({ line: el.line, detail: `"${text}" is the button's only content` });
   }
   return out;
 }
@@ -5103,6 +5274,7 @@ export {
   FIXERS,
   PROJECT_CHECKS,
   accentStripe,
+  addWindowsHide,
   aiVocabulary,
   applyFixes,
   chatResidue,
@@ -5119,6 +5291,7 @@ export {
   findProjectRoot,
   fixedWidthNoGuard,
   formatFindings,
+  globRe,
   gradientText,
   handRolledColorPicker,
   handRolledContextMenu,
@@ -5163,6 +5336,7 @@ export {
   staticViewportHeight,
   storedFileServedInline,
   summarizeLedger,
+  textActionButtons,
   textareaSizeBounds,
   timingUnsafeSecretCompare,
   truncatedValueUnreachable,

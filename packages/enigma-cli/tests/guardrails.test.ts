@@ -23,7 +23,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, readReplyLedger, countLedger, summarizeLedger, runGuardrailsHook, BUILTIN_RULES, FIXERS } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, readReplyLedger, countLedger, summarizeLedger, runGuardrailsHook, BUILTIN_RULES, FIXERS, addWindowsHide } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -342,9 +342,47 @@ test("never flags a spawn that is fine, deliberate, or unknowable", () => {
     ]) expect(checkFile("src/a.ts", `${head}${call}\n`, null)).toEqual([]);
     // Only bindings imported from child_process count, so these two common shapes stay quiet.
     expect(checkFile("src/a.ts", `const RE = /x/g;\nRE.exec(s);\ndb.exec({ a: 1 });\n`, null)).toEqual([]);
-    // A test runs in a terminal that already has a console, so it is out of scope.
-    const bad = `import { execFileSync } from "node:child_process";\nexecFileSync("git", ["log"], { encoding: "utf8" });\n`;
-    expect(checkFile("tests/repo.test.ts", bad, null)).toEqual([]);
+});
+
+// An agent runs tests and scratch scripts from a tool shell with no console, so they are in scope:
+// one suite spawning git without the flag put a window on the user's screen per call, in a loop.
+test("tests, scratch scripts and calls with no options object at all are in scope", () => {
+    const head = 'import { execFileSync, spawnSync, execFile } from "node:child_process";\n';
+    expect(checkFile("tests/repo.test.ts", `${head}execFileSync("git", ["log"], { encoding: "utf8" });\n`, null).map((x) => x.ruleId)).toEqual(["proc-windows-hide"]);
+    expect(checkFile("scratch/probe.ts", `${head}spawnSync("git", ["init", "-q", repo]);\n`, null).map((x) => x.ruleId)).toEqual(["proc-windows-hide"]);
+    expect(checkFile("src/gh.ts", `${head}execFile("gh", ["pr"], (err, out) => done(out));\n`, null).map((x) => x.ruleId)).toEqual(["proc-windows-hide"]);
+    expect(checkFile("dist/bundle.js", `${head}spawnSync("git", ["x"]);\n`, null)).toEqual([]);
+});
+
+test("the repair adds windowsHide in place, in each call shape, and is a no-op once applied", () => {
+    const head = 'import { spawn, spawnSync, execFile, execFileSync, exec } from "node:child_process";\n';
+    const cases: [string, string][] = [
+        ['spawnSync("git", ["init", repo]);', 'spawnSync("git", ["init", repo], { windowsHide: true });'],
+        ['execFileSync("git", args, { cwd: dir });', 'execFileSync("git", args, { windowsHide: true, cwd: dir });'],
+        ["spawn(bin, args, {});", "spawn(bin, args, { windowsHide: true });"],
+        ['execFile("gh", ["pr"], (e, o) => done(o));', 'execFile("gh", ["pr"], { windowsHide: true }, (e, o) => done(o));'],
+        ['exec("ls");', 'exec("ls", { windowsHide: true });'],
+        ['execFileSync("git", ["log", "a)b"], { encoding: "utf8" });', 'execFileSync("git", ["log", "a)b"], { windowsHide: true, encoding: "utf8" });'],
+        ["execFile(\n    name,\n    {\n        signal,\n    },\n    cb\n);", "execFile(\n    name,\n    {\n        windowsHide: true,\n        signal,\n    },\n    cb\n);"],
+    ];
+    for (const [before, after] of cases) {
+        const fixed = addWindowsHide(`${head}${before}\n`);
+        expect(fixed).toBe(`${head}${after}\n`);
+        expect(addWindowsHide(fixed)).toBe(fixed);
+    }
+    for (const fine of ["spawn(bin, args, opts);", "spawn(bin, args, { ...o });", 'exec("ls", opts, cb);']) expect(addWindowsHide(`${head}${fine}\n`)).toBe(`${head}${fine}\n`);
+});
+
+test("the post-edit hook repairs an unhidden spawn on disk, so nothing is left to run", () => {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-winhide-"));
+    try {
+        const file = join(dir, "probe.ts");
+        writeFileSync(file, 'import { spawnSync } from "node:child_process";\nspawnSync("git", ["status"]);\n');
+        runGuardrailsHook(JSON.stringify({ tool_input: { file_path: file } }));
+        expect(readFileSync(file, "utf8")).toContain('spawnSync("git", ["status"], { windowsHide: true });');
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });
 
 test("the shell renders while only the waiting region is a placeholder", () => {
@@ -1221,7 +1259,7 @@ test("the clipped-value fixer declines everything it cannot copy safely", () => 
 /** A throwaway git repository, so the hook can tell a line the change touched from one it did not. */
 function gitRepo(): string {
     const dir = mkdtempSync(join(tmpdir(), "gr-hook-"));
-    const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dir, stdio: "ignore" }); };
+    const git = (...args: string[]): void => { execFileSync("git", args, { windowsHide: true, cwd: dir, stdio: "ignore" }); };
     git("init", "-q");
     git("config", "user.email", "test@example.com");
     git("config", "user.name", "test");
@@ -1245,8 +1283,8 @@ test("the post-edit hook repairs a diff-stage finding, on the lines the change t
     const dir = gitRepo();
     const file = join(dir, "Row.tsx");
     writeFileSync(file, CLIPPED_NAME);
-    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "ignore" });
-    execFileSync("git", ["commit", "-qm", "row"], { cwd: dir, stdio: "ignore" });
+    execFileSync("git", ["add", "-A"], { windowsHide: true, cwd: dir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-qm", "row"], { windowsHide: true, cwd: dir, stdio: "ignore" });
     // Line 1 is committed; line 2 is what this change wrote.
     writeFileSync(file, `${CLIPPED_NAME}<span className="truncate">{user.email}</span>\n`);
     expect(postEdit(file)).toBe(0); // a diff-stage finding is never REPORTED here
@@ -1283,8 +1321,8 @@ test("an edit-stage BLOCK on a line the change never touched does not block the 
     const file = join(repo, "schema.sql");
     const legacy = "CREATE TABLE users (id SERIAL PRIMARY KEY);\n";
     writeFileSync(file, legacy);
-    execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "ignore" });
-    execFileSync("git", ["commit", "-qm", "schema"], { cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["add", "-A"], { windowsHide: true, cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["commit", "-qm", "schema"], { windowsHide: true, cwd: repo, stdio: "ignore" });
     writeFileSync(file, `${legacy}CREATE TABLE teams (id UUID PRIMARY KEY);\n`);
     expect(postEdit(file)).toBe(0);
     // The same rule on a line this change wrote still blocks.

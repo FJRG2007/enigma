@@ -39,6 +39,9 @@ export default defineConfig({
         "codegraph-hook": "src/codegraph-hook.ts",
         // The CI notifier's hook and poller, answered by the launcher for the same reason.
         "ci-watch": "src/ci-watch.ts",
+        // The convention-checks runner, spawned detached after an edit: answered by the launcher
+        // under Node so a background judge never pays a Bun start too.
+        "checks-run": "src/checks-judge.ts",
         leftovers: "src/leftovers.ts",
         // The browser guard, answered by the launcher: Kimi, Codex and OpenCode run it before every shell command.
         "browser-guard": "src/browser-guard.ts",

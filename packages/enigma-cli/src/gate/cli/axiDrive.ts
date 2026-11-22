@@ -33,8 +33,8 @@ import { mergeRunPR, type MergeOutcome } from "./axiMerge";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
 import { formatSkipPushOptions, formatIntentPushOption } from "./steps";
+import { DEFAULT_TRIVIAL_LINES, describeTrivial, isTrivialChange } from "../triviality";
 import { currentBranch, run as gitRun, pushWithOptions, hasUncommittedChanges } from "../git";
-import { DEFAULT_TRIVIAL_LINES, describeTrivial, isTrivial, measureChange } from "../triviality";
 import {
     type AxiEnv,
     type AxiDeps,
@@ -428,11 +428,11 @@ function declineTrivial(deps: AxiDeps): number | null {
     if (last && last.branch === branch && !render.terminalStatus(last.status)) return null;
     const base = branchPoint(".");
     if (base === null) return null;
-    const size = measureChange(".", base);
-    if (size === null || !isTrivial(size, threshold)) return null;
+    const change = isTrivialChange(".", base, threshold);
+    if (!change.trivial || change.size === null) return null;
     render.emitDoc(deps.io, [
         field("skipped", true),
-        field("reason", `trivial change: ${describeTrivial(size, threshold)}`),
+        field("reason", change.copyOnly ? `copy-only change: ${change.size.lines} line(s) of text in ${change.size.files} file(s), no code changed` : `trivial change: ${describeTrivial(change.size, threshold)}`),
         toonHelp([
             `Do not run the pipeline for this. Push the commit on "${branch}" as the repository normally takes it (on the default branch, push it directly; do not open a branch or PR just for it).`,
             "Run with --full only if the user asked for a full validation of this change.",

@@ -711,6 +711,20 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => conf.readConfig().config.selfAudit,
                 write: (value, scope) => ({ path: conf.setEnigmaToggle("selfAudit", value, scope), changed: true }),
             },
+            {
+                key: "checks",
+                label: "Convention checks",
+                hint: "short rules judged by a small model against each changed file while the agent works, so a broken convention is handed back at turn end without costing the agent context; list them with 'enigma checks'; enigma default: on",
+                read: () => conf.readConfig().config.checks,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("checks", value, scope), changed: true }),
+            },
+            {
+                key: "checks-learn",
+                label: "Learn checks from corrections",
+                hint: "turn what you keep correcting agents about into proposed checks, from your recent sessions, once a day; nothing is enforced until you approve it ('enigma checks pending'); enigma default: on",
+                read: () => conf.readConfig().config.checksLearn,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("checksLearn", value, scope), changed: true }),
+            },
         ],
     },
     {

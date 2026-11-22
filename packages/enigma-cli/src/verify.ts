@@ -46,6 +46,7 @@
  */
 
 import { createHash } from "node:crypto";
+import * as checksJudge from "./checks-judge";
 import { scheduleBackgroundTidy } from "./git-tidy";
 import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
@@ -54,7 +55,7 @@ import { attributedCommits, attributionOff } from "./attribution-guard";
 import { enigmaHome, readJson, findGitRoot, isGateAgentRun } from "./util";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
-import { DEFAULT_TRIVIAL_LINES, isTrivial, measureChange } from "./gate/triviality";
+import { DEFAULT_TRIVIAL_LINES, MAX_TRIVIAL_FILES, isSensitivePath, isTrivialChange } from "./gate/triviality";
 import { lastAssistantMessage, sessionStartedAt, userTyped } from "./claude-transcripts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
@@ -1295,8 +1296,7 @@ function trivialWork(cwd: string, gate: GateContext): boolean {
     if (gate.trivialLines <= 0) return false;
     const base = branchPoint(cwd);
     if (base === null) return false;
-    const size = measureChange(cwd, base);
-    return size !== null && isTrivial(size, gate.trivialLines);
+    return isTrivialChange(cwd, base, gate.trivialLines).trivial;
 }
 
 /**
@@ -2418,6 +2418,19 @@ function auditMessage(round: number): string {
     return `enigma verify: self-audit ${round}/${MAX_AUDIT_ROUNDS}. Before reporting done, run the hostile self-review from your instructions (re-run what the user asked for the way they use it, edges, every caller), then cut each success word down to what you ran and saw; the rest is stated as unverified.`;
 }
 
+/**
+ * Whether this turn's change is too small to be worth an audit round: a few added lines in a few
+ * files, none on a sensitive path. Same threshold and sensitive paths as the gate's fast path
+ * (`gate-trivial-lines`), applied to the working tree. An audit is a whole extra model turn - on a
+ * two-line copy fix it cost more than the fix and found nothing the markers had not. A claim with
+ * no diff at all (published, deployed) is not trivial: those are the false successes it exists for.
+ */
+export function trivialTurn(scanned: ScannedLines | undefined, maxLines: number): boolean {
+    if (!scanned || !scanned.lines.length || scanned.truncated || maxLines <= 0) return false;
+    const files = new Set(scanned.lines.map((l) => l.file));
+    return scanned.lines.length <= maxLines && files.size <= MAX_TRIVIAL_FILES && ![...files].some(isSensitivePath);
+}
+
 /** Where runVerifyHook's messages go: stderr by default, captured by runVerifyHookJson. */
 let hookSink = (text: string): void => { process.stderr.write(text); };
 
@@ -2637,6 +2650,24 @@ export function runVerifyHook(payload?: string): number {
                 return 2;
             }
         }
+        // Convention checks: semantic rules a small model judged against each changed file in the
+        // background while the turn ran (checks-judge.ts). Read here, waiting only for a verdict
+        // still in flight; a slow or absent judge lets the stop through. Its own budget channel,
+        // like conventions, so a disputed finding cannot spend the completion gate's ceiling.
+        if (config.checks !== false && raw.permission_mode !== "plan" && scanned?.lines.length) {
+            try {
+                const verdict = checksJudge.checksVerdict(cwd);
+                const blocking = verdict.findings.filter((f) => f.severity === "block");
+                if (blocking.length) {
+                    substantive = true;
+                    const key = createHash("sha1").update(blocking.map((f) => `${f.file}\0${f.check}\0${f.reason}`).join("\n")).digest("hex").slice(0, 16);
+                    if (mayBlock(`checks:${session}:${key}`, session, "checks")) {
+                        hookSink(`${checksJudge.findingsMessage(blocking)}\n`);
+                        return 2;
+                    }
+                }
+            } catch { /* a checks failure must never deny a stop */ }
+        }
         // Reported LAST of all, and in BOTH exit paths, for one reason: it is the only gap about the
         // prose rather than the work. A turn that both padded its reply and left work unfinished must
         // hear about the work; being told to trim a table while a TODO ships is the gate at its most
@@ -2680,7 +2711,7 @@ export function runVerifyHook(payload?: string): number {
         // claims about the world made after the code is committed or without code at all, and they
         // were the false successes most often reported. The fixed point there is HEAD: the same
         // claim over the same commit is audited once.
-        if (!gaps.length && auditEnabled(config) && raw.permission_mode !== "plan") {
+        if (!gaps.length && auditEnabled(config) && raw.permission_mode !== "plan" && !trivialTurn(scanned, gate().trivialLines)) {
             const work = scanned?.lines.length
                 ? scanned.lines.map((l) => `${l.file}\0${l.text}`).join("\n")
                 : `head:${gitOut(cwd, ["rev-parse", "HEAD"]).trim()}`;

@@ -9,6 +9,7 @@
 
 import * as handoff from "./handoff";
 import { readFileSync } from "node:fs";
+import * as learn from "./checks-learn";
 import * as transcripts from "./claude-transcripts";
 
 export const HANDOFF_HELP = `usage: enigma handoff <save | show | status | clear>
@@ -51,12 +52,15 @@ export function runHandoffHook(host: string, raw: string, now = Date.now()): num
     const payload = parsePayload(raw);
     if (!payload || !FRESH_SOURCES.has(payload.source)) return 0;
     const pending = handoff.pendingHandoff(payload.cwd, now);
-    if (!pending) return 0;
-    const text = handoff.resumeText(pending, now);
+    // The same fresh-start channel carries the once-a-day note about learned checks awaiting approval.
+    let notice: string | null = null;
+    try { notice = learn.pendingNotice(now); } catch { /* a notice is never worth breaking a start */ }
+    if (!pending && !notice) return 0;
+    const text = [pending ? handoff.resumeText(pending, now) : "", notice ?? ""].filter(Boolean).join("\n\n");
     process.stdout.write(JSON_HOSTS.has(host)
         ? `${JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: text } })}\n`
         : `${text}\n`);
-    handoff.consumeHandoff(payload.cwd, now);
+    if (pending) handoff.consumeHandoff(payload.cwd, now);
     return 0;
 }
 

@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
 import { runConfigCli } from "./settings";
+import { CHECKS_HELP } from "./checks-cli";
 import { pinnedRef } from "./skills-remote";
 import { DESIGN_HELP } from "./design/help";
 import { collectReporter } from "./reporter";
@@ -213,7 +214,7 @@ function parseArgs(argv: string[]): CliOptions {
         }
         // `design` owns its whole flag set (--url, --out, --format, ...), so it parses its own
         // argv; only the shared help flags stay here.
-        if ((opts.command === "design" || opts.command === "handoff" || opts.command === "relay") && a !== "-h" && a !== "--help") {
+        if ((opts.command === "design" || opts.command === "handoff" || opts.command === "relay" || opts.command === "checks") && a !== "-h" && a !== "--help") {
             opts.positionals.push(a);
             continue;
         }
@@ -491,6 +492,9 @@ Commands:
                        motion and hover states through a local Chrome/Edge)
   handoff <save|show>  Keep a one-page handoff so the context can be cleared: the next
                        session in the project receives it and continues (also /handoff)
+  checks [list|run|pending|approve]
+                       Convention checks judged in the background against each change;
+                       learned from your own corrections, enforced once approved
   relay "<task>"       Run a long task as a chain of fresh sessions that hand off to each
                        other (--agent claude|codex|opencode|kimi, --max N)
   add [name...]        Headless primitives and utilities: behaviour, timing and a11y with
@@ -868,6 +872,7 @@ Shared flags: --in <path>  --limit N  --project <name>  --json  --no-refresh`,
 
     design: DESIGN_HELP,
     handoff: HANDOFF_HELP,
+    checks: CHECKS_HELP,
     relay: RELAY_HELP,
 
     autoskills: `usage: enigma autoskills [path] [--dry-run] [-y]
@@ -3309,6 +3314,11 @@ export async function run(argv: string[]): Promise<void> {
         process.stdout.write(JSON.stringify(indexProject(argv[1] || "")));
         return;
     }
+    // Hidden: the detached convention-checks runner the post-edit hook and the Stop hook start.
+    if (argv[0] === "__checks-run") {
+        const { runChecks } = await import("./checks-judge");
+        process.exit(await runChecks(argv[1] || ""));
+    }
     if (argv[0] === "__ci-watch") {
         const { runCiWatchPoll } = await import("./ci-watch");
         process.exit(await runCiWatchPoll(argv[1] || "", argv[2] || ""));
@@ -3500,6 +3510,10 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "design") {
         const { runDesignCli } = await import("./design/cli");
         process.exit(await runDesignCli(opts.positionals));
+    }
+    if (opts.command === "checks") {
+        const { runChecksCli } = await import("./checks-cli");
+        process.exit(await runChecksCli(opts.positionals));
     }
     if (opts.command === "handoff") {
         const { runHandoffCli } = await import("./handoff-cli");

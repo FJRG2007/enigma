@@ -56,6 +56,7 @@ Two levers, and they answer different halves of "why did this take an hour".
   trivial. `--full` overrides it when the user asked for a full validation; an in-flight run on
   the branch is never declined. The PR half lives in git-policy/kernel prose: no branch or PR is
   opened just for a trivial change.
+- **A copy-only change is trivial at any breadth up to 400 lines** (`copyOnlyDiff`, `isTrivialChange`). Reported: the gate ran for an hour to change a couple of texts. When every changed line differs only inside string literals or tag text, or the file is prose/translations, and no path is sensitive, the size threshold does not apply. One changed token of code makes it non-trivial again. Both `axi run` and the turn-end check use `isTrivialChange`, so they cannot disagree.
 
 The agent-facing rule lives in `assets/commands/gate.md` as a table, because the failure it
 replaced was a turn spent asking the user which phases to skip - a decision the agent is

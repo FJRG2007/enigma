@@ -278,13 +278,19 @@ matrix("fe-icon-action-button", true, [
     { name: "Rename in a profile row", file: "assets/index.html", code: "'<button type=\"button\" class=\"toggle\" data-prof-act=\"rename\">Rename</button>'" },
     { name: "Refresh with surrounding whitespace", file: "src/Panel.vue", code: "<button class=\"ghost\"> Refresh </button>" },
     { name: "Download action", file: "src/Export.svelte", code: "<button on:click={save}>Download</button>" },
+    // The shapes the single-line regex never matched, and agents write most.
+    { name: "arrow-function onClick before the label", file: "src/Tools.tsx", code: "<Button variant=\"ghost\" onClick={() => onRemove(t.id)}>Remove</Button>" },
+    { name: "label on its own line", file: "src/Tools.tsx", code: "<Button\n  size=\"sm\"\n  onClick={() => onEdit(row)}\n>\n  Edit\n</Button>" },
+    { name: "a bare creating action", file: "src/Tools.tsx", code: "<Button type=\"submit\">Create</Button>" },
+    { name: "a short label naming what it acts on is still a bare word", file: "src/Danger.tsx", code: "<button onClick={destroy}>Delete project</button>" },
 ]);
 
 matrix("fe-icon-action-button", false, [
     { name: "already an icon button with an accessible name", file: "src/Row.tsx", code: "<button title=\"Copy\" aria-label=\"Copy token\"><CopyIcon aria-hidden=\"true\" /></button>" },
     { name: "inline svg inside the button", file: "assets/index.html", code: "<button type=\"button\" class=\"iconbtn\" title=\"Refresh\" aria-label=\"Refresh\"><svg viewBox=\"0 0 24 24\"><path d=\"M23 4v6h-6\"/></svg></button>" },
     { name: "icon beside the label is not the defect", file: "src/Row.tsx", code: "<button onClick={copy}><CopyIcon aria-hidden=\"true\" />Copy</button>" },
-    { name: "multi-word label names what it acts on", file: "src/Danger.tsx", code: "<button onClick={destroy}>Delete project</button>" },
+    { name: "a sentence, not an action label", file: "src/Danger.tsx", code: "<button onClick={destroy}>Remove all of the selected items now</button>" },
+    { name: "translated label is dynamic text", file: "src/Row.tsx", code: "<Button onClick={() => x()}>{t(\"remove\")}</Button>" },
     { name: "primary form action keeps its text", file: "src/Form.tsx", code: "<button type=\"submit\">Save</button>" },
     { name: "cancel is not an iconified action", file: "src/Form.tsx", code: "<button onClick={close}>Cancel</button>" },
     { name: "the verb as a heading, not a button", file: "src/Row.tsx", code: "<span className=\"label\">Copy</span>" },

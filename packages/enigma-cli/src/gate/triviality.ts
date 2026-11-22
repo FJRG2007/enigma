@@ -34,6 +34,12 @@ const SENSITIVE_PATHS: RegExp[] = [
     /(^|\/)\.enigma\.json$/, /(^|\/)\.githooks\//,
 ];
 
+/** Whether a repo-relative path is one where any change deserves a review. */
+export function isSensitivePath(path: string): boolean {
+    const p = path.replace(/\\/g, "/");
+    return SENSITIVE_PATHS.some((re) => re.test(p));
+}
+
 /** Image and font assets: no line count and nothing a review reads, so they add no size. */
 const ASSET_PATH = /\.(png|jpe?g|gif|webp|avif|ico|bmp|svg|woff2?|ttf|otf|eot)$/i;
 
@@ -93,6 +99,70 @@ export function parseTrivialLines(value: string): number {
         throw new Error(`expected a whole number of lines from 0 to ${MAX_TRIVIAL_LINES}, got "${value}"`);
     }
     return n;
+}
+
+/** Past this many changed lines even a copy-only change is a rewrite worth a look. */
+export const MAX_COPY_LINES = 400;
+
+/** Prose and translation files: every line in them is copy. */
+const COPY_FILE = /\.(md|mdx|txt|rst|adoc)$|(^|\/)(locales?|i18n|lang|langs|translations|messages)\/[^/]+\.(json|ya?ml|po|properties|strings|xliff?)$/i;
+
+/** String literals (", ', `) and the text between JSX/HTML tags, which is what copy is in code. */
+const LITERAL = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+const TAG_TEXT = />[^<>{}]*</g;
+
+/** A code line with its copy blanked: two lines equal after this differ only in copy. */
+function withoutCopy(line: string): string {
+    return line.replace(LITERAL, "\"\"").replace(TAG_TEXT, "><").trim();
+}
+
+/**
+ * Whether every hunk of `diff` (a `git diff -U0`) only changes copy: whole prose or translation
+ * files, or code lines whose removed and added versions differ only inside string literals and
+ * tag text. A hunk that adds or removes a line of code, or changes anything outside the copy,
+ * makes the change not copy-only - one-sided like the rest of this module.
+ */
+export function copyOnlyDiff(diff: string): boolean {
+    let file = "";
+    let removed: string[] = [];
+    let added: string[] = [];
+    let sawHunk = false;
+    const settle = (): boolean => {
+        if (!removed.length && !added.length) return true;
+        if (COPY_FILE.test(file)) return true;
+        if (removed.length !== added.length) return false;
+        return removed.every((r, i) => withoutCopy(r) === withoutCopy(added[i]!));
+    };
+    for (const line of diff.split("\n")) {
+        if (line.startsWith("diff --git ")) {
+            if (!settle()) return false;
+            removed = []; added = [];
+            file = /^diff --git a\/.+? b\/(.+)$/.exec(line)?.[1] ?? "";
+            if (isSensitivePath(file)) return false;
+        } else if (line.startsWith("@@")) {
+            if (!settle()) return false;
+            removed = []; added = [];
+            sawHunk = true;
+        } else if (line.startsWith("Binary files ")) return false;
+        else if (line.startsWith("-") && !line.startsWith("---")) removed.push(line.slice(1));
+        else if (line.startsWith("+") && !line.startsWith("+++")) added.push(line.slice(1));
+    }
+    return settle() && sawHunk;
+}
+
+/**
+ * Trivial by size (`isTrivial`), or a copy-only change of any breadth up to MAX_COPY_LINES: fixing
+ * text across a dozen components is the "change a couple of texts" case the size rule sent through
+ * the full pipeline - an hour of review for what a typecheck already covers.
+ */
+export function isTrivialChange(cwd: string, base: string, maxLines: number): { trivial: boolean; size: ChangeSize | null; copyOnly: boolean; } {
+    const size = measureChange(cwd, base);
+    if (size === null) return { trivial: false, size, copyOnly: false };
+    if (isTrivial(size, maxLines)) return { trivial: true, size, copyOnly: false };
+    if (maxLines <= 0 || size.binary || size.sensitive.length || size.lines > MAX_COPY_LINES) return { trivial: false, size, copyOnly: false };
+    const res = spawnSync("git", ["-c", "core.quotepath=off", "diff", "-U0", "--no-color", "--no-ext-diff", base, "HEAD", "--"], { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+    const copyOnly = res.status === 0 && typeof res.stdout === "string" && copyOnlyDiff(res.stdout);
+    return { trivial: copyOnly, size, copyOnly };
 }
 
 /** One line for the user: why the change counts as trivial. */

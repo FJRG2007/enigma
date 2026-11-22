@@ -72,14 +72,14 @@ afterAll(() => {
 });
 
 function git(dir: string, ...args: string[]): void {
-    execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+    execFileSync("git", args, { windowsHide: true, cwd: dir, stdio: "ignore" });
 }
 
 /** A git repository whose only commit holds `committed`, so later writes read as the change. */
 function repoWith(committed: Record<string, string> = {}): string {
     const dir = mkdtempSync(join(tmpdir(), "enigma-verify-repo-"));
     repos.push(dir);
-    const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dir, stdio: "ignore" }); };
+    const git = (...args: string[]): void => { execFileSync("git", args, { windowsHide: true, cwd: dir, stdio: "ignore" }); };
     git("init", "-q");
     git("config", "user.email", "test@example.com");
     git("config", "user.name", "test");
@@ -93,7 +93,7 @@ function repoWith(committed: Record<string, string> = {}): string {
 
 /** The branch a throwaway repository landed on - `git init` follows the machine's default. */
 function branchOf(dir: string): string {
-    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { windowsHide: true, cwd: dir, encoding: "utf8" }).trim();
 }
 
 function write(dir: string, path: string, content: string): void {
@@ -977,7 +977,7 @@ test("pulling the integration branch in is not work the gate has to see", () => 
         write(dir, file, content);
         git(dir, "add", "-A");
         const env = backdated ? { ...process.env, GIT_AUTHOR_DATE: hourAgo, GIT_COMMITTER_DATE: hourAgo } : process.env;
-        execFileSync("git", ["commit", "-qm", "work"], { cwd: dir, stdio: "ignore", env });
+        execFileSync("git", ["commit", "-qm", "work"], { windowsHide: true, cwd: dir, stdio: "ignore", env });
     };
     const done = (): number => runVerifyHook(payload(dir, "All done, everything is implemented."));
 
@@ -1057,7 +1057,8 @@ test("a done claim is audited until a review changes nothing, at most three roun
     delete process.env.ENIGMA_SELF_AUDIT;
     try {
         const dir = repoWith();
-        write(dir, "src/new.ts", "export const a = 1;\n");
+        const work = (n: number): string => `${Array.from({ length: 25 }, (_, i) => `export const a${i} = ${n};`).join("\n")}\n`;
+        write(dir, "src/new.ts", work(1));
         const claim = (extra: Record<string, unknown> = {}): number => runVerifyHook(payload(dir, "All done, everything is implemented.", { session_id: "audit-s", ...extra }));
         // First claim over clean work: one audit round is ordered.
         expect(claim()).toBe(2);
@@ -1065,17 +1066,22 @@ test("a done claim is audited until a review changes nothing, at most three roun
         expect(claim({ stop_hook_active: true })).toBe(0);
         // A new prompt over new work starts over; each review that changes the code earns another,
         // up to the cap.
-        write(dir, "src/new.ts", "export const a = 2;\n");
+        write(dir, "src/new.ts", work(2));
         expect(claim()).toBe(2);
-        write(dir, "src/new.ts", "export const a = 3;\n");
+        write(dir, "src/new.ts", work(3));
         expect(claim({ stop_hook_active: true })).toBe(2);
-        write(dir, "src/new.ts", "export const a = 4;\n");
+        write(dir, "src/new.ts", work(4));
         expect(claim({ stop_hook_active: true })).toBe(2);
-        write(dir, "src/new.ts", "export const a = 5;\n");
+        write(dir, "src/new.ts", work(5));
         expect(claim({ stop_hook_active: true })).toBe(0);
+        // A trivial change (a few lines, nothing sensitive) is not worth an audit round.
+        // This file turns the fast path off (BASE_CONFIG), so the repository turns it back on.
+        const small = repoWith({ ".enigma.json": JSON.stringify({ gateTrivialLines: 20 }) });
+        write(small, "src/new.ts", "export const a = 1;\n");
+        expect(runVerifyHook(payload(small, "All done, everything is implemented.", { session_id: "audit-small" }))).toBe(0);
         // Turned off in the config, a claim goes straight through.
         write(dir, ".enigma.json", JSON.stringify({ selfAudit: false }));
-        write(dir, "src/new.ts", "export const a = 6;\n");
+        write(dir, "src/new.ts", work(6));
         expect(claim()).toBe(0);
     } finally {
         process.env.ENIGMA_SELF_AUDIT = "0";
@@ -1207,7 +1213,7 @@ test("a repository before its first commit is fully covered, not truncated", () 
     // its work had only been partially checked.
     const dir = mkdtempSync(join(tmpdir(), "enigma-verify-fresh-"));
     repos.push(dir);
-    execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "ignore" });
+    execFileSync("git", ["init", "-q"], { windowsHide: true, cwd: dir, stdio: "ignore" });
     write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
     const scan = collectGaps(dir);
     expect(scan.truncated).toBe(false);
@@ -1607,7 +1613,7 @@ test("a pushed HEAD is out of scope, so a pulled trailer never denies the turn",
     const dir = repoWith();
     const remote = mkdtempSync(join(tmpdir(), "enigma-verify-remote-"));
     repos.push(remote);
-    execFileSync("git", ["init", "-q", "--bare"], { cwd: remote, stdio: "ignore" });
+    execFileSync("git", ["init", "-q", "--bare"], { windowsHide: true, cwd: remote, stdio: "ignore" });
     git(dir, "remote", "add", "origin", remote);
     coAuthored(dir, "squashed@users.noreply.github.com");
     // Unpushed it is exactly what an amend can still fix, so it is reported.
@@ -2166,8 +2172,8 @@ test("an unpushed commit carrying AI attribution denies the stop while attributi
         writeFileSync(join(cfg, "settings.json"), JSON.stringify({ attribution: { commit: "", pr: "", sessionUrl: false }, includeCoAuthoredBy: false }));
         const dir = repoWith();
         write(dir, "src/a.ts", "export const a = 1;\n");
-        execFileSync("git", ["add", "-A"], { cwd: dir });
-        execFileSync("git", ["commit", "-q", "-m", "feat: a\n\nCo-Authored-By: Claude <noreply@anthropic.com>"], { cwd: dir });
+        execFileSync("git", ["add", "-A"], { windowsHide: true, cwd: dir });
+        execFileSync("git", ["commit", "-q", "-m", "feat: a\n\nCo-Authored-By: Claude <noreply@anthropic.com>"], { windowsHide: true, cwd: dir });
         expect(runVerifyHook(payload(dir, "Added a.", { session_id: "attr-s" }))).toBe(2);
         expect(said.join("")).toContain("AI attribution is off");
         // Attribution allowed: the same commit passes.

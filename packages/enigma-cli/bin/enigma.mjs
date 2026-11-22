@@ -116,6 +116,22 @@ if (process.argv[2] === "__codegraph-hook" && existsSync(codeGraphBundle)) {
  *
  * Bundle missing -> fall through untouched and let the binary answer as it always did.
  */
+/**
+ * Fast path: the convention-checks runner, which the post-edit hook spawns detached after an
+ * edit. Pure Node work (git, files, one HTTPS call per changed file), so the binary is never
+ * started for it. Bundle missing -> fall through and let the binary answer.
+ */
+const checksRunBundle = join(pkgRoot, "dist", "checks-run.js");
+if (process.argv[2] === "__checks-run" && existsSync(checksRunBundle)) {
+    try {
+        const { runChecks } = await import(pathToFileURL(checksRunBundle).href);
+        process.exit(await runChecks(process.argv[3] || ""));
+    } catch {
+        // Silent: a background runner has no one to report to; the turn end fails open.
+        process.exit(0);
+    }
+}
+
 const ciWatchBundle = join(pkgRoot, "dist", "ci-watch.js");
 if ((process.argv[2] === "__ci-hook" || process.argv[2] === "__ci-watch") && existsSync(ciWatchBundle)) {
     const hook = process.argv[2] === "__ci-hook";

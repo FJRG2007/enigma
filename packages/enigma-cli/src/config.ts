@@ -288,6 +288,15 @@ export interface EnigmaConfig {
      * sure?" follow-up that kept finding real bugs. See verify.ts.
      */
     selfAudit: boolean;
+    /**
+     * Convention checks (default on). Short markdown rules (built in, ~/.enigma/checks, or the
+     * project's .enigma/.agents/.continue checks) judged by a small model against each changed file
+     * in the background while the agent works; a failed check is handed back at turn end. The agent
+     * pays no context for the catalog. Needs the background-call provider (`recallProvider`). See checks.ts.
+     */
+    checks: boolean;
+    /** Learn checks from the user's own corrections in recent transcripts, as proposals awaiting approval (default on). */
+    checksLearn: boolean;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
     /** Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to agents over MCP, and wire the session hooks that push it (on by default). */
@@ -496,7 +505,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, gitPushGuard: true, claudeTrust: true, claudeConcise: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, searchGuard: true, gitPushGuard: true, claudeTrust: true, claudeConcise: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, checks: true, checksLearn: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     gateTrivialLines: 20,
     subagentLimit: 2, compactWindow: 400_000, subagentTurns: 60, relay: true, relayAt: 300_000,

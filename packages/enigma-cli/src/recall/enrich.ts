@@ -12,14 +12,10 @@
  * deterministic observations: this never throws and never blocks a sync.
  */
 
-import { readConfig, getRecallApiKey } from "../config";
+import { callProvider, resolveProvider } from "../llm";
 import { OBSERVATION_TYPES } from "./types";
 import type { ObservationHit } from "./types";
-import { readOAuthToken } from "../claude-usage-api";
 
-const UA = "claude-code/2.1.5";
-const DEFAULT_CLAUDE_MODEL = "claude-haiku-4-5-20251001";
-const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const TYPES = OBSERVATION_TYPES as readonly string[];
 
 /** Fields the LLM may overwrite on one observation. */
@@ -29,59 +25,6 @@ export interface EnrichFields { type?: string; title?: string; narrative?: strin
 export interface EnrichResult {
     perId: Record<number, EnrichFields>;
     summary?: { request?: string; learned?: string; completed?: string; nextSteps?: string; };
-}
-
-interface Provider { kind: "anthropic-oauth" | "anthropic-key" | "openai"; base: string; key: string; model: string; }
-
-/** Resolve the enrichment provider from config + env, or null when it has no usable credentials. */
-function resolveProvider(): Provider | null {
-    const c = readConfig().config;
-    const envKey = process.env.ENIGMA_RECALL_API_KEY || "";
-    const provider = c.recallProvider || "claude-local";
-    if (provider === "claude-local") {
-        const tok = readOAuthToken();
-        return tok ? { kind: "anthropic-oauth", base: "https://api.anthropic.com", key: tok.token, model: c.recallModel || DEFAULT_CLAUDE_MODEL } : null;
-    }
-    const key = envKey || getRecallApiKey(c);
-    if (!key) return null;
-    if (provider === "anthropic") return { kind: "anthropic-key", base: c.recallApiBase || "https://api.anthropic.com", key, model: c.recallModel || DEFAULT_CLAUDE_MODEL };
-    return { kind: "openai", base: c.recallApiBase || "https://api.openai.com/v1", key, model: c.recallModel || DEFAULT_OPENAI_MODEL };
-}
-
-/** Call the resolved provider with one user prompt; resolve the assistant text or null. */
-async function callProvider(p: Provider, prompt: string): Promise<string | null> {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 30000);
-    const base = p.base.replace(/\/+$/, "");
-    try {
-        if (p.kind === "openai") {
-            const res = await fetch(`${base}/chat/completions`, {
-                method: "POST", signal: ctrl.signal,
-                headers: { "authorization": `Bearer ${p.key}`, "content-type": "application/json" },
-                body: JSON.stringify({ model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
-            });
-            if (!res.ok) return null;
-            const j = (await res.json()) as { choices?: { message?: { content?: string; }; }[]; };
-            return j.choices?.[0]?.message?.content || null;
-        }
-        const headers: Record<string, string> = { "content-type": "application/json", "anthropic-version": "2023-06-01" };
-        const body: Record<string, unknown> = { model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] };
-        if (p.kind === "anthropic-oauth") {
-            headers.authorization = `Bearer ${p.key}`;
-            headers["anthropic-beta"] = "oauth-2025-04-20";
-            headers["user-agent"] = UA;
-            // A Claude Code OAuth token is only authorized for requests that identify as Claude
-            // Code: the FIRST system block must be exactly this string, or Anthropic rejects the
-            // call with 401 ("only authorized for use with Claude Code"). Without it enrichment
-            // silently no-ops and the deterministic observations are never curated. Our actual
-            // curation instructions stay in the user turn.
-            body.system = "You are Claude Code, Anthropic's official CLI for Claude.";
-        } else headers["x-api-key"] = p.key;
-        const res = await fetch(`${base}/v1/messages`, { method: "POST", signal: ctrl.signal, headers, body: JSON.stringify(body) });
-        if (!res.ok) return null;
-        const j = (await res.json()) as { content?: { type?: string; text?: string; }[]; };
-        return (j.content || []).filter((b) => b.type === "text").map((b) => b.text || "").join("") || null;
-    } catch { return null; } finally { clearTimeout(timer); }
 }
 
 const PROMPT_HEAD = `You curate a developer's coding-session memory like a senior engineer noting only what is worth remembering later. You are given mechanical observations from one session. Return ONLY the ones that are durable and useful (a real change, fix, refactor, decision or genuine discovery), rewritten into clear, factual memories. OMIT anything trivial, redundant, or chatter - omitted observations are permanently discarded. Keep the id of each one you keep. Do not invent work that is not implied by the data.
