@@ -49,6 +49,11 @@ test("a missing files list covers every file, like Continue's checks", () => {
 test("sources layer by name: project replaces user replaces built-in, and enabled:false removes one", () => {
     const builtins = checks.loadChecks(null);
     expect(builtins.map((c) => c.name)).toContain("code-highlighting");
+    expect(builtins.map((c) => c.name)).toContain("live-state");
+    // A navigation list is not a data table: the table check is not even sent for one.
+    const table = builtins.find((c) => c.name === "data-view-affordances")!;
+    expect(checks.applicableChecks([table], "src/DmList.tsx", "{chats.map((c) => <li key={c.id}>{c.name}</li>)}")).toHaveLength(0);
+    expect(checks.applicableChecks([table], "src/Orders.tsx", "<table><thead><tr><th>Id</th></tr></thead></table>")).toHaveLength(1);
     mkdirSync(checks.userChecksDir(), { recursive: true });
     writeFileSync(join(checks.userChecksDir(), "code-highlighting.md"), file("code-highlighting", "", "User version."));
     expect(checks.loadChecks(null).find((c) => c.name === "code-highlighting")?.source).toBe("user");

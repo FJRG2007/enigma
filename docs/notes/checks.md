@@ -15,6 +15,12 @@ enforced, at near-zero cost in the main agent's context.
   what passes, what fails. 8 KB cap, strict name, a bad regex drops the file (`src/checks.ts`).
 - Layered by name: built-in (`assets/checks/`) -> user (`~/.enigma/checks/`) -> project
   (`.agents/checks/`). A later layer replaces or disables an earlier one.
+- Built-ins: code-highlighting, live-validation, icon-actions, data-view-affordances, live-state
+  (optimistic mutations, and derived views - order, counts, previews - recomputed on every change
+  source; the stale chat-list order bug), scale-security-privacy.
+- The `when` prefilter is the deterministic lever against judge false positives: a small model
+  ignored a written exception (a chat sidebar asked for pagination) until the prefilter stopped
+  sending non-table lists to the table check at all.
 - CLI: `enigma checks list|show|run|pending|approve <name|--all>|reject|learn` (`checks-cli.ts`).
 
 ## Why it is fast (the design constraint)
