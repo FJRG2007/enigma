@@ -233,7 +233,8 @@ function parkRunningBinary(): void {
 
 /** Where the verified release tarball of one version is kept, so every Node runtime installs the same file. */
 export function releaseTarballPath(version: string): string {
-    return join(enigmaHome(), "releases", `enigma-cli-${version}.tgz`);
+    // enigmaHome() is the user's home itself; enigma's own files live under its `.enigma` folder.
+    return join(enigmaHome(), ".enigma", "releases", `enigma-cli-${version}.tgz`);
 }
 
 /**
