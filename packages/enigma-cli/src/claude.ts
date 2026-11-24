@@ -811,6 +811,18 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     if (next.statusLine === undefined && globalLine?.command === STATUSLINE_COMMAND) {
         next.statusLine = { ...globalLine };
     }
+    // An enigma bar already in the account keeps the configured timer too. Copying only when
+    // absent left a legacy `refreshInterval: 1` in place forever: on Windows a refresh outlasts
+    // one second, so Claude Code taskkilled every bar it started, about one taskkill a second
+    // per session, enough with several sessions open to hang WMI for the whole machine.
+    const line = next.statusLine as Record<string, unknown> | undefined;
+    if (line?.command === STATUSLINE_COMMAND) {
+        const seconds = statuslineRefreshSeconds("global");
+        const synced = { ...line };
+        if (seconds > 0) synced.refreshInterval = seconds;
+        else delete synced.refreshInterval;
+        next.statusLine = synced;
+    }
 
     // The attribution guard is always on: it refuses a home path in any message, and an AI
     // trailer only while the session's own settings have attribution off. The browser guard is

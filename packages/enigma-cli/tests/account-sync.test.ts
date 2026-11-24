@@ -103,3 +103,30 @@ test("syncAccount deploys codex memory only and mirrors config.toml bypass", asy
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
     expect(readFileSync(join(dir, "config.toml"), "utf8")).toContain("approval_policy = \"never\"");
 });
+
+test("syncAccount reconciles the timer of an enigma bar the account already has", () => {
+    const dir = join(HOME, ".enigma", "claude", "legacy-bar");
+    mkdirSync(dir, { recursive: true });
+    const bar = (refreshInterval?: number) => ({ type: "command", command: "enigma statusline", padding: 0, ...(refreshInterval === undefined ? {} : { refreshInterval }) });
+    const statusLine = () => readJson(join(dir, "settings.json")).statusLine as Record<string, unknown>;
+
+    // A legacy one-second timer is brought to the configured default.
+    writeFileSync(join(dir, "settings.json"), `${JSON.stringify({ statusLine: bar(1) })}\n`);
+    syncAccount("claude", dir);
+    expect(statusLine().refreshInterval).toBe(10);
+
+    // statusline-refresh 0 removes the timer.
+    writeFileSync(join(HOME, ".enigma.json"), `${JSON.stringify({ statuslineRefresh: 0 })}\n`);
+    try {
+        syncAccount("claude", dir);
+        expect(statusLine()).toEqual(bar());
+
+        // A custom bar is never touched.
+        const custom = { type: "command", command: "my-bar", refreshInterval: 1 };
+        writeFileSync(join(dir, "settings.json"), `${JSON.stringify({ statusLine: custom })}\n`);
+        syncAccount("claude", dir);
+        expect(statusLine()).toEqual(custom);
+    } finally {
+        rmSync(join(HOME, ".enigma.json"), { force: true });
+    }
+});

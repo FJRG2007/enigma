@@ -371,3 +371,20 @@ cases cover the exits above: `readSession` over a
 `PassThrough` for the unclosed pipe, the split payload and the cap, and a spawned
 renderer whose stdout is destroyed before it writes, which must still exit 0 with an
 empty stderr.
+
+## Account dirs keep the configured timer (2026-11-24)
+
+`mirrorClaudeSettings` used to copy the bar into an account dir only when the account had
+none, so an account seeded by d71b81d9 kept `refreshInterval: 1` forever, whatever
+`statuslineRefresh` said (the setter only rewrites `~/.claude/settings.json` or the project
+file). On a loaded Windows box one refresh took 3.5-13 s, so Claude Code taskkilled
+(`taskkill /PID <bash> /T /F`) every bar it started: one session issued ~1 taskkill per
+second, measured 30 of 30 kills targeting `bash -c "enigma statusline"`. With six sessions
+open that hung WMI for the whole machine. The mirror now reconciles the timer of an enigma
+bar already in the account on every sync; a custom bar is never touched. Claude Code reloads
+settings.json live: the kills dropped to 0 within seconds of removing the key, no restart.
+
+Where a refresh's seconds go on that box: `bash -c true` ~1.4 s, `node -e 0` ~1.4 s, and the
+npm `sh` shim adds `dirname`, `sed`, `uname` and `cygpath` before node starts. Calling the
+launcher with node directly measured 1.2-1.3 s against 3.2-8 s through the shim (noisy, box
+under load), not adopted yet because it means writing an install path into settings.json.
