@@ -107,6 +107,8 @@ Never apply more than one of the three to the same boundary. A block with a bord
 
 **No text touches anything.** Every gap comes from one spacing scale (a 4px base: 4, 8, 12, 16, 24, 32, 48), never an ad hoc value, and no gap is zero by accident. Text never sits on an edge, border or another element: a container with text inside pads it at least one step past the control padding (a 16px card around 8px controls), a label sits 4-8px from its field, sibling controls in a row get 8px, and blocks in a section 16-24px with more between sections than within them (the proximity rule above). Text beside an icon, badge or avatar keeps a gap (`gap-*`, not a space character). A border, background or divider never stands in for the space; check it rendered, at the narrowest width, where padding collapses first.
 
+The space belongs to the PARENT, not to each child: a list of settings rows, form fields or cards is a flex/grid container with `gap` (or `space-y-*`), so a row added later, a row that wraps its control below its text, an error line that appears, and a button row after the list are all spaced without anyone remembering to. The usual ways a stack ends up touching: a row whose layout is styled through a tag-qualified selector (`label.setting`) reused on a `<div class="setting">` silently gets none of it - style the class, never `tag.class`; a control that wraps under its text with no row gap; a trailing action row or divider placed straight after the last row. Before calling a screen done, measure it: no two visible siblings in a stack sit closer than 4px (`getBoundingClientRect`, one sibling's bottom against the next one's top), at the widest and the narrowest width.
+
 **No accent stripe on a rounded card.** A thick coloured `border-left` on a rounded card is a template callout: the stripe fights the radius and repeats what the text says. For a real status use a status icon plus a tinted background or a labelled badge; for plain emphasis, use none.
 
 **Left-align what people read.** Centered multi-line paragraphs, lists, forms and card bodies are harder to scan because every line starts somewhere new. Center only a short single line (a hero headline, an empty-state line, a button label); everything longer is left-aligned (start-aligned in RTL).
@@ -342,7 +344,16 @@ Decide per case which mode fits; when in doubt for simple single-user forms and 
 
 ---
 
-## Real-Time Uniqueness Against Loaded Data
+## Use What The Client Already Holds
+
+Before adding a request, check what the page already has in memory: the members of the chat or workspace it rendered, the list on screen, the record open beside it, the current user. That data answers first, and the server is asked only for what it cannot answer. Agents keep missing this because they build each feature as if it started from nothing.
+
+- Mentions, assignee and member pickers, autocomplete: typing `@` lists and fuzzy-matches the users the page already loaded (the participants of this conversation, the workspace members) on the first keystroke, with no request and no spinner. Only when the loaded set cannot cover the query (a large directory loaded in pages) does a debounced server search fill in the rest, merged under the local matches, never replacing them.
+- Counts, filters, sorts, totals and "is it empty" of a fully loaded set are computed from it, not fetched again.
+- A record already in a list opens its detail view with the row's fields painted instantly while the full record loads.
+- Prevalidation against loaded data (the duplicate name below, a slug, a member already added) is a UX and request-saving check. The server always validates again; when the set is only partly loaded, the client check covers the loaded part and the server decides the rest.
+
+### Real-Time Uniqueness Against Loaded Data
 
 When the user edits a value that must be unique within a set the client already holds in memory (the list of names, slugs, tags, emails it just rendered), validate uniqueness against that loaded data on every change instead of waiting for a server round-trip to report "already taken". The set is already loaded - reuse it (per Client-Side Caching): the user gets instant inline feedback as they type, and a redundant request (and its downstream DB query) is skipped. This is a default to apply without being asked, not a feature to wait for the user to request.
 
