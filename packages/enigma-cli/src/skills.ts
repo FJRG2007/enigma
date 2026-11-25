@@ -170,7 +170,8 @@ export interface InstallOptions extends SecurityOptions {
 
 /** This CLI package's own version, stamped into skills at seal time. */
 function cliVersion(): string {
-    return (readJson<{ version?: string; }>(join(PKG_ROOT, "package.json")) || {}).version || "0.0.0";
+    // The compiled binary has no package.json on disk; its launcher passes ENIGMA_VERSION.
+    return (readJson<{ version?: string; }>(join(PKG_ROOT, "package.json")) || {}).version || process.env.ENIGMA_VERSION || "0.0.0";
 }
 
 /**
