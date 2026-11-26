@@ -14,7 +14,7 @@ import * as release from "./release-fetch";
 import { refreshSkillsFromGitHub } from "./skills";
 import { basename, dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { isNewer, readJson, isOffline, enigmaHome } from "./util";
+import { isNewer, readJson, isOffline, enigmaHome, shellArgs } from "./util";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
@@ -256,7 +256,7 @@ export function fetchReleaseTarball(sums: release.ReleaseSums = release.fetchRel
 
 /** How npm is started: npm.cmd needs the shell on Windows; never a visible console window. */
 function npm(args: string[]): boolean {
-    return spawnSync("npm", args, { stdio: "inherit", shell: process.platform === "win32", windowsHide: true }).status === 0;
+    return spawnSync("npm", shellArgs(args), { stdio: "inherit", shell: process.platform === "win32", windowsHide: true }).status === 0;
 }
 
 /** Install the verified tarball of a GitHub release through npm. */

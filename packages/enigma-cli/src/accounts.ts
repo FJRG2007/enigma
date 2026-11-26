@@ -40,7 +40,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { decryptSecret, encryptSecret } from "./secret-box";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
-import { isDir, readJson, resolveBin, enigmaHome } from "./util";
+import { isDir, readJson, resolveBin, enigmaHome, quoteWinArg } from "./util";
 import { enterSharedStore, leaveSharedStore } from "./session-store";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { accountConsoleLogin, consoleStoreDir, isUsableSession, seedConsoleStore, sessionEmail, sessionState } from "./claude-oauth";
@@ -1094,11 +1094,6 @@ export function spawnInherit(command: string, args: string[], env: NodeJS.Proces
 }
 
 /** Quote an argument for cmd.exe: wrap in double quotes only when it needs it. */
-function quoteWinArg(arg: string): string {
-    if (arg === "") return "\"\"";
-    if (!/[\s"&|<>^()%!]/.test(arg)) return arg;
-    return `"${arg.replace(/"/g, "\"\"")}"`;
-}
 
 /** True when `dir` resolves to a path inside `base` (never outside it). */
 function isWithinBase(dir: string, base: string): boolean {

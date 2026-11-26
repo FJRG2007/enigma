@@ -12,7 +12,7 @@
  * translation helpers (message->prompt, chunk shaping) and the per-agent parsers are exported
  * for unit tests so no test ever spawns a CLI.
  */
-import { resolveBin } from "./util";
+import { resolveBin, quoteWinArg } from "./util";
 import { randomUUID } from "node:crypto";
 import { readUsageCached } from "./usage";
 import { spawn } from "node:child_process";
@@ -331,11 +331,6 @@ export async function completeOnce(params: CompleteParams): Promise<CompleteResu
 }
 
 /** Windows arg quoting for the shell path (mirrors accounts.ts, kept local to stay standalone). */
-function quoteWinArg(arg: string): string {
-    if (arg === "") return "\"\"";
-    if (!/[\s"&|<>^()%!]/.test(arg)) return arg;
-    return `"${arg.replace(/"/g, "\"\"")}"`;
-}
 
 // --- HTTP layer -------------------------------------------------------------
 

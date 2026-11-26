@@ -21,6 +21,7 @@
  * warm session is exactly a normal multi-turn conversation as far as the backend is concerned.
  */
 
+import { quoteWinArg } from "./util";
 import { readConfig } from "./config";
 import { spawn, type ChildProcess } from "node:child_process";
 import { parseClaudeLine, resolveClaudeModel, DEFAULT_MODEL, toollessArgs, estimateTokens, type ImageBlock } from "./api-agents";
@@ -131,11 +132,6 @@ function remember(sessionId: string, contextKey: string): void {
 }
 
 /** Windows arg quoting for the shell path (mirrors api-server/accounts). */
-function quoteWinArg(arg: string): string {
-    if (arg === "") return "\"\"";
-    if (!/[\s"&|<>^()%!]/.test(arg)) return arg;
-    return `"${arg.replace(/"/g, "\"\"")}"`;
-}
 
 /** Build the persistent-mode Claude Code args. `resume` rehydrates an evicted session by id. */
 function sessionArgs(spec: SessionSpec, sessionId: string, resume: boolean): string[] {

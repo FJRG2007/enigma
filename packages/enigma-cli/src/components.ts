@@ -11,7 +11,7 @@
 import { ASSETS_DIR } from "@/assets-dir";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
-import { readJson, findGitRoot } from "@/util";
+import { readJson, findGitRoot, shellArgs } from "@/util";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
 export const REGISTRY_PACKAGES = ["@enigmax/primitives", "@enigmax/utils"] as const;
@@ -236,7 +236,7 @@ export function detectPackageManager(projectDir: string): PackageManager {
 /** Run the project's own package manager to add packages. */
 function runInstall(projectDir: string, packages: string[]): { ok: boolean; manager: PackageManager; } {
     const manager = detectPackageManager(projectDir);
-    const result = spawnSync(manager, [...ADD_COMMAND[manager], ...packages], {
+    const result = spawnSync(manager, shellArgs([...ADD_COMMAND[manager], ...packages]), {
         cwd: projectDir,
         stdio: "inherit",
         shell: process.platform === "win32"

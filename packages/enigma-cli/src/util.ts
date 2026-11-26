@@ -114,6 +114,21 @@ export function isOnPath(bin: string): boolean {
     return resolveBin(bin) !== null;
 }
 
+/**
+ * Quote one argument for a cmd.exe command line. With `shell: true` Node joins the arguments with
+ * plain spaces, so an unquoted path under `C:\Users\Jane Doe` reaches the program as two.
+ */
+export function quoteWinArg(arg: string): string {
+    if (arg === "") return "\"\"";
+    if (!/[\s"&|<>^()%!]/.test(arg)) return arg;
+    return `"${arg.replace(/"/g, "\"\"")}"`;
+}
+
+/** The arguments for a `shell: true` spawn: quoted for cmd.exe on Windows, unchanged elsewhere. */
+export function shellArgs(args: string[]): string[] {
+    return process.platform === "win32" ? args.map(quoteWinArg) : args;
+}
+
 /** Split a version into [major, minor, patch], dropping a leading "v" and any prerelease tag. */
 export function parseVersion(version: string): [number, number, number] {
     const core = String(version).trim().replace(/^v/, "").split("-")[0]!;
