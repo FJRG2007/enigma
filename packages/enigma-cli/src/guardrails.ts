@@ -2217,6 +2217,19 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "frontend-policy",
     },
+    {
+        id: "fe-arbitrary-text-size",
+        label: "Font sizes come from the type scale",
+        files: UI_CODE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 148561 findings in 22747 files across 23 product repos, every one a Tailwind arbitrary text size; 11px, 10px and 12px alone are 74% of them, mostly below text-xs.
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-arbitrary-text-size",
+        message: "An arbitrary font size (`text-[11px]`, `text-[0.8125rem]`) sits outside the project's type scale, so the same role ends up 10px in one view and 12px in the next, and sizes under 12px are hard to read. Use the scale's named step (`text-xs`, `text-sm`, or the project's own token); if the design truly needs a size the scale lacks, add it to the theme once (`--text-2xs` / `theme.fontSize`) and use that name everywhere. A size the user asked for is applied exactly, as a token. Mark the line `enigma:allow-arbitrary-text-size` when the value is computed for a one-off canvas, chart or print layout (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
 ];
 
 /**
@@ -2346,6 +2359,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "db-query-in-loop": (content) => queryInLoop(content),
     "fe-fixed-width": (content, file) => fixedWidthNoGuard(content, file),
     "fe-static-viewport-height": (content, file) => staticViewportHeight(content, file),
+    "fe-arbitrary-text-size": (content) => arbitraryTextSize(content),
 };
 
 /**
@@ -5870,6 +5884,25 @@ export function staticViewportHeight(content: string, file: string): LineHit[] {
         out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { height: 100vh }` });
     }
     return out.sort((a, b) => a.line - b.line);
+}
+
+/** A Tailwind text size written as a literal length, with any variant prefix (`sm:`, `hover:`). */
+const TW_ARBITRARY_TEXT_SIZE = /(?<![\w-])text-\[\d*\.?\d+(?:px|rem|em)\]/;
+const ALLOW_ARBITRARY_TEXT_SIZE = /enigma:allow-arbitrary-text-size/;
+
+/**
+ * A font size outside the type scale: `text-[11px]`. A token reference (`text-[var(--fs-sm)]`,
+ * `text-[length:...]`) and a fluid `clamp()` are left alone; only a bare length is judged.
+ */
+export function arbitraryTextSize(content: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_ARBITRARY_TEXT_SIZE)) continue;
+        if (quotedRuns(text).some((run) => TW_ARBITRARY_TEXT_SIZE.test(run))) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    return out;
 }
 
 // A3: the sparkles glyph.

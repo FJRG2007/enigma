@@ -77,3 +77,13 @@ test("a rendered proposal loads back as a check", () => {
     const text = checks.renderCheck({ name: "x-rule", description: "d", files: ["*.ts"], when: "fetch\\(", body: "Rule." });
     expect(checks.parseCheck(text, "user", "x")?.when?.test("fetch(url)")).toBe(true);
 });
+
+test("the forms-on-demand check is sent for a view with a form, not for a plain list", () => {
+    const forms = checks.loadChecks(null).find((c) => c.name === "forms-on-demand")!;
+    expect(forms).toBeDefined();
+    expect(checks.applicableChecks([forms], "src/Hosts.tsx", "<form onSubmit={handleSubmit(add)}><Input name=\"address\" /></form>")).toHaveLength(1);
+    // Generated forms often skip <form>: an input and a button wired with onClick.
+    expect(checks.applicableChecks([forms], "src/Hosts.tsx", "<Input value={address} onChange={setAddress} /><Button onClick={add}>Add</Button>")).toHaveLength(1);
+    expect(checks.applicableChecks([forms], "src/Hosts.tsx", "<InputGroup />{hosts.map((h) => <li key={h.id}>{h.name}</li>)}")).toHaveLength(0);
+    expect(checks.applicableChecks([forms], "src/Hosts.test.tsx", "<form onSubmit={add} />")).toHaveLength(0);
+});

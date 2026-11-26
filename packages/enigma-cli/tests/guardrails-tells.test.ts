@@ -90,6 +90,7 @@ test("every second-wave rule blocks, names its skill and a line escape hatch, an
         "db-query-in-loop": { stage: "diff", skill: "database-expert", marker: "enigma:allow-query-in-loop" },
         "fe-fixed-width": { stage: "diff", skill: "frontend-policy", marker: "enigma:allow-fixed-width" },
         "fe-static-viewport-height": { stage: "diff", skill: "frontend-policy", marker: "enigma:allow-viewport-height" },
+        "fe-arbitrary-text-size": { stage: "diff", skill: "frontend-policy", marker: "enigma:allow-arbitrary-text-size" },
     };
     for (const [id, want] of Object.entries(expected)) {
         const rule = BUILTIN_RULES.find((r) => r.id === id);
@@ -277,4 +278,18 @@ matrix("fe-static-viewport-height", false, [
     { name: "desktop only", file: "src/Side.tsx", code: "<aside className=\"md:h-screen\" />\n" },
     { name: "max-h is a cap, not a height", file: "src/Dialog.tsx", code: "<div className=\"max-h-screen overflow-auto\" />\n" },
     { name: "the escape hatch", file: "src/Desk.tsx", code: "<div className=\"h-screen\" /> {/* enigma:allow-viewport-height desktop app */}\n" },
+]);
+
+matrix("fe-arbitrary-text-size", true, [
+    { name: "a pixel size", file: "src/Badge.tsx", code: "<span className=\"text-[10px] font-medium\" />\n" },
+    { name: "a rem size behind a variant", file: "src/Card.vue", code: "<p class=\"text-sm md:text-[0.8125rem]\" />\n" },
+    { name: "inside cn()", file: "src/Row.tsx", code: "<td className={cn(\"px-2\", dense && \"text-[11px]\")} />\n" },
+]);
+
+matrix("fe-arbitrary-text-size", false, [
+    { name: "a scale step", file: "src/Badge.tsx", code: "<span className=\"text-xs font-medium\" />\n" },
+    { name: "a token reference", file: "src/Badge.tsx", code: "<span className=\"text-[var(--fs-caption)]\" />\n" },
+    { name: "a fluid clamp", file: "src/Hero.tsx", code: "<h1 className=\"text-[clamp(2rem,5vw,4rem)]\" />\n" },
+    { name: "a colour, not a size", file: "src/Badge.tsx", code: "<span className=\"text-[#888]\" />\n" },
+    { name: "the escape hatch", file: "src/Chart.tsx", code: "{/* enigma:allow-arbitrary-text-size axis labels */}\n<text className=\"text-[9px]\" />\n" },
 ]);
