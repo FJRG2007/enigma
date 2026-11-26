@@ -1,6 +1,6 @@
 ---
 name: core-engineering-policy
-description: Highest-authority engineering rules - priority hierarchy, modular architecture, code reuse, naming, language/output conventions, and the harness map that routes work to specialized policies. Use at the START of ANY engineering task (writing, refactoring, designing, or reviewing code), and whenever resolving a conflict between other policies.
+description: Highest-authority engineering rules - priority hierarchy, modular architecture, code reuse, naming, language/output conventions, shell commands written for the shell that runs them (PowerShell on Windows, quoted paths, no bash continuations), and the harness map that routes work to specialized policies. Use at the START of ANY engineering task (writing, refactoring, designing, or reviewing code), and whenever resolving a conflict between other policies.
 ---
 
 # Core Engineering Policy
@@ -160,6 +160,19 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - Do not use typographic dashes (—). Use "-".
 - Do not use arrows (→). Use "->".
 - Prefer ASCII-compatible characters only.
+
+---
+
+## Shell Commands (User-Facing and Written to Files)
+
+A command is written for the shell that will run it, never for the one the agent happens to think in. On Windows the user pastes into PowerShell (cmd only when they say so); the environment block names the platform and shell.
+
+- **No bash in PowerShell.** `export X=1` -> `$env:X = "1"`; `rm -rf d` -> `Remove-Item -Recurse -Force d`; `/dev/null` -> `$null`; `cat <<EOF` -> a here-string (`@'` ... `'@`, the closing `'@` at column 0); `&&`/`||` only on PowerShell 7+, else `;` or `if ($?) { ... }`.
+- **Multi-line means one command per line.** Every pasted line runs on its own: no `\` continuation (PowerShell's is a trailing backtick, cmd's `^`, and both break on a trailing space). More than a handful of lines, or any branching, is a script file the user runs with one command.
+- **Quote every path and every argument that can hold a space**, in double quotes on Windows. A quoted Windows path never ends in `\` before the closing quote (`"C:\dir\"` escapes the quote). A quoted program path in PowerShell needs the call operator: `& "C:\Program Files\App\app.exe" --flag`.
+- **Syntax that differs between platforms gets one labelled block per shell** (PowerShell, bash), each complete. A command identical in both (`npm install x`) is shown once.
+- **Commands written to files** (hooks, `package.json` scripts, CI steps, generated configs, launchers, docs): every interpolated path is quoted for the shell that runs it, because a profile like `C:\Users\Jane Doe` is common. From code, spawn with an argument array and no shell; when Windows needs `shell: true` (a `.cmd` shim such as `npm`), Node joins the arguments with plain spaces, so each one is quoted for cmd.exe first. Test it with a path that contains a space.
+- **The agent's own Bash calls on Windows**: Claude Code cuts a command near 8,000 characters, so a long heredoc fails or silently writes a partial file. Write file content with the Write/Edit tool and run it with a short command.
 
 ---
 

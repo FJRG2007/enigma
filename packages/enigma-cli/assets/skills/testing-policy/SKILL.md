@@ -1,6 +1,6 @@
 ---
 name: testing-policy
-description: Test strategy (test pyramid), coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (directory structure by test type and domain, mirrored source paths, file naming, fixture/helper/factory placement). Use when writing or changing code that needs tests, when asked to add or fix tests, after fixing a bug to add a regression test, or when creating, moving, renaming, or structuring test files - never dump tests flat into a single tests/ folder.
+description: Test strategy (flows first - every user-reachable change gets an end-to-end test through the real entry point, browser, HTTP or CLI; unit tests only where logic branches, never hundreds that each mock their neighbours), coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (directory structure by test type and domain, mirrored source paths, file naming, fixture/helper/factory placement). Use when writing or changing code that needs tests, when asked to add or fix tests, after fixing a bug to add a regression test, or when creating, moving, renaming, or structuring test files - never dump tests flat into a single tests/ folder.
 ---
 
 # Testing Policy (Senior Engineering Standards)
@@ -22,13 +22,16 @@ description: Test strategy (test pyramid), coverage gates, deterministic tests, 
 
 ---
 
-## Test Strategy (Pyramid)
+## Test Strategy (Flows First, Not a Pile of Unit Tests)
 
-- Favor many fast unit tests, fewer integration tests, and a small number of end-to-end tests.
-- Unit: pure logic and single modules in isolation.
-- Integration: module boundaries, data access, and contracts between services.
-- End-to-end: critical user-facing flows only.
-- Push verification to the lowest layer that can prove the behavior.
+Hundreds of unit tests that each pass while the feature breaks the first time a person uses it are the typical failure: every unit was tested, the wiring between them never was. Confidence comes from tests that run the code the way it is used (the Testing Trophy: mostly integration, a few end-to-end flows, unit tests where logic branches).
+
+- **Every change a user can reach gets at least one test through the real entry point**, driving the flow they will try: a UI change through a real browser (Playwright or the project's e2e runner: open the page, click, type, assert what appears); an API change through an HTTP request to the running app with its real routing, validation and database (a disposable test database, never a mocked repository); a CLI change by spawning the real command and reading its output and exit code. Only third-party services outside the system are faked.
+- **The flow test covers what the user will do next, not only the happy path**: create then see it in the list, edit then reload and see it persisted, the error state when the server refuses, an empty list, a second item.
+- **Unit tests are for logic that branches** (parsers, calculations, state machines, validation rules): where an end-to-end test would need dozens of runs to reach every case. A unit test that only restates the implementation (a getter, a mock asserting it was called, a snapshot of markup) is not written.
+- **Count is not a goal.** Ten tests that exercise real wiring beat a thousand that each mock their neighbours. Before adding a test, name the regression it would catch that the existing ones would not.
+- **A bug that reached the user gets its regression test at the layer it escaped through**: if the unit tests were green while the flow broke, the regression is a flow test.
+- **Done means the flow passed**: the end-to-end test is run (not only written) and passes, and the change has been walked once by hand where the tools allow it, before the work is reported as working.
 
 ---
 
@@ -45,7 +48,7 @@ description: Test strategy (test pyramid), coverage gates, deterministic tests, 
 
 ## Test Quality Rules
 
-- Tests must be deterministic: no reliance on real time, randomness, network, or ordering.
+- Tests must be deterministic: no reliance on real time, randomness, external network, or ordering. A local server, browser and test database started by the test are the system under test, not external network.
 - Control time, randomness, and external services via injection, fakes, or fixtures.
 - Tests use anonymous data, never real data: invent every name, handle, email, server and id (`Player One`, `alice@example.test`), and when a real log line or payload shape is the point of the test, keep the shape and replace every value. A capture pasted from production, a user's message or the developer's machine is a leak (security-policy), however convenient the regression case it makes.
 - A negative case derived from a random value must differ from it by construction. Mutating a random token or id to a fixed value ("replace the last character with A") passes the original through whenever it already had that value - a flake that fails 1 run in N. Pick the replacement from the value itself (A unless it already is A, else B), and sweep the suite for the same pattern when one is found.

@@ -1,6 +1,6 @@
 {
   "name": "core-engineering-policy",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "provider": "FJRG2007/enigma",
   "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
   "config": [
@@ -8,5 +8,5 @@
   ],
   "updated": "2026-11-23T00:10:12+01:00",
   "cliVersion": "1.79.1",
-  "sha": "81d235907beb260e9be6fc9352782839a9d74d6e1093775678b4ee7c13d98cfd"
+  "sha": "181c0e87f1839059336db5dfa7ae87dd775ea9aa4df49858b7968df5e152faee"
 }
