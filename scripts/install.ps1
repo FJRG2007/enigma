@@ -102,7 +102,7 @@
         # Invoke-WebRequest 26s silent and 94s with its progress bar.
         $curl = Join-Path $env:SystemRoot "System32\curl.exe"
         if (Test-Path -LiteralPath $curl) {
-            & $curl -fsSL --proto "=https" --proto-redir "=https" --retry 2 -o $dest $url
+            & $curl -fsSL --proto "=https" --proto-redir "=https" --retry 2 --connect-timeout 30 -o $dest $url
             if ($LASTEXITCODE -eq 0) { return }
             Write-Host "enigma: curl.exe failed (exit $LASTEXITCODE), retrying with Invoke-WebRequest..."
         }
