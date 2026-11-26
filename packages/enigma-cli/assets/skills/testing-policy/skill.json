@@ -5,5 +5,5 @@
   "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
   "updated": "2026-10-14T23:18:51+02:00",
   "cliVersion": "1.79.1",
-  "sha": "f0f2ba65ecea0d8adf98a1cfabd4de774dee63f50b268d336ffe9c5ad566889b"
+  "sha": "5aa6c13e169d3edb3c8d455ab8602cf5ef1f7eebb2b1466f2d8b030865a8f57f"
 }

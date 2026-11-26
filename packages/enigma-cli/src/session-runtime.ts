@@ -131,8 +131,6 @@ function remember(sessionId: string, contextKey: string): void {
     if (!oldest.done) KNOWN.delete(oldest.value);
 }
 
-/** Windows arg quoting for the shell path (mirrors api-server/accounts). */
-
 /** Build the persistent-mode Claude Code args. `resume` rehydrates an evicted session by id. */
 function sessionArgs(spec: SessionSpec, sessionId: string, resume: boolean): string[] {
     const args = [

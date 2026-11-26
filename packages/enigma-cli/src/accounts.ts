@@ -1093,8 +1093,6 @@ export function spawnInherit(command: string, args: string[], env: NodeJS.Proces
     });
 }
 
-/** Quote an argument for cmd.exe: wrap in double quotes only when it needs it. */
-
 /** True when `dir` resolves to a path inside `base` (never outside it). */
 function isWithinBase(dir: string, base: string): boolean {
     const root = resolve(base);

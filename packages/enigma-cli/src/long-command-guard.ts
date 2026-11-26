@@ -12,9 +12,12 @@
  * Only Claude Code (CLAUDECODE=1), only Windows, only its Bash tool: the other agents that share
  * this hook entry spawn their shells differently, and nothing measured them.
  *
- * COST: none of its own. It runs inside `enigma __browser-guard`, which Claude Code spawns for
- * any command it cannot evaluate an `if` filter against - a heredoc, `$VAR`, `$(...)` - and
- * those are what these long commands are.
+ * COST: none of its own. It runs inside `enigma __browser-guard`, which Claude Code spawns for a
+ * command matching one of its `if` filters and, as measured (docs/notes/compression-and-mcp.md),
+ * for any command it cannot evaluate a filter against - a heredoc, `$VAR`, `$(...)` - which is
+ * what these long commands are. A long command with none of those and no browser pattern (a
+ * plain `python -c "..."`) is not seen: an unfiltered handler would close that gap at the price
+ * of one hook start per Bash call, which the browser guard's measurements ruled out.
  */
 
 /** Effective length above which the command is refused; the measured cliff is 7,200-8,000. */

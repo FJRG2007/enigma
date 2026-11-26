@@ -53,6 +53,7 @@ Hundreds of unit tests that each pass while the feature breaks the first time a 
 - Tests use anonymous data, never real data: invent every name, handle, email, server and id (`Player One`, `alice@example.test`), and when a real log line or payload shape is the point of the test, keep the shape and replace every value. A capture pasted from production, a user's message or the developer's machine is a leak (security-policy), however convenient the regression case it makes.
 - A negative case derived from a random value must differ from it by construction. Mutating a random token or id to a fixed value ("replace the last character with A") passes the original through whenever it already had that value - a flake that fails 1 run in N. Pick the replacement from the value itself (A unless it already is A, else B), and sweep the suite for the same pattern when one is found.
 - Each test must be independent and able to run in isolation and in any order.
+- A test cleans up only what it started: it stops processes by the PID or handle it holds, or those whose command line or cwd sits inside its own temp dir, and deletes only paths under that dir. Never kill by image name, port or pattern (`taskkill /IM node.exe`, `pkill -f vite`, `kill $(lsof -t -i:3000)`): that ends the developer's editor, dev server or agent session.
 - One logical assertion focus per test; name tests by the behavior they verify.
 - Follow Arrange-Act-Assert (or given-when-then) structure.
 - No conditional logic or loops that hide which case actually ran.

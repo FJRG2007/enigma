@@ -330,8 +330,6 @@ export async function completeOnce(params: CompleteParams): Promise<CompleteResu
     return { tool: adapter.tool, model, ...result, account: result.account ?? null };
 }
 
-/** Windows arg quoting for the shell path (mirrors accounts.ts, kept local to stay standalone). */
-
 // --- HTTP layer -------------------------------------------------------------
 
 interface SessionRecord { createdAt: number; lastAccessed: number; messageCount: number; }
