@@ -113,7 +113,7 @@ function readMessageFile(cwd: string, file: string): string {
 }
 
 /** The fields of a PreToolUse payload this hook reads, checked before use. */
-interface GuardPayload { command: string; cwd: string; }
+interface GuardPayload { command: string; cwd: string; tool: "Bash" | "PowerShell"; }
 
 /** Validates the payload shape; null when it is not a Bash/PowerShell call with a command. */
 export function parseGuardPayload(raw: string): GuardPayload | null {
@@ -127,7 +127,7 @@ export function parseGuardPayload(raw: string): GuardPayload | null {
     const command = (input as Record<string, unknown>).command;
     if (typeof command !== "string" || command === "") return null;
     const cwd = typeof record.cwd === "string" && record.cwd !== "" ? record.cwd : process.cwd();
-    return { command, cwd };
+    return { command, cwd, tool: record.tool_name };
 }
 
 /**

@@ -22,6 +22,7 @@
 import { readConfig } from "./config";
 import { applyClaudeHook } from "./claude-hooks";
 import { parseGuardPayload } from "./attribution-guard";
+import { longCommandReason } from "./long-command-guard";
 import type { HookGroup, HookWrite } from "./claude-hooks";
 
 /** Marker identifying enigma's handlers in settings.json (see applyClaudeHook), and the hidden command itself. */
@@ -218,6 +219,10 @@ export function visibleBrowserReason(command: string, platform: NodeJS.Platform 
 export function runBrowserGuardHook(raw: string, headless: () => boolean = () => readConfig().config.browserHeadless): number {
     const payload = parseGuardPayload(raw);
     if (payload === null) return 0;
+    // This is the handler Claude Code spawns for every heredoc, so it also stops a command its
+    // Windows Bash tool would truncate (long-command-guard.ts), whatever the headless setting.
+    const tooLong = longCommandReason(payload.command, payload.tool);
+    if (tooLong) { process.stderr.write(tooLong); return 2; }
     const reason = visibleBrowserReason(payload.command);
     if (!reason || !headless()) return 0;
     process.stderr.write(`enigma: this command would open a browser window on the user's screen (${reason}). Browsers here run headless only: use the chrome-devtools MCP tools (headless, closed when idle), or start the browser with --headless / headless: true and close it when the check is done. To give the user a link, print the URL instead of opening it. (enigma config browser-headless off allows visible browsers.)\n`);
