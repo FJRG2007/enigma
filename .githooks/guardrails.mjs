@@ -1731,24 +1731,23 @@ var BUILTIN_RULES = [
   {
     id: "be-no-leak-internal-error",
     label: "Do not leak internal errors to the client",
-    files: ["*.ts", "*.js", "*.mts", "*.cts"],
+    files: ["*.ts", "*.js", "*.mts", "*.cts", "*.mjs", "*.cjs"],
     excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
     scope: "file",
-    // Two high-signal one-line leaks: (a) a 5xx response whose body includes a caught error's
-    // .message/.stack (the Prisma/DB-error leak), or (b) a stack trace passed into any response
-    // body. A 4xx validation reply carrying a constructed .message is deliberately NOT matched
-    // (those can be safe). `console.error(err.message)` / `logger.error(err.stack)` are not
-    // responses, so logging the real error is never flagged - only sending it out is.
-    pattern: "\\.status\\(\\s*5\\d\\d\\s*\\)[^;]*\\b(err|error|e|ex|exception)\\.(message|stack)\\b|(res|reply|response)\\.(json|send|end)\\([^;]*\\b(err|error|e|ex|exception)\\.stack\\b",
-    message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack (or a raw ORM/DB error) in a 5xx response - it exposes your schema, ORM, and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code (validation-policy, security-policy).",
-    // STAYS warn on the same measurement, and this is the uncomfortable one: 29 candidate
-    // lines produce 24 findings and every one is a real leak in a real backend, several of
-    // them in one product's route files. Severity here is not a judgement about how bad the
-    // defect is - it is whether the gate can block without firing on work nobody is doing
-    // today, and 24 pre-existing leaks in live route files means it cannot. The rule that
-    // would carry this is a DIFF-stage block (the fe-truncated-value-unreachable shape,
-    // which exists for exactly a defect that is the default in existing code).
-    severity: "warn",
+    // A coded check, not a line pattern: the leak agents write spans lines
+    // (`res.status(500).json({` / `success: false,` / `message: error.message`), and the old
+    // one-line pattern never saw it - a production billing route leaked a Prisma
+    // "Argument id must not be null" message that way. `console.error(err)` is not a
+    // response, so logging the real error is never flagged; a 4xx reply is not judged.
+    fileCheck: "be-no-leak-internal-error",
+    message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack/.meta, the error stringified, or the raw error object in a 5xx response - it exposes your ORM, schema and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code, ideally from one error handler every route falls through to (validation-policy, security-policy).",
+    // DIFF stage, BLOCK. It shipped as an edit-stage warn because existing backends are full
+    // of this leak (24 real ones in one corpus, 14+ in a single product's route files), so an
+    // edit-stage block would fire on every unrelated edit to those files. A warn is what the
+    // agents kept ignoring; the diff stage judges only the lines a change added, so it can
+    // block new leaks without reporting the backlog.
+    stage: "diff",
+    severity: "block",
     skill: "validation-policy"
   },
   {
@@ -2904,7 +2903,8 @@ var FILE_CHECKS = {
   "db-query-in-loop": (content) => queryInLoop(content),
   "fe-fixed-width": (content, file) => fixedWidthNoGuard(content, file),
   "fe-static-viewport-height": (content, file) => staticViewportHeight(content, file),
-  "fe-arbitrary-text-size": (content) => arbitraryTextSize(content)
+  "fe-arbitrary-text-size": (content) => arbitraryTextSize(content),
+  "be-no-leak-internal-error": (content) => leakedInternalError(content)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -5099,6 +5099,50 @@ function arbitraryTextSize(content) {
   }
   return out;
 }
+var ERROR_BINDINGS = ["err", "error", "e", "ex", "exception"];
+var CATCH_BINDING = /\bcatch\s*\(\s*(?:async\s*)?\(?\s*([A-Za-z_$][\w$]*)/g;
+var STATUS_THEN_BODY = /\.(?:status|code)\(\s*([^()]*?)\s*\)\s*\.\s*(?:json|jsonp|send|end)\s*\(/g;
+var BODY_THEN_STATUS = /(?:\b(?:Response|NextResponse)\.json|\bnew\s+(?:Response|NextResponse)|\b(?:c|ctx)\.(?:json|text)|(?<![\w$.])json)\s*\(/g;
+var PLAIN_BODY = /\b(?:res|reply|response)\.(?:json|send|end)\s*\(/g;
+var SERVER_ERROR_STATUS = /\b5\d\d\b/;
+var ALLOW_INTERNAL_ERROR = /enigma:allow-internal-error/;
+function leakedInternalError(content) {
+  const names = new Set(ERROR_BINDINGS);
+  for (const m of content.matchAll(CATCH_BINDING)) names.add(m[1]);
+  const alt = [...names].map((n) => n.replace(/\$/g, "\\$")).join("|");
+  const id = `(?<![\\w$.])(?:${alt})(?![\\w$])`;
+  const leak = new RegExp(`${id}\\??\\.(?:message|stack|meta)\\b|\\b(?:String|JSON\\.stringify)\\(\\s*(?:${alt})\\s*\\)|\\$\\{\\s*(?:${alt})\\s*\\}|${id}\\.toString\\(|[{,:]\\s*(?:${alt})\\s*[,}]|^\\s*(?:${alt})\\s*$`);
+  const stackOnly = new RegExp(`${id}\\??\\.stack\\b`);
+  const lines = content.split("\n");
+  const out = /* @__PURE__ */ new Map();
+  const judge = (from, to, re) => {
+    let at = from;
+    for (let i = lineOfOffset(content, from) - 1; at < to; i++) {
+      const eol = content.indexOf("\n", at);
+      const end = eol === -1 || eol > to ? to : eol;
+      const text = content.slice(at, end);
+      at = end + 1;
+      if (!re.test(text) || COMMENT_LINE.test(lines[i]) || allowedAt(lines, i, ALLOW_INTERNAL_ERROR)) continue;
+      out.set(i + 1, { line: i + 1, detail: lines[i].trim().slice(0, 120) });
+    }
+  };
+  for (const m of content.matchAll(STATUS_THEN_BODY)) {
+    if (!SERVER_ERROR_STATUS.test(m[1])) continue;
+    const call = spawnArguments(content, m.index + m[0].length - 1);
+    if (call) judge(m.index + m[0].length, call.close, leak);
+  }
+  for (const m of content.matchAll(BODY_THEN_STATUS)) {
+    const call = spawnArguments(content, m.index + m[0].length - 1);
+    if (!call || call.args.length < 2) continue;
+    if (!call.args.slice(1).some((a) => SERVER_ERROR_STATUS.test(content.slice(a.from, a.to)))) continue;
+    judge(call.args[0].from, call.args[0].to, leak);
+  }
+  for (const m of content.matchAll(PLAIN_BODY)) {
+    const call = spawnArguments(content, m.index + m[0].length - 1);
+    if (call) judge(m.index + m[0].length, call.close, stackOnly);
+  }
+  return [...out.values()].sort((a, b) => a.line - b.line);
+}
 var SPARKLES_IMPORT = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']((?:@lucide\/|lucide-)[\w/-]+|@heroicons\/[\w/-]+|@tabler\/icons-[\w-]+|@phosphor-icons\/[\w/-]+)["']/g;
 var SPARKLES_NAME = /^(?:Sparkles|SparklesIcon|LucideSparkles|IconSparkles|Sparkle|SparkleIcon)$/;
 var ALLOW_SPARKLES = /enigma:allow-sparkles-icon/;
@@ -5329,6 +5373,7 @@ export {
   handRolledToast,
   handRolledVideoPlayer,
   insecureTls,
+  leakedInternalError,
   loadRules,
   missingPathAlias,
   missingWindowsHide,

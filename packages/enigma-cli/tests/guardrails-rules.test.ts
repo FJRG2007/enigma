@@ -218,6 +218,18 @@ matrix("be-no-leak-internal-error", true, [
     { name: "5xx sending error.message", file: "src/api.ts", code: "return res.status(500).send(error.message);" },
     { name: "stack trace in any response", file: "src/api.ts", code: "res.send(err.stack);" },
     { name: "503 with e.message", file: "src/api.ts", code: "res.status(503).json({ detail: e.message });" },
+    // The shape that leaked a Prisma "Argument id must not be null" message from a billing route.
+    { name: "5xx body spread over several lines", file: "src/routes/billing.ts", code: "} catch (error: any) {\n    console.error(error);\n    return res.status(500).json({\n        success: false,\n        message: error.message\n    });\n}" },
+    { name: "raw error object, shorthand", file: "src/api.ts", code: "} catch (error) {\n    return res.status(500).json({ error });\n}" },
+    { name: "raw error object under a key", file: "src/api.ts", code: "res.status(500).json({ message: \"Error updating profile.\", error });" },
+    { name: "a catch binding with any name", file: "src/api.ts", code: "} catch (failure) {\n    res.status(500).json({ detail: failure.message });\n}" },
+    { name: "stringified into a template", file: "src/api.ts", code: "res.status(500).send(`failed: ${err}`);" },
+    { name: "Prisma meta", file: "src/api.ts", code: "res.status(500).json({ fields: err?.meta });" },
+    { name: "fastify reply.code(500)", file: "src/api.ts", code: "reply.code(500).send({ error: err.message });" },
+    { name: "fetch Response with a 500 status", file: "src/app/api/x/route.ts", code: "return Response.json({ error: error.message }, { status: 500 });" },
+    { name: "NextResponse over several lines", file: "src/app/api/x/route.ts", code: "return NextResponse.json(\n    { error: String(error) },\n    { status: 500 }\n);" },
+    { name: "Hono c.json with a 500", file: "src/api.ts", code: "return c.json({ message: e.message }, 500);" },
+    { name: "status from a fallback expression", file: "src/api.ts", code: "res.status(err.status || 500).json({ message: err.message });" },
 ]);
 
 matrix("be-no-leak-internal-error", false, [
@@ -227,6 +239,12 @@ matrix("be-no-leak-internal-error", false, [
     { name: "logger.error with the stack is fine (not a response)", file: "src/api.ts", code: "logger.error(err.stack);" },
     { name: "generic 500, no error internals", file: "src/api.ts", code: "res.status(500).json({ error: \"internal_error\" });" },
     { name: "test file is excluded", file: "src/api.test.ts", code: "res.status(500).json({ error: err.message });" },
+    { name: "multi-line 5xx with a generic message and a code", file: "src/api.ts", code: "} catch (error) {\n    console.error(error);\n    return res.status(500).json({\n        success: false,\n        code: \"internal_error\",\n        message: \"Something went wrong.\"\n    });\n}" },
+    { name: "a key named error holding a string", file: "src/api.ts", code: "res.status(500).json({ error: \"Error validating session token.\" });" },
+    { name: "fetch Response with a 4xx", file: "src/app/api/x/route.ts", code: "return Response.json({ error: error.message }, { status: 400 });" },
+    { name: "the leak commented out", file: "src/api.ts", code: "res.status(500).json({\n//  message: error.message\n    message: \"Something went wrong.\"\n});" },
+    { name: "a generic message from a helper", file: "src/api.ts", code: "res.status(500).json({ message: publicErrorMessage(error) });" },
+    { name: "escape hatch on the line", file: "src/api.ts", code: "res.status(500).json({ message: err.message }); // enigma:allow-internal-error (admin-only debug route)" },
 ]);
 
 // --- ui-no-em-dash -----------------------------------------------------------------

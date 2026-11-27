@@ -1389,24 +1389,23 @@ export const BUILTIN_RULES: GuardrailRule[] = [
     {
         id: "be-no-leak-internal-error",
         label: "Do not leak internal errors to the client",
-        files: ["*.ts", "*.js", "*.mts", "*.cts"],
+        files: ["*.ts", "*.js", "*.mts", "*.cts", "*.mjs", "*.cjs"],
         excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
         scope: "file",
-        // Two high-signal one-line leaks: (a) a 5xx response whose body includes a caught error's
-        // .message/.stack (the Prisma/DB-error leak), or (b) a stack trace passed into any response
-        // body. A 4xx validation reply carrying a constructed .message is deliberately NOT matched
-        // (those can be safe). `console.error(err.message)` / `logger.error(err.stack)` are not
-        // responses, so logging the real error is never flagged - only sending it out is.
-        pattern: "\\.status\\(\\s*5\\d\\d\\s*\\)[^;]*\\b(err|error|e|ex|exception)\\.(message|stack)\\b|(res|reply|response)\\.(json|send|end)\\([^;]*\\b(err|error|e|ex|exception)\\.stack\\b",
-        message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack (or a raw ORM/DB error) in a 5xx response - it exposes your schema, ORM, and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code (validation-policy, security-policy).",
-        // STAYS warn on the same measurement, and this is the uncomfortable one: 29 candidate
-        // lines produce 24 findings and every one is a real leak in a real backend, several of
-        // them in one product's route files. Severity here is not a judgement about how bad the
-        // defect is - it is whether the gate can block without firing on work nobody is doing
-        // today, and 24 pre-existing leaks in live route files means it cannot. The rule that
-        // would carry this is a DIFF-stage block (the fe-truncated-value-unreachable shape,
-        // which exists for exactly a defect that is the default in existing code).
-        severity: "warn",
+        // A coded check, not a line pattern: the leak agents write spans lines
+        // (`res.status(500).json({` / `success: false,` / `message: error.message`), and the old
+        // one-line pattern never saw it - a production billing route leaked a Prisma
+        // "Argument id must not be null" message that way. `console.error(err)` is not a
+        // response, so logging the real error is never flagged; a 4xx reply is not judged.
+        fileCheck: "be-no-leak-internal-error",
+        message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack/.meta, the error stringified, or the raw error object in a 5xx response - it exposes your ORM, schema and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code, ideally from one error handler every route falls through to (validation-policy, security-policy).",
+        // DIFF stage, BLOCK. It shipped as an edit-stage warn because existing backends are full
+        // of this leak (24 real ones in one corpus, 14+ in a single product's route files), so an
+        // edit-stage block would fire on every unrelated edit to those files. A warn is what the
+        // agents kept ignoring; the diff stage judges only the lines a change added, so it can
+        // block new leaks without reporting the backlog.
+        stage: "diff",
+        severity: "block",
         skill: "validation-policy",
     },
     {
@@ -2360,6 +2359,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "fe-fixed-width": (content, file) => fixedWidthNoGuard(content, file),
     "fe-static-viewport-height": (content, file) => staticViewportHeight(content, file),
     "fe-arbitrary-text-size": (content) => arbitraryTextSize(content),
+    "be-no-leak-internal-error": (content) => leakedInternalError(content),
 };
 
 /**
@@ -5903,6 +5903,65 @@ export function arbitraryTextSize(content: string): LineHit[] {
         if (quotedRuns(text).some((run) => TW_ARBITRARY_TEXT_SIZE.test(run))) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
     }
     return out;
+}
+
+/** The names a caught error is conventionally bound to; every `catch (x)` binding in the file is added. */
+const ERROR_BINDINGS = ["err", "error", "e", "ex", "exception"];
+const CATCH_BINDING = /\bcatch\s*\(\s*(?:async\s*)?\(?\s*([A-Za-z_$][\w$]*)/g;
+/** `res.status(500).json(` / `reply.code(503).send(`: the status call, then the body call. */
+const STATUS_THEN_BODY = /\.(?:status|code)\(\s*([^()]*?)\s*\)\s*\.\s*(?:json|jsonp|send|end)\s*\(/g;
+/** Fetch-style responses that carry the status in a later argument: `Response.json(body, { status: 500 })`, Hono `c.json(body, 500)`. */
+const BODY_THEN_STATUS = /(?:\b(?:Response|NextResponse)\.json|\bnew\s+(?:Response|NextResponse)|\b(?:c|ctx)\.(?:json|text)|(?<![\w$.])json)\s*\(/g;
+/** A response with no status in sight; only a stack trace in it is judged. */
+const PLAIN_BODY = /\b(?:res|reply|response)\.(?:json|send|end)\s*\(/g;
+const SERVER_ERROR_STATUS = /\b5\d\d\b/;
+const ALLOW_INTERNAL_ERROR = /enigma:allow-internal-error/;
+
+/**
+ * A 5xx response whose body carries the caught error: `.message`, `.stack`, Prisma's `.meta`, the
+ * error stringified, or the raw object. The body is read across every line the call spans, which
+ * is the shape agents actually write (`res.status(500).json({` / `success: false,` /
+ * `message: error.message`) and the one a single-line pattern never saw. A 4xx is not judged: a
+ * validation reply may carry a message the handler built. Reported on the line that leaks.
+ */
+export function leakedInternalError(content: string): LineHit[] {
+    const names = new Set(ERROR_BINDINGS);
+    for (const m of content.matchAll(CATCH_BINDING)) names.add(m[1]!);
+    const alt = [...names].map((n) => n.replace(/\$/g, "\\$")).join("|");
+    const id = `(?<![\\w$.])(?:${alt})(?![\\w$])`;
+    const leak = new RegExp(`${id}\\??\\.(?:message|stack|meta)\\b|\\b(?:String|JSON\\.stringify)\\(\\s*(?:${alt})\\s*\\)|\\$\\{\\s*(?:${alt})\\s*\\}|${id}\\.toString\\(|[{,:]\\s*(?:${alt})\\s*[,}]|^\\s*(?:${alt})\\s*$`);
+    const stackOnly = new RegExp(`${id}\\??\\.stack\\b`);
+    const lines = content.split("\n");
+    const out = new Map<number, LineHit>();
+    // Each line of the body, clipped to the call, is tested on its own so the finding lands on
+    // the line that leaks and a `^...$` anchor means the whole of that line's share of the body.
+    const judge = (from: number, to: number, re: RegExp): void => {
+        let at = from;
+        for (let i = lineOfOffset(content, from) - 1; at < to; i++) {
+            const eol = content.indexOf("\n", at);
+            const end = eol === -1 || eol > to ? to : eol;
+            const text = content.slice(at, end);
+            at = end + 1;
+            if (!re.test(text) || COMMENT_LINE.test(lines[i]!) || allowedAt(lines, i, ALLOW_INTERNAL_ERROR)) continue;
+            out.set(i + 1, { line: i + 1, detail: lines[i]!.trim().slice(0, 120) });
+        }
+    };
+    for (const m of content.matchAll(STATUS_THEN_BODY)) {
+        if (!SERVER_ERROR_STATUS.test(m[1]!)) continue;
+        const call = spawnArguments(content, m.index! + m[0].length - 1);
+        if (call) judge(m.index! + m[0].length, call.close, leak);
+    }
+    for (const m of content.matchAll(BODY_THEN_STATUS)) {
+        const call = spawnArguments(content, m.index! + m[0].length - 1);
+        if (!call || call.args.length < 2) continue;
+        if (!call.args.slice(1).some((a) => SERVER_ERROR_STATUS.test(content.slice(a.from, a.to)))) continue;
+        judge(call.args[0]!.from, call.args[0]!.to, leak);
+    }
+    for (const m of content.matchAll(PLAIN_BODY)) {
+        const call = spawnArguments(content, m.index! + m[0].length - 1);
+        if (call) judge(m.index! + m[0].length, call.close, stackOnly);
+    }
+    return [...out.values()].sort((a, b) => a.line - b.line);
 }
 
 // A3: the sparkles glyph.

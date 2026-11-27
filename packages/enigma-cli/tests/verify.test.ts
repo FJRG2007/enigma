@@ -1315,6 +1315,32 @@ test("the sweep reads, and never writes", () => {
     expect(scan.gaps[0]!.detail).toContain("fe-truncated-value-unreachable");
 });
 
+test("a 5xx that leaks the caught error denies the stop; the backlog does not", () => {
+    // The billing-route shape: the body spans lines, so the old one-line warn never saw it.
+    const leak = (name: string): string => [
+        `router.get("/${name}", async (req, res) => {`,
+        "    try {",
+        "        res.json(await load());",
+        "    } catch (error) {",
+        "        console.error(error);",
+        "        return res.status(500).json({",
+        "            success: false,",
+        "            message: error.message",
+        "        });",
+        "    }",
+        "});",
+        "",
+    ].join("\n");
+    const dir = repoWith({ "src/routes/legacy.ts": leak("legacy") });
+    write(dir, "src/routes/billing.ts", leak("billing"));
+    const scan = scanConventions(dir);
+    const leaks = scan.gaps.filter((g) => g.detail.includes("be-no-leak-internal-error"));
+    expect(leaks.map((g) => `${g.file}:${g.line}`)).toEqual(["src/routes/billing.ts:8"]);
+    expect(runVerifyHook(payload(dir, "Added the billing route.", { session_id: "leak-1" }))).toBe(2);
+    write(dir, "src/routes/billing.ts", leak("billing").replace("message: error.message", "code: \"internal_error\""));
+    expect(scanConventions(dir).gaps.filter((g) => g.detail.includes("be-no-leak-internal-error"))).toEqual([]);
+});
+
 test("a clipped value the fixer declines still reaches the model", () => {
     // A fallback expression, a call, a component that may not forward the attribute: the fixer
     // declines all of them in the hook, so the sweep is where they land. Declining is safe;
