@@ -37,6 +37,7 @@ import { applyClaudeHook } from "./claude-hooks";
 import { readFileSync, statSync } from "node:fs";
 import { operatorHomePathLeak } from "./guardrails";
 import type { HookGroup, HookWrite } from "./claude-hooks";
+import { privateMatcherFor, privateValueLines, repoRootOf } from "./private-values";
 import { privateTermLines, privateTermMatcher, readPrivateTerms } from "./private-terms";
 
 /** Marker identifying enigma's handlers in settings.json (see applyClaudeHook). */
@@ -167,6 +168,13 @@ export function runAttributionGuardHook(raw: string): number {
     const terms = privateTermMatcher(readPrivateTerms());
     if (terms !== null && privateTermLines(message, terms).length) {
         process.stderr.write("enigma: this commit or PR message contains one of your private terms (~/.enigma-guard.json). Write a neutral message that neither names the value nor says a private value was removed, then run the command again.\n");
+        return 2;
+    }
+    // A domain, IP or email the user handed over in chat, private in this repository
+    // (private-values.ts). Never echoed, and the fix is a neutral message, not a redaction note.
+    const values = privateMatcherFor(repoRootOf(payload.cwd));
+    if (values !== null && privateValueLines(message, values).length) {
+        process.stderr.write("enigma: this commit or PR message contains a domain, IP address or email the user gave you in this conversation, or the name of one of their private repositories. Describe the change without it, and without saying a value was left out. Publish it only if the user explicitly asks; they release it with `enigma private-values forget <value>`.\n");
         return 2;
     }
     return 0;

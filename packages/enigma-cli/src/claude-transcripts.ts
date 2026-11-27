@@ -316,7 +316,8 @@ export function recentUserMessages(transcriptPath: string, count: number): strin
 const PASTED_BLOCK = /<pasted_content\b[^>]*>[\s\S]*?<\/pasted_content\b[^>]*>/gi;
 
 /**
- * The last `count` prompts a PERSON typed, newest first, with pasted blocks removed.
+ * The last `count` prompts a PERSON typed, newest first, with pasted blocks removed (kept with
+ * `keepPasted`, for a reader that wants what the user handed over, not only what they wrote).
  *
  * Stricter than recentUserMessages: Claude Code also stores a plugin's prompt (`origin.kind`
  * "plugin", the relay's "context was cleared" message) and a background task's report
@@ -324,7 +325,7 @@ const PASTED_BLOCK = /<pasted_content\b[^>]*>[\s\S]*?<\/pasted_content\b[^>]*>/g
  * When a record carries an `origin`, only `human` counts; an older transcript without the field
  * falls back to humanBlocks alone.
  */
-export function lastHumanPrompts(transcriptPath: string, count: number): string[] {
+export function lastHumanPrompts(transcriptPath: string, count: number, keepPasted = false): string[] {
     const out: string[] = [];
     const lines = tail(transcriptPath, RECENT_BYTES).split("\n");
     for (let i = lines.length - 1; i >= 0 && out.length < count; i--) {
@@ -337,7 +338,8 @@ export function lastHumanPrompts(transcriptPath: string, count: number): string[
         if (entry.isCompactSummary === true || entry.isVisibleInTranscriptOnly === true) continue;
         const origin = entry.origin?.kind;
         if (origin !== undefined && origin !== "human") continue;
-        const text = blocks.join("\n").replace(PASTED_BLOCK, " ").trim();
+        const joined = blocks.join("\n");
+        const text = (keepPasted ? joined : joined.replace(PASTED_BLOCK, " ")).trim();
         if (text) out.push(text);
     }
     return out;

@@ -50,6 +50,7 @@ import * as checksJudge from "./checks-judge";
 import { scheduleBackgroundTidy } from "./git-tidy";
 import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
+import { learnPrivateValues } from "./private-values-learn";
 import { execFileSync, spawnSync } from "node:child_process";
 import { attributedCommits, attributionOff } from "./attribution-guard";
 import { languageMessage, replyLanguageMismatch } from "./reply-language";
@@ -2496,6 +2497,10 @@ export function runVerifyHook(payload?: string): number {
     // the evidence-keyed budget below instead, which bounds repeats without excusing them.
     const cwd = typeof raw.cwd === "string" && existsSync(raw.cwd) ? raw.cwd : process.cwd();
     const config = readConfigAt(cwd);
+    // Domains, IPs and emails the user handed over this turn, so the commit guard, the edit-time
+    // guardrail and the commit/PR message hook can keep them out of other repositories
+    // (private-values.ts). Independent of `verify`: it is a protection, not a completion check.
+    learnPrivateValues(typeof raw.transcript_path === "string" ? raw.transcript_path : undefined, typeof raw.last_assistant_message === "string" ? raw.last_assistant_message : "", cwd);
     if (!config.verify) return 0;
     // Resolved at most ONCE per invocation, and only if a gate check actually runs: both facts
     // cost a config merge and a git subprocess, and a turn that neither claims nor mentions the

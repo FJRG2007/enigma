@@ -34,8 +34,9 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { privateTermLines, privateTermMatcher, readPrivateTerms, redactPrivateTerms } from "./private-terms";
 import { basename, dirname, join, resolve, sep } from "node:path";
+import { privateMatcherFor, privateValueLines, repoRootOf } from "./private-values";
+import { privateTermLines, privateTermMatcher, readPrivateTerms, redactPrivateTerms } from "./private-terms";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "node:fs";
 
 export type Severity = "block" | "warn";
@@ -2313,7 +2314,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
     "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
-    "sec-private-term": (content) => privateTermLeak(content),
+    "sec-private-term": (content, file) => [...privateTermLeak(content), ...privateValueLeak(content, file)].sort((x, y) => x.line - y.line),
     "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content),
     "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
     "fe-selection-hand-rolled": (content) => handRolledSelection(content),
@@ -4145,6 +4146,17 @@ export function privateTermLeak(content: string): { line: number; detail: string
     const re = privateTermCache.re;
     if (re === null) return [];
     return privateTermLines(content, re).map((line) => ({ line, detail: "a private term from your list" }));
+}
+
+/**
+ * Lines carrying a domain, IP or email the user handed over in chat that is private in the
+ * repository holding `file` (private-values.ts). Same rule and same never-echo contract as
+ * privateTermLeak; a value the repository already carried when it was learned is public there.
+ */
+export function privateValueLeak(content: string, file: string): { line: number; detail: string; }[] {
+    const re = privateMatcherFor(repoRootOf(file ? dirname(resolve(file)) : process.cwd()));
+    if (re === null) return [];
+    return privateValueLines(content, re).map((line) => ({ line, detail: "a domain, IP or email from your conversation, or the name of a private repository" }));
 }
 
 /**

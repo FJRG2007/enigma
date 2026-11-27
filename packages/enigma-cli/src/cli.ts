@@ -3410,6 +3410,31 @@ export async function run(argv: string[]): Promise<void> {
     // copied .githooks/guard.mjs honour them through exactly one parser: a `--range` that
     // was asked for and cannot be honoured exits 2 on both, and never degrades to a staged
     // scan that checks nothing and passes. `--help` falls through to the command help page.
+    // Domains, IPs and emails learned from conversations (private-values.ts). Listing prints the
+    // values, since this is the user's own terminal; `forget` is how the user consents to publish one.
+    if (argv[0] === "private-values") {
+        const pv = await import("./private-values");
+        const [action = "list", value] = argv.slice(1);
+        if (action === "list") {
+            const values = pv.readPrivateValues();
+            if (!values.length) console.log("No private values learned yet.");
+            for (const v of values) console.log(`${v.kind.padEnd(5)}  ${v.value}${v.publicIn.length ? `  (public in ${v.publicIn.length} repo(s))` : ""}`);
+            process.exit(0);
+        }
+        if (action === "sync") {
+            const { syncPrivateRepos } = await import("./private-values-learn");
+            const result = syncPrivateRepos(value ? pv.repoRootOf(value) : pv.repoRootOf(process.cwd()));
+            console.log(`${result.names} private repository name(s) known; this repository is ${result.public === null ? "of unknown visibility" : result.public ? "public" : "private"}.`);
+            process.exit(0);
+        }
+        if (action === "forget" && value) {
+            const removed = pv.forgetValues(value === "--all" ? "*" : value);
+            console.log(removed ? `Forgot ${removed} value(s); they are no longer blocked.` : "No such value.");
+            process.exit(removed ? 0 : 1);
+        }
+        console.error("usage: enigma private-values [list | sync [path] | forget <value> | forget --all]");
+        process.exit(2);
+    }
     if (argv[0] === "guard" && !argv.includes("-h") && !argv.includes("--help")) {
         process.exit(runGuardCli(parseGuardArgv(argv.slice(1))));
     }
