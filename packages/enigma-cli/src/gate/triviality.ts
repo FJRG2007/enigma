@@ -43,11 +43,25 @@ export function isSensitivePath(path: string): boolean {
 /** Image and font assets: no line count and nothing a review reads, so they add no size. */
 const ASSET_PATH = /\.(png|jpe?g|gif|webp|avif|ico|bmp|svg|woff2?|ttf|otf|eot)$/i;
 
+/**
+ * Files that ACCOMPANY a change rather than make it: its regression test and its prose (a bug
+ * note, a changelog line, an index entry). Measured on a real logo swap: 17 lines of code in one
+ * file came with an 18-line test and a 43-line bug write-up, and those two pushed it to 4 files
+ * and 78 lines - a full pipeline and a PR for what the size rule exists to wave through. They are
+ * counted apart and bounded by MAX_COPY_LINES, so a change cannot hide behind them; the code
+ * alone is what the threshold judges. A sensitive path is still sensitive (`docs/security.md`).
+ */
+const COMPANION_PATH = /(^|\/)(tests?|__tests__|specs?|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$|\.(md|mdx|txt|rst|adoc)$/i;
+
 export interface ChangeSize {
     /** Changed files other than assets. */
     files: number;
     /** Changed image/font assets, which count toward neither `files` nor `lines`. */
     assets: number;
+    /** Changed tests and prose files (COMPANION_PATH), counted apart from `files`. */
+    companions: number;
+    /** Added + deleted lines across companion files, bounded by MAX_COPY_LINES. */
+    companionLines: number;
     /** Added + deleted lines across text files. */
     lines: number;
     /** Some file has no line count (binary). */
@@ -58,7 +72,7 @@ export interface ChangeSize {
 
 /** Sizes a `git diff --numstat` listing. Renames (`a => b`, `{a => b}`) are judged by both names. */
 export function parseNumstat(numstat: string): ChangeSize {
-    const size: ChangeSize = { files: 0, assets: 0, lines: 0, binary: false, sensitive: [] };
+    const size: ChangeSize = { files: 0, assets: 0, companions: 0, companionLines: 0, lines: 0, binary: false, sensitive: [] };
     for (const line of numstat.split("\n")) {
         const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
         if (!m) continue;
@@ -68,6 +82,11 @@ export function parseNumstat(numstat: string): ChangeSize {
             : [path];
         if (names.some((n) => SENSITIVE_PATHS.some((re) => re.test(n)))) size.sensitive.push(path);
         if (names.every((n) => ASSET_PATH.test(n))) { size.assets++; continue; }
+        if (names.every((n) => COMPANION_PATH.test(n)) && m[1] !== "-" && m[2] !== "-") {
+            size.companions++;
+            size.companionLines += Number(m[1]) + Number(m[2]);
+            continue;
+        }
         size.files++;
         if (m[1] === "-" || m[2] === "-") size.binary = true;
         else size.lines += Number(m[1]) + Number(m[2]);
@@ -77,8 +96,8 @@ export function parseNumstat(numstat: string): ChangeSize {
 
 /** True when `size` is below the review threshold `maxLines` (0 disables the fast path). */
 export function isTrivial(size: ChangeSize, maxLines: number): boolean {
-    return maxLines > 0 && size.files + size.assets > 0 && size.files <= MAX_TRIVIAL_FILES && !size.binary
-        && size.sensitive.length === 0 && size.lines <= maxLines;
+    return maxLines > 0 && size.files + size.assets + size.companions > 0 && size.files <= MAX_TRIVIAL_FILES && !size.binary
+        && size.sensitive.length === 0 && size.lines <= maxLines && size.companionLines <= MAX_COPY_LINES;
 }
 
 /** The size of what `HEAD` adds on top of `base` in `cwd`, or null when git cannot say. */
@@ -167,6 +186,6 @@ export function isTrivialChange(cwd: string, base: string, maxLines: number): { 
 
 /** One line for the user: why the change counts as trivial. */
 export function describeTrivial(size: ChangeSize, maxLines: number): string {
-    const assets = size.assets ? ` plus ${size.assets} image/font asset(s)` : "";
+    const assets = (size.assets ? ` plus ${size.assets} image/font asset(s)` : "") + (size.companions ? ` and ${size.companions} test/doc file(s)` : "");
     return `${size.lines} changed line(s) in ${size.files} file(s)${assets}, no sensitive paths (threshold ${maxLines})`;
 }

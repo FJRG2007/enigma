@@ -14,7 +14,7 @@ import { isTrivial, measureChange, parseNumstat } from "../../src/gate/trivialit
 
 test("a one-line style fix is trivial", () => {
     const size = parseNumstat("1\t1\tsrc/components/tasks/Comments.tsx\n");
-    expect(size).toEqual({ files: 1, assets: 0, lines: 2, binary: false, sensitive: [] });
+    expect(size).toEqual({ files: 1, assets: 0, companions: 0, companionLines: 0, lines: 2, binary: false, sensitive: [] });
     expect(isTrivial(size, 20)).toBe(true);
 });
 
@@ -28,7 +28,7 @@ test("size, breadth, binaries and the threshold all count", () => {
 
 test("a logo or icon swap is trivial: image and font assets add no size", () => {
     const swap = parseNumstat("-\t-\tpublic/logo.png\n-\t-\tpublic/favicon.ico\n-\t-\tpublic/apple-touch-icon.png\n240\t180\tsrc/assets/logo.svg\n");
-    expect(swap).toEqual({ files: 0, assets: 4, lines: 0, binary: false, sensitive: [] });
+    expect(swap).toEqual({ files: 0, assets: 4, companions: 0, companionLines: 0, lines: 0, binary: false, sensitive: [] });
     expect(isTrivial(swap, 20)).toBe(true);
     // Alongside a small text change it stays trivial; a large text change or a sensitive path does not.
     expect(isTrivial(parseNumstat("-\t-\tpublic/logo.webp\n2\t2\tsrc/Header.tsx\n"), 20)).toBe(true);
@@ -65,7 +65,7 @@ test("measureChange reads what HEAD adds on top of a base", () => {
         writeFileSync(join(dir, "a.css"), ".a { color: red; }\n");
         git("commit", "-qam", "remove duplicate divider", "--no-verify");
         const size = measureChange(dir, base)!;
-        expect(size).toEqual({ files: 1, assets: 0, lines: 1, binary: false, sensitive: [] });
+        expect(size).toEqual({ files: 1, assets: 0, companions: 0, companionLines: 0, lines: 1, binary: false, sensitive: [] });
         expect(isTrivial(size, 20)).toBe(true);
         expect(measureChange(dir, "not-a-ref")).toBeNull();
     } finally {
@@ -73,3 +73,23 @@ test("measureChange reads what HEAD adds on top of a base", () => {
     }
     // Process launches are slow on Windows with real-time scanning; four git calls can pass 5s.
 }, 30_000);
+
+test("a regression test and its prose do not make a small change non-trivial", () => {
+    // Measured on a real logo swap: 17 lines of code came with an 18-line test and a bug write-up,
+    // and those pushed it to 4 files and 78 lines - a full pipeline and a PR for a logo.
+    const size = parseNumstat([
+        "13\t4\tapps/web/src/components/marks.tsx",
+        "18\t0\tapps/web/test/marks.test.ts",
+        "42\t0\tdocs/bugs/BUG-0001-missing-logo.md",
+        "1\t0\tdocs/bugs/README.md",
+    ].join("\n"));
+    expect(size.files).toBe(1);
+    expect(size.companions).toBe(3);
+    expect(isTrivial(size, 20)).toBe(true);
+    // The code alone is still judged: 30 lines of it is not trivial, whatever accompanies it.
+    expect(isTrivial(parseNumstat("30\t0\tsrc/a.ts\n5\t0\ttests/a.test.ts\n"), 20)).toBe(false);
+    // Companions cannot hide a rewrite: past the copy bound the change goes through the gate.
+    expect(isTrivial(parseNumstat("2\t0\tsrc/a.ts\n500\t0\tdocs/guide.md\n"), 20)).toBe(false);
+    // A sensitive path stays sensitive as a doc too.
+    expect(isTrivial(parseNumstat("2\t0\tsrc/a.ts\n3\t0\tdocs/security.md\n"), 20)).toBe(false);
+});

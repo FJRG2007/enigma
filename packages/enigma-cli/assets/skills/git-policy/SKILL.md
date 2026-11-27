@@ -19,7 +19,8 @@ description: Commit, branch, and pull request standards - conventional commits, 
 ## Branching & Commit Timing
 
 - Commit or push only when the user asks for it; do not commit speculatively.
-- A topic branch is for work that goes through review (a PR, a full gate run). A change below the gate's trivial threshold (`gate-trivial-lines`: a logo or icon swap, a copy or one-line visual fix) commits straight to the branch you are on - the default branch included, unless it is protected or the push is rejected - with no branch, no PR and no gate run. Anything larger on the default branch gets a topic branch first.
+- A topic branch is for work that goes through review (a PR, a full gate run). A change below the gate's trivial threshold (`gate-trivial-lines`: a logo or icon swap, a copy or one-line visual fix, counted on the CODE only - its regression test and its bug note or changelog line do not add to it) commits straight to the branch you are on - the default branch included, unless it is protected or the push is rejected - with no branch, no PR and no gate run.
+- Decide the branch when the work is done, not before: you cannot know the size of a fix you have not written, and a branch opened up front is how a logo swap ends up as a pushed branch and a PR. Commit on the branch you are on; where the gate is on, `enigma gate axi run` declines a trivial change (push it as is) and on the default branch pushes the rest there itself, so it never needs a branch from you. Open a topic branch yourself only when the gate is off and the change is not trivial, the default branch is protected, or the user asked for a PR.
 - Use descriptive branch names scoped by type (e.g. feat/, fix/, chore/).
 - Keep branches focused on a single concern.
 

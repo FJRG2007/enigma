@@ -1,9 +1,9 @@
 {
   "name": "git-policy",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "provider": "FJRG2007/enigma",
   "description": "Git & contribution policy (senior engineering standards).",
   "updated": "2026-10-29T17:17:20+01:00",
   "cliVersion": "1.80.0",
-  "sha": "c248a2f73c11105e0ccd0bb7edb336dbdbdc908de4c4aae1a2053409e6f9990e"
+  "sha": "4a618aa54ce246d0925e7915c1ef4f833b3b2be59dd9a048f9e0b4486d213fb1"
 }
