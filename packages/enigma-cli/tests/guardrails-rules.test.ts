@@ -243,6 +243,7 @@ matrix("be-no-leak-internal-error", false, [
     { name: "a key named error holding a string", file: "src/api.ts", code: "res.status(500).json({ error: \"Error validating session token.\" });" },
     { name: "fetch Response with a 4xx", file: "src/app/api/x/route.ts", code: "return Response.json({ error: error.message }, { status: 400 });" },
     { name: "the leak commented out", file: "src/api.ts", code: "res.status(500).json({\n//  message: error.message\n    message: \"Something went wrong.\"\n});" },
+    { name: "the old leak named in a trailing comment", file: "src/api.ts", code: "res.status(500).json({\n    message: \"Something went wrong.\", // was error.message\n});" },
     { name: "a generic message from a helper", file: "src/api.ts", code: "res.status(500).json({ message: publicErrorMessage(error) });" },
     { name: "a helper call spread over several lines", file: "src/api.ts", code: "res.status(500).json({\n    message: publicErrorMessage(\n        error\n    )\n});" },
     { name: "the raw error handed to a helper as an object", file: "src/api.ts", code: "res.status(500).json(toPublicError({ error }));" },

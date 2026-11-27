@@ -5152,7 +5152,7 @@ function leakedInternalError(content) {
     for (let i = lineOfOffset(content, from) - 1; at < to; i++) {
       const eol = content.indexOf("\n", at);
       const end = eol === -1 || eol > to ? to : eol;
-      const hit = re.test(content.slice(at, end)) || raw !== void 0 && raw.test(outer.slice(at - from, end - from));
+      const hit = re.test(content.slice(at, end).replace(/(^|\s)\/\/.*$/, "")) || raw !== void 0 && raw.test(outer.slice(at - from, end - from));
       at = end + 1;
       if (!hit || COMMENT_LINE.test(lines[i]) || allowedAt(lines, i, ALLOW_INTERNAL_ERROR)) continue;
       out.set(i + 1, { line: i + 1, detail: lines[i].trim().slice(0, 120) });
