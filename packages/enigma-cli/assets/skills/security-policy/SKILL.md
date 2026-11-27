@@ -23,6 +23,7 @@ description: Application and AI-agent security - secrets management, authenticat
 - Keep secrets out of version control: provide a committed `.env.example` with placeholder keys, and ensure real `.env` files are gitignored.
 - Assume any secret that touches the repo, a log, or an error message is compromised and must be rotated.
 - Scope secrets to the narrowest environment and lifetime possible; prefer short-lived, rotatable credentials over long-lived static ones.
+- A real credential is for the product, never for an agent's checks. Do not run a test, probe script, smoke call or benchmark on a real API key, token, password or account - from `.env`, the user's config, a database row or a message, the user's own or one of their customers' - unless the user explicitly authorized that credential for that use in this conversation. Use a fake value against a mock or local server, or the provider's documented test-mode key. A real key spends real quota and money, writes real data and acts as that customer; when only the live system can answer, ask first and name the key, the calls and their side effects.
 
 ### The Operator's Environment Is Sensitive By Default
 
