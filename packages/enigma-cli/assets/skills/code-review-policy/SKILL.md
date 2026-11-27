@@ -42,7 +42,7 @@ Evaluate every change across these dimensions, in priority order:
 2. Correctness: logic, edge cases, error/failure paths, concurrency, off-by-one, null handling.
 3. Data integrity: transactions, consistency, and the database-expert rules when persistence is involved.
 4. Reuse & architecture: duplication, single responsibility, fit with existing modules.
-5. Performance & scalability: N+1 queries, unnecessary work in hot paths, allocation in loops.
+5. Performance & scalability: N+1 queries, unnecessary work in hot paths, allocation in loops. For a data view: does it paint its shell on the first frame with only the waiting value as a placeholder, read its cache before the first paint, keep a background answer from resetting what the user chose, and cost the same with one record or a million (rollups for charts and totals, one bounded indexed page, server-side filter options)? frontend-policy owns the rules.
 6. Readability & maintainability: clear naming, reasonable function size, self-documenting code.
 7. Style: formatting and conventions (lowest priority).
 

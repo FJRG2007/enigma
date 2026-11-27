@@ -1,6 +1,6 @@
 ---
-description: QA pass over the real experience. Use the product the way someone who depends on it would, then fix what fails them: dead ends and missing affordances, empty/loading/error states, real-data extremes, keyboard and screen-reader accessibility, responsiveness, destructive-action safety, permission-aware UI, generic AI-slop design and copy, and how many steps the frequent task actually takes. Every finding carries evidence, and the pass reports a health score before and after. Usage: /qa (the branch's changes) | /qa all | /qa <route|feature|path> | /qa audit.
-argument-hint: [all | <route|feature|path>] [audit] [a11y|states|data|mobile|flow|design|perms]
+description: QA pass over the real experience. Use the product the way someone who depends on it would, then fix what fails them: dead ends and missing affordances, empty/loading/error states, real-data extremes, keyboard and screen-reader accessibility, responsiveness, destructive-action safety, permission-aware UI, generic AI-slop design and copy, load speed and flicker at any data size, and how many steps the frequent task actually takes. Every finding carries evidence, and the pass reports a health score before and after. Usage: /qa (the branch's changes) | /qa all | /qa <route|feature|path> | /qa audit.
+argument-hint: [all | <route|feature|path>] [audit] [a11y|states|data|mobile|flow|design|perms|load]
 ---
 
 # /qa
@@ -18,7 +18,7 @@ Parse `$ARGUMENTS` case-insensitively and resolve in this order. Announce the re
 3. A route, screen, feature name, or path -> that area plus whatever it navigates into.
 4. Empty -> **the current branch's changes**: the screens and flows touched since the merge-base with the default branch. This is the common case, so make it work well. If the branch is the default one or has no commits ahead, say so and QA the most recently changed area instead.
 
-A lens token (`a11y`, `states`, `data`, `mobile`, `flow`, `design`, `perms`) narrows the passes below to that one. Without it, run them all.
+A lens token (`a11y`, `states`, `data`, `mobile`, `flow`, `design`, `perms`, `load`) narrows the passes below to that one. Without it, run them all.
 
 ## The one rule: use it, do not just read it
 
@@ -35,7 +35,7 @@ Walk the scope four times, once per role, each asking its own question. A findin
 - **QA**: can I break it? Passes 1-4, 6-8 and 10.
 - **Designer / UX**: does it look and read like a deliberate product, and is the frequent task short? Passes 2, 5 and 9.
 - **Security**: can this user see or do what they should not? Pass 10 (the UI walk and the direct calls), plus anything that leaks data, secrets or internal errors to the screen (security-policy).
-- **Staff engineer**: will this survive real load and the next change? Honesty of state (pass 8), stale caches, request waterfalls, duplicated components where one exists.
+- **Staff engineer**: will this survive real load and the next change? Honesty of state (pass 8), stale caches, load speed at real data sizes (pass 11), request waterfalls, duplicated components where one exists.
 
 Rules that keep the lenses honest:
 
@@ -99,6 +99,19 @@ Grade the scope A to F against the design tells in frontend-design ("Template te
 Walk the scope as each role the product has (at minimum the least-privileged one and an admin), from a fresh session per role. An action or navigation entry the current role cannot perform is hidden, or disabled with the reason visible (a tooltip or inline note saying what is missing and who can grant it), as the design specifies. Offering it and then answering with a permission error, a blank page, or a redirect to the landing page is a Major finding; reaching data the role should not see at all is a Blocker. Also check direct URL entry to a restricted route (a clear "no access" screen with a way back, not a crash or a silent redirect) and that the server still enforces the rule when the UI hides it (security-policy).
 
 Then call each mutation and data route in scope the way an attacker would, bypassing the UI: another space's child id with your own space's id, an object (`{ "not": "" }`) where an id belongs, a role above your own (and on yourself), the owner as the target of a remove or demote, a name with `../` in a write, a read-only role calling the write action, and the route from a session the guard would hold back (pending approval, idle-locked). Each one that succeeds is a Blocker. The checklist and the fix for each is security-policy's "Authorize what the operation actually touches".
+
+### 11. Load: instant, stable, and the same at any size
+
+Load every page in scope three ways and watch the first frames, not the settled screen: cold (storage cleared), warm (return to it), and in a new tab. Record a performance trace or frame-by-frame screenshots; a flicker over in 100 ms is invisible to a read of the code and obvious to the user.
+
+- The shell paints on the first frame: title, nav, filters, table chrome, labels, buttons. Only the value that waits shows a placeholder, shaped and sized like it. A section swapped wholesale for "Loading..." and then jumping into place is a Major.
+- Warm and new-tab loads show the last snapshot at once and repaint nothing when the answer is unchanged. A page that blanks or flashes its loading state on every visit has a cache read too late (after mount) or in sessionStorage.
+- A background answer never undoes the user: pick a non-default option or move to page 3 before it lands, and check it is still there afterwards.
+- The route's loading frame (`loading.tsx` or equivalent) has the page's exact layout: no double jump from skeleton to page to data.
+- Same speed at any size. Seed or point at the largest account available and compare with an empty one. A chart or total that slows with the row count reads raw rows instead of a rollup, a page jump that takes N requests walks a cursor, and filter options built from the loaded page are wrong past page 1. Count the requests per view: one round trip, no waterfall, nothing fetched that the view does not render.
+- Data identical for every user (versions, plans, a public catalog) arrives in the HTML, not from a request after paint.
+
+The rules behind each item live in frontend-policy (Instant First Paint, Client-Side Caching, Large Lists) and database-expert (precomputed aggregations); cite the one a finding breaks.
 
 ## Fix, then prove it
 
