@@ -227,6 +227,8 @@ matrix("be-no-leak-internal-error", true, [
     { name: "Prisma meta", file: "src/api.ts", code: "res.status(500).json({ fields: err?.meta });" },
     { name: "fastify reply.code(500)", file: "src/api.ts", code: "reply.code(500).send({ error: err.message });" },
     { name: "fetch Response with a 500 status", file: "src/app/api/x/route.ts", code: "return Response.json({ error: error.message }, { status: 500 });" },
+    { name: "a `//` inside a string before the leak", file: "src/api.ts", code: "res.status(500).json({ message: \"see docs // retry\", detail: error.message });" },
+    { name: "a URL in the body before the leak", file: "src/api.ts", code: "res.status(500).json({ docs: \"https://example.com\", detail: error.message });" },
     { name: "NextResponse over several lines", file: "src/app/api/x/route.ts", code: "return NextResponse.json(\n    { error: String(error) },\n    { status: 500 }\n);" },
     { name: "Hono c.json with a 500", file: "src/api.ts", code: "return c.json({ message: e.message }, 500);" },
     { name: "status from a fallback expression", file: "src/api.ts", code: "res.status(err.status || 500).json({ message: err.message });" },
