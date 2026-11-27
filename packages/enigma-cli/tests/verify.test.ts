@@ -1341,6 +1341,27 @@ test("a 5xx that leaks the caught error denies the stop; the backlog does not", 
     expect(scanConventions(dir).gaps.filter((g) => g.detail.includes("be-no-leak-internal-error"))).toEqual([]);
 });
 
+test("a reply that drifts into English while the user writes Spanish denies the stop", () => {
+    const human = (text: string): unknown => ({ type: "user", origin: { kind: "human" }, message: { role: "user", content: [{ type: "text", text: text }] } });
+    const prompts = [
+        human("revisa por qué la instalación es tan lenta y dime qué pasa con el gate"),
+        // A plugin's prompt and a compaction summary are English whatever the user writes.
+        { type: "user", origin: { kind: "plugin", name: "enigma-relay" }, message: { role: "user", content: "The context was cleared to save tokens. Continue the work from the handoff now, starting at its next step." } },
+        { type: "user", isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: "user", content: "This session is being continued from a previous conversation that ran out of context, and the summary is below." } },
+        // A short prompt has no language of its own; the older ones decide.
+        human("sigue"),
+    ];
+    const dir = repoWith();
+    const tx = transcriptOf(prompts);
+    const english = "The installer was slow because the download showed a progress bar for every chunk, and that is fixed now. The gate has finished and there is nothing left to do on it.";
+    expect(runVerifyHook(payload(dir, english, { session_id: "lang-1", transcript_path: tx }))).toBe(2);
+    const spanish = "El instalador iba lento porque la descarga pintaba una barra de progreso por cada bloque, y ya está arreglado. El gate ha terminado y no queda nada pendiente.";
+    expect(runVerifyHook(payload(dir, spanish, { session_id: "lang-2", transcript_path: tx }))).toBe(0);
+    // An English-speaking user is never told to switch, and neither is a reply to an English paste.
+    const englishUser = transcriptOf([human("why is the installer so slow, and what is the state of the gate run?")]);
+    expect(runVerifyHook(payload(dir, english, { session_id: "lang-3", transcript_path: englishUser }))).toBe(0);
+});
+
 test("a clipped value the fixer declines still reaches the model", () => {
     // A fallback expression, a call, a component that may not forward the attribute: the fixer
     // declines all of them in the hook, so the sweep is where they land. Declining is safe;

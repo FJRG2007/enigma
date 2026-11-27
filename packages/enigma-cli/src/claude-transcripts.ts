@@ -312,6 +312,37 @@ export function recentUserMessages(transcriptPath: string, count: number): strin
     return out.reverse();
 }
 
+/** A block the user pasted: material they brought in, not words they wrote. */
+const PASTED_BLOCK = /<pasted_content\b[^>]*>[\s\S]*?<\/pasted_content\b[^>]*>/gi;
+
+/**
+ * The last `count` prompts a PERSON typed, newest first, with pasted blocks removed.
+ *
+ * Stricter than recentUserMessages: Claude Code also stores a plugin's prompt (`origin.kind`
+ * "plugin", the relay's "context was cleared" message) and a background task's report
+ * ("task-notification") as plain user records, and both are in English whatever the user writes.
+ * When a record carries an `origin`, only `human` counts; an older transcript without the field
+ * falls back to humanBlocks alone.
+ */
+export function lastHumanPrompts(transcriptPath: string, count: number): string[] {
+    const out: string[] = [];
+    const lines = tail(transcriptPath, RECENT_BYTES).split("\n");
+    for (let i = lines.length - 1; i >= 0 && out.length < count; i--) {
+        const line = lines[i]!;
+        const blocks = humanBlocks(line);
+        if (!blocks.length) continue;
+        let entry: { origin?: { kind?: unknown; }; isCompactSummary?: unknown; isVisibleInTranscriptOnly?: unknown; };
+        try { entry = JSON.parse(line); } catch { continue; }
+        // A compaction summary is stored as a user record and is written by the model, in English.
+        if (entry.isCompactSummary === true || entry.isVisibleInTranscriptOnly === true) continue;
+        const origin = entry.origin?.kind;
+        if (origin !== undefined && origin !== "human") continue;
+        const text = blocks.join("\n").replace(PASTED_BLOCK, " ").trim();
+        if (text) out.push(text);
+    }
+    return out;
+}
+
 /** A background subagent whose last word was a cut at its turn limit, with nothing done about it since. */
 export interface StalledSubagent { id: string; name: string; }
 

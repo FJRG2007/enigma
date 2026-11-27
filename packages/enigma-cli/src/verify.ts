@@ -52,12 +52,13 @@ import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { execFileSync, spawnSync } from "node:child_process";
 import { attributedCommits, attributionOff } from "./attribution-guard";
+import { languageMessage, replyLanguageMismatch } from "./reply-language";
 import { enigmaHome, readJson, findGitRoot, isGateAgentRun } from "./util";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { DEFAULT_TRIVIAL_LINES, MAX_TRIVIAL_FILES, isSensitivePath, isTrivialChange } from "./gate/triviality";
-import { type StalledSubagent, lastAssistantMessage, sessionStartedAt, stalledSubagents, userTyped } from "./claude-transcripts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { type StalledSubagent, lastAssistantMessage, lastHumanPrompts, sessionStartedAt, stalledSubagents, userTyped } from "./claude-transcripts";
 
 /** One piece of evidence that the work is not finished. */
 export interface VerifyGap {
@@ -2573,6 +2574,15 @@ export function runVerifyHook(payload?: string): number {
             const handed: VerifyGap = { kind: "stop-short", detail: handedBack };
             if (!mayBlock(issueKey(session, [handed]), session)) return 0;
             hookSink(`${handBackMessage(handedBack)}\n`);
+            return 2;
+        }
+        // The reply drifted into English while the user writes another language (reply-language.ts).
+        // Only the final message is read: the model may think and call tools in any language. Its
+        // own budget channel, keyed by the language, so a rewrite that is still English is told
+        // once more and then let through rather than looping.
+        const drift = typeof raw.transcript_path === "string" ? replyLanguageMismatch(lastHumanPrompts(raw.transcript_path, 10), message) : null;
+        if (drift && mayBlock(`language:${session}:${drift.user}`, session, "language")) {
+            hookSink(`${languageMessage(drift)}\n`);
             return 2;
         }
         // A subagent cut at its turn limit (enigma's own `subagent-turns` cap) hands back a partial
