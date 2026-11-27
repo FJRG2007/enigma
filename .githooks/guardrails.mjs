@@ -5106,36 +5106,68 @@ var BODY_THEN_STATUS = /(?:\b(?:Response|NextResponse)\.json|\bnew\s+(?:Response
 var PLAIN_BODY = /\b(?:res|reply|response)\.(?:json|send|end)\s*\(/g;
 var SERVER_ERROR_STATUS = /\b5\d\d\b/;
 var ALLOW_INTERNAL_ERROR = /enigma:allow-internal-error/;
+function topLevelText(content, from, to) {
+  const out = content.slice(from, to).split("");
+  const blank = (a, b) => {
+    for (let k = Math.max(a, from); k < Math.min(b, to); k++) if (out[k - from] !== "\n") out[k - from] = " ";
+  };
+  let depth = 0;
+  for (let i = from; i < to; i++) {
+    const ch = content[i];
+    const start = i;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      for (i++; i < to && content[i] !== ch; i++) if (content[i] === "\\") i++;
+      blank(start + 1, i);
+    } else if (ch === "/" && content[i + 1] === "/") {
+      const eol = content.indexOf("\n", i);
+      i = eol === -1 || eol > to ? to : eol - 1;
+      blank(start, i + 1);
+    } else if (ch === "/" && content[i + 1] === "*") {
+      const end = content.indexOf("*/", i + 2);
+      i = end === -1 ? to : end + 1;
+      blank(start, i + 1);
+    } else if (ch === "(") {
+      depth++;
+      blank(i, i + 1);
+    } else if (ch === ")" && depth > 0) {
+      depth--;
+      blank(i, i + 1);
+    } else if (depth > 0) blank(i, i + 1);
+  }
+  return out.join("");
+}
 function leakedInternalError(content) {
   const names = new Set(ERROR_BINDINGS);
   for (const m of content.matchAll(CATCH_BINDING)) names.add(m[1]);
   const alt = [...names].map((n) => n.replace(/\$/g, "\\$")).join("|");
   const id = `(?<![\\w$.])(?:${alt})(?![\\w$])`;
-  const leak = new RegExp(`${id}\\??\\.(?:message|stack|meta)\\b|\\b(?:String|JSON\\.stringify)\\(\\s*(?:${alt})\\s*\\)|\\$\\{\\s*(?:${alt})\\s*\\}|${id}\\.toString\\(|[{,:]\\s*(?:${alt})\\s*[,}]|^\\s*(?:${alt})\\s*$`);
+  const leak = new RegExp(`${id}\\??\\.(?:message|stack|meta)\\b|\\b(?:String|JSON\\.stringify)\\(\\s*(?:${alt})\\s*\\)|\\$\\{\\s*(?:${alt})\\s*\\}|${id}\\.toString\\(`);
+  const rawObject = new RegExp(`[{,:]\\s*(?:${alt})\\s*[,}]|^\\s*(?:${alt})\\s*$`);
   const stackOnly = new RegExp(`${id}\\??\\.stack\\b`);
   const lines = content.split("\n");
   const out = /* @__PURE__ */ new Map();
-  const judge = (from, to, re) => {
+  const judge = (from, to, re, raw) => {
+    const outer = raw ? topLevelText(content, from, to) : "";
     let at = from;
     for (let i = lineOfOffset(content, from) - 1; at < to; i++) {
       const eol = content.indexOf("\n", at);
       const end = eol === -1 || eol > to ? to : eol;
-      const text = content.slice(at, end);
+      const hit = re.test(content.slice(at, end)) || raw !== void 0 && raw.test(outer.slice(at - from, end - from));
       at = end + 1;
-      if (!re.test(text) || COMMENT_LINE.test(lines[i]) || allowedAt(lines, i, ALLOW_INTERNAL_ERROR)) continue;
+      if (!hit || COMMENT_LINE.test(lines[i]) || allowedAt(lines, i, ALLOW_INTERNAL_ERROR)) continue;
       out.set(i + 1, { line: i + 1, detail: lines[i].trim().slice(0, 120) });
     }
   };
   for (const m of content.matchAll(STATUS_THEN_BODY)) {
     if (!SERVER_ERROR_STATUS.test(m[1])) continue;
     const call = spawnArguments(content, m.index + m[0].length - 1);
-    if (call) judge(m.index + m[0].length, call.close, leak);
+    if (call) judge(m.index + m[0].length, call.close, leak, rawObject);
   }
   for (const m of content.matchAll(BODY_THEN_STATUS)) {
     const call = spawnArguments(content, m.index + m[0].length - 1);
     if (!call || call.args.length < 2) continue;
     if (!call.args.slice(1).some((a) => SERVER_ERROR_STATUS.test(content.slice(a.from, a.to)))) continue;
-    judge(call.args[0].from, call.args[0].to, leak);
+    judge(call.args[0].from, call.args[0].to, leak, rawObject);
   }
   for (const m of content.matchAll(PLAIN_BODY)) {
     const call = spawnArguments(content, m.index + m[0].length - 1);
