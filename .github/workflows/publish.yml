@@ -311,25 +311,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # @enigmax/helio is the optional Helio bug-bounty agent: an asset-only package
-      # enigma-cli fetches on demand when the user enables the agent. Publish it (skip if
-      # its version already exists) so the on-demand fetch and `enigma update` find it.
-      # No build step: it ships only vendored static assets.
-      - name: Determine if helio pack version is new
-        id: heliover
-        run: |
-          HV="$(node -p "require('./packages/helio/package.json').version")"
-          if npm view "@enigmax/helio@$HV" version >/dev/null 2>&1; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "@enigmax/helio@$HV already published; skipping."
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Publish helio pack
-        if: steps.heliover.outputs.publish == 'true'
-        run: bash scripts/npm-publish.sh @enigmax/helio packages/helio
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # @enigmax/helio is deliberately NOT published to npm. It is an offensive-security agent
+      # (attack-class references, exploit wordlists, process-spawning validators), and npm's
+      # malware scanning flagged 0.1.4 - the release that vendored the security-audit skill -
+      # and then suspended the whole publishing account. It ships only as a GitHub release
+      # asset (the "Pack release assets" step), which packs.ts already falls back to when the
+      # registry does not have it.
 
       # @enigmax/orion is the optional Orion agent (bugs, speed, scalability): asset-only, fetched on
       # demand when the user enables it. Same version guard as the agents above.

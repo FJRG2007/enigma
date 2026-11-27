@@ -45,6 +45,11 @@ export interface PackDef {
     pkg: string;
     description: string;
     tags: string[];
+    /**
+     * Shipped only as a GitHub release asset, never published to npm: the GitHub release is tried
+     * first on every install, npm only as the fallback (its copy, if any, is an old version).
+     */
+    releaseOnly?: boolean;
     /** Pack homepage (the source repo), shown in the marketplace. */
     homepage: string;
     /**
@@ -71,7 +76,10 @@ export const PACKS: PackDef[] = [
         pkg: "@enigmax/helio",
         description: "Bug-bounty and offensive-security harness: recon, vuln hunting, web2/web3 audit, AD, cloud, triage and report writing. Runs in an isolated agent context so it never loads into your normal coding agent.",
         tags: ["bug-bounty", "security", "pentest", "web3"],
-        homepage: "https://www.npmjs.com/package/@enigmax/helio",
+        // npm's malware scanning flagged 0.1.4 (offensive-security content) and suspended the
+        // publishing account, so Helio is no longer published there (publish.yml).
+        releaseOnly: true,
+        homepage: "https://github.com/FJRG2007/enigma/tree/main/packages/helio",
         // Only self-contained Python servers are auto-registered. Helio's Burp client is a
         // separate Java server (needs Burp Suite + an API key); it stays config-only - see
         // the pack's mcp/burp-mcp-client/README for manual setup.
@@ -199,7 +207,7 @@ function npmInstall(id: string, spec: string): void {
             return true;
         } catch { return false; }
     };
-    const sources = release.installMethod() === "standalone" ? [github, registry] : [registry, github];
+    const sources = pack.releaseOnly || release.installMethod() === "standalone" ? [github, registry] : [registry, github];
     for (const source of sources) {
         if (source()) break;
     }
