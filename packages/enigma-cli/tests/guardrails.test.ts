@@ -1036,6 +1036,74 @@ test("the react-query status comparison and the dotted read are blanked views to
     }
 });
 
+test("a conditional that swaps a whole section for a placeholder is a blanked view", () => {
+    // The reported shape: one short value depended on the request, and the whole form - headings,
+    // labels, notes - was held back behind it, then jumped into place.
+    const section = [
+        "export function PlanForm() {",
+        "    return (",
+        "        <section>",
+        "            {loadingPlans ? (",
+        "                <p className=\"text-sm\">Loading plans...</p>",
+        "            ) : !anyPlans ? (",
+        "                <p>No plans available yet</p>",
+        "            ) : (",
+        "                <>",
+        "                    <p className=\"font-medium\">Plan</p>",
+        "                    <p className=\"font-medium\">Billing cycle</p>",
+        "                    {PLANS.map((p) => <span key={p.id}>{p.price}</span>)}",
+        "                </>",
+        "            )}",
+        "        </section>",
+        "    );",
+        "}",
+    ].join("\n");
+    const found = checkFile("src/PlanForm.tsx", section, null, "diff");
+    expect(found.map((f) => f.ruleId)).toEqual(["fe-view-blanked-while-loading"]);
+    expect(found[0]!.line).toBe(4);
+    // The fixed page renders the form at once and skeletons only the value that waits.
+    const fixed = section.replace("{loadingPlans ? (", "{false ? (");
+    expect(checkFile("src/PlanForm.tsx", fixed, null, "diff")).toEqual([]);
+});
+
+test("a section conditional that swaps only data, or ends on another state, is left alone", () => {
+    const wrap = (body: string[]): string => ["export function T() {", "    return (", "        <tbody>", ...body, "        </tbody>", "    );", "}"].join("\n");
+    // Skeleton rows for data rows: the region and the wait are the same thing.
+    expect(checkFile("src/T.tsx", wrap([
+        "            {loading ? (",
+        "                <SkeletonRow />",
+        "            ) : rows.map((r) => <tr key={r.id}><td>Name</td><td>Owner</td></tr>)}",
+    ]), null, "diff")).toEqual([]);
+    // A chain whose later branches are the empty and error states: their copy belongs there,
+    // and an apostrophe in that copy must not be read as a string.
+    expect(checkFile("src/T.tsx", wrap([
+        "            {loading ? (",
+        "                <SkeletonRow />",
+        "            ) : rows.length > 0 ? (",
+        "                rows.map((r) => <Row key={r.id} row={r} />)",
+        "            ) : (",
+        "                <tr><td>You haven't made a request yet</td><td>Start now</td></tr>",
+        "            )}",
+    ]), null, "diff")).toEqual([]);
+    // A conditional on anything but a wait is a different branch.
+    expect(checkFile("src/T.tsx", wrap([
+        "            {isAdmin ? (",
+        "                <p>Loading...</p>",
+        "            ) : (",
+        "                <><h2>Members</h2><p>Invite people</p></>",
+        "            )}",
+    ]), null, "diff")).toEqual([]);
+    // The escape hatch, scoped to the conditional it marks.
+    expect(checkFile("src/T.tsx", wrap([
+        "            {/* enigma:allow-view-skeleton - the form is built from the response */}",
+        "            {loading ? (",
+        "                <Skeleton />",
+        "            ) : (",
+        "                <><h2>Members</h2><p>Invite people</p></>",
+        "            )}",
+    ]), null, "diff")).toEqual([]);
+});
+
 test("a blanked view is reported once, not by both loading rules", () => {
     // VIEW_GUARD's element group covers Loading|Loader|Spinner, which fe-skeleton-loading also owns
     // at the edit stage - and edit-stage rules run in the diff sweep too. Without the suppression

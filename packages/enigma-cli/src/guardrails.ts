@@ -860,7 +860,7 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // findings over 7199 files, still 0 false positives.
         stage: "diff",
         fileCheck: "fe-view-blanked-while-loading",
-        message: "This loading guard returns from the whole component, so the entire view becomes placeholders until the request resolves - a full-page loader with rounded corners. The elements listed below do not depend on the response and must paint on the first tick: headings, tab bars, filters, search, buttons, table and card chrome, and any value already in hand (a name from the route, a count from the cache). Move the guard INSIDE the region that is actually waiting - render the shell, and skeleton only the rows, the chart or the tiles - or hand the region to a child component that owns its own request. Mark the line `enigma:allow-view-skeleton` when the component genuinely renders nothing but the awaited data (frontend-policy).",
+        message: "This loading guard swaps the whole component (an early return) or a whole section (a `{loading ? <Placeholder/> : (...)}` conditional) for a placeholder until the request resolves - a full-page loader with rounded corners, and a jump when the content lands. The elements listed below do not depend on the response and must paint on the first tick: headings, tab bars, filters, search, buttons, table and card chrome, and any value already in hand (a name from the route, a count from the cache). Move the guard INSIDE the region that is actually waiting - render the shell, and skeleton only the rows, the chart or the tiles - or hand the region to a child component that owns its own request. Mark the line `enigma:allow-view-skeleton` when the component genuinely renders nothing but the awaited data (frontend-policy).",
         severity: "block",
         skill: "frontend-policy",
     },
@@ -3125,6 +3125,123 @@ export function viewBlankedWhileLoading(content: string): { line: number; detail
         if (headings < 1 && texts < 2) continue;
         const drawn = [headings ? `${headings} heading/title element(s)` : "", texts ? `${texts} literal text node(s)` : ""].filter(Boolean).join(" and ");
         out.push({ line: i + 1, detail: `the component still draws ${drawn} below this guard, none of which needs the response` });
+    }
+    for (const hit of sectionBlankedWhileLoading(content)) if (!out.some((o) => o.line === hit.line)) out.push(hit);
+    return out.sort((a, b) => a.line - b.line);
+}
+
+/** `{cond ?` opening a JSX conditional; the condition is judged by VIEW_GUARD_LOADING afterwards. */
+const INLINE_GUARD = /\{\s*(!?\s*[\w.]{1,40}(?:\s*(?:===|!==|==|!=)\s*[\w."']{1,20})?)\s*\?/g;
+
+/** A placeholder branch: a placeholder element, or a "Loading..." / "Checking..." line. */
+const INLINE_PLACEHOLDER = /<\s*\w*(Skeleton|Placeholder|Shimmer|Loading|Loader|Spinner)\b|>\s*(?:Loading|Fetching|Checking|Cargando)\b[^<]{0,60}<|>\s*[^<]{0,60}(?:\.\.\.|…)\s*</;
+
+/**
+ * The end of a JSX expression branch starting at `from`: the first depth-0 `stop` character
+ * (`:` for the consequent, `}` for the alternate, `?` for a chained condition), skipping strings,
+ * nested brackets, optional chaining and nullish coalescing.
+ */
+function branchEnd(content: string, from: number, stop: ":" | "}" | "?"): number {
+    let depth = 0;
+    for (let i = from; i < content.length; i++) {
+        const ch = content[i]!;
+        // An apostrophe in JSX text ("You haven't...") is prose, not a string: a `'` opens one only
+        // where an expression can start.
+        const quote = ch === "\"" || ch === "`" || (ch === "'" && /[=({[,:?!&|+]\s*$/.test(content.slice(Math.max(0, i - 8), i)));
+        if (quote) {
+            for (i++; i < content.length && content[i] !== ch; i++) if (content[i] === "\\") i++;
+        } else if (ch === "(" || ch === "[" || ch === "{") depth++;
+        else if (ch === ")" || ch === "]" || ch === "}") {
+            if (depth === 0) return ch === "}" && stop === "}" ? i : -1;
+            depth--;
+        } else if (ch === "?" && (content[i + 1] === "." || content[i + 1] === "?")) i++; // `?.` and `??` are not a conditional
+        else if (depth === 0 && ch === stop) return i;
+    }
+    return -1;
+}
+
+/**
+ * The wait flag of an inline conditional. Wider than VIEW_GUARD_LOADING's bare names because a
+ * section's flag is usually named for what it waits on (`loadingVersions`, `isFetchingPlans`), and
+ * still limited to the wait words, so `isAdmin ? ... : ...` or `open ? ... : ...` never match.
+ */
+const INLINE_LOADING = new RegExp(`^(?:${VIEW_GUARD_LOADING.source.slice(1, -1)}|(?:\\w{1,30}\\.)*(?:is)?(?:${LOADING_VALUE})\\w{1,30})$`, "i");
+
+/**
+ * The branch of a conditional chain that is the section's MAIN content, or "" when the chain
+ * does not say which one that is.
+ *
+ * Every other branch is another STATE of the same region (empty, failed, not allowed), whose copy
+ * is correct exactly where it is. Measured, the two orders a chain is written in look identical:
+ * `rows.length > 0 ? <Rows/> : <Empty/>` ends on the empty state, `!available ? <Empty/> : <Form/>`
+ * ends on the content. Only the second is read here - a NEGATED condition whose alternate is
+ * therefore the positive case - and every other chain is left alone (precision over recall: three
+ * of the corpus false positives were an empty or success state at the end of a chain).
+ */
+function mainBranch(text: string): string {
+    let rest = text;
+    for (let guard = 0; guard < 20; guard++) {
+        const question = branchEnd(rest, 0, "?");
+        if (question === -1) return rest;
+        const colon = branchEnd(rest, question + 1, ":");
+        if (colon === -1) return "";
+        const negated = /^\s*!/.test(rest.slice(0, question));
+        rest = rest.slice(colon + 1);
+        if (!negated) return "";
+    }
+    return "";
+}
+
+/**
+ * The markup a branch draws whatever the data says: every `{...}` expression container blanked,
+ * so a `.map` callback (per-row content), a nested `cond && <Empty/>` and an attribute value
+ * contribute nothing, and what is left is the chrome the wait holds back.
+ */
+function unconditionalMarkup(text: string): string {
+    const out = text.split("");
+    for (let i = 0; i < out.length; i++) {
+        if (out[i] !== "{") continue;
+        const close = branchEnd(text, i + 1, "}");
+        if (close === -1) return out.slice(0, i).join("");
+        for (let k = i; k <= close; k++) if (out[k] !== "\n") out[k] = " ";
+        i = close;
+    }
+    return out.join("");
+}
+
+/**
+ * The same defect one level down: a JSX conditional that swaps a whole SECTION for a placeholder,
+ * `{loading ? <p>Loading...</p> : (<>...the whole form...</>)}`. The early-return
+ * check above never sees it because nothing returns, yet every heading, label and button inside the
+ * alternate is held back until the request lands, and then the section jumps into place - the
+ * flicker reported on a real page whose only data-dependent value was one short string.
+ *
+ * Reported only when the alternate draws chrome of its own, outside any `{...}` expression (a
+ * heading, or two literal text nodes) - the same bar as the early-return check, so a table body
+ * swapping skeleton rows for data rows (`{loading ? <SkeletonRow/> : rows.map(...)}`) is left alone.
+ *
+ * MEASURED over 7615 UI files of real product repositories and vendored references: see
+ * docs/notes/guardrails.md.
+ */
+export function sectionBlankedWhileLoading(content: string): { line: number; detail: string; }[] {
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    INLINE_GUARD.lastIndex = 0;
+    for (let m = INLINE_GUARD.exec(content); m; m = INLINE_GUARD.exec(content)) {
+        if (!INLINE_LOADING.test(m[1]!.replace(/\s+/g, ""))) continue;
+        const line = lineOfOffset(content, m.index);
+        if (COMMENT_LINE.test(lines[line - 1] ?? "") || markedNearby(lines, line - 1, ALLOW_VIEW_SKELETON)) continue;
+        const start = m.index + m[0].length;
+        const colon = branchEnd(content, start, ":");
+        if (colon === -1) continue;
+        const end = branchEnd(content, colon + 1, "}");
+        if (end === -1 || !INLINE_PLACEHOLDER.test(content.slice(start, colon))) continue;
+        const alternate = unconditionalMarkup(mainBranch(content.slice(colon + 1, end))).split("\n").filter((l) => !COMMENT_LINE.test(l)).join("\n");
+        const headings = (alternate.match(new RegExp(VIEW_CHROME_HEADING.source, "g")) ?? []).length;
+        const texts = (alternate.match(new RegExp(VIEW_CHROME_TEXT.source, "g")) ?? []).length;
+        if (headings < 1 && texts < 2) continue;
+        const drawn = [headings ? `${headings} heading/title element(s)` : "", texts ? `${texts} literal text node(s)` : ""].filter(Boolean).join(" and ");
+        out.push({ line, detail: `this conditional holds back ${drawn} until the request resolves, none of which needs the response` });
     }
     return out;
 }
