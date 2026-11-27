@@ -3,7 +3,7 @@
   "version": "1.5.0",
   "provider": "FJRG2007/enigma",
   "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
-  "updated": "2026-11-27T00:08:01+01:00",
-  "cliVersion": "1.79.1",
+  "updated": "2026-11-27T20:16:29+01:00",
+  "cliVersion": "1.80.0",
   "sha": "45987a3fd64be3bc3e9ba1f19cf596b2ba0acef8623bb94294ebce82e67e174f"
 }
