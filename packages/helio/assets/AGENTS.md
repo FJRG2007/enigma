@@ -339,7 +339,7 @@ Always active:
 1. READ FULL SCOPE before touching any asset — write down the exact in-scope list
 2. HARD SCOPE LOCK — if an asset is not explicitly in scope, it does not exist for this hunt
 3. NEVER hunt theoretical bugs
-4. NEVER report informational or standalone low-impact findings (CVSS < 4.0 unless part of a chain)
+4. NEVER report informational or standalone low-impact findings (CVSS < 4.0 unless part of a chain) - except the white-box internal-error disclosure in rule 13
 5. Run validation gate BEFORE writing report — even if user didn't ask for it
 6. KILL weak findings fast — do not share leads that have not passed the internal gate
 7. 5-minute rule -- no progress = move on
@@ -348,6 +348,7 @@ Always active:
 10. NEVER use theoretical language in any finding description: no "could potentially", "may allow", "might be possible"
 11. NEVER report a vulnerability whose only entry point requires first exploiting a DIFFERENT vulnerability — that is a chain, not a standalone finding. Report the full confirmed chain as ONE submission or don't report it at all.
 12. WHITE-BOX ONLY: when auditing a repo you have filesystem access to and the team owns, keep a persistent per-repo ledger under `docs/vulnerabilities/`. READ it before hunting (skip already-known findings, flag regressions of fixed ones); WRITE each confirmed finding there after validation (create `docs/` and `docs/vulnerabilities/` if absent). It is the project's own security memory for the devs and future scans, so the same bug class is not repeated. Redact real secrets/PII; never write a ledger into a third-party target you do not own. Full format below.
+13. WHITE-BOX INTERNAL-ERROR DISCLOSURE IS ALWAYS REPORTED. In a repo the team owns, any client-visible response that carries internal error detail is a finding, even with no exploit chain: an ORM or database error (Prisma `Invalid prisma.x.findUnique() invocation`, `Argument id must not be null`, SQL errors), a stack trace, an internal path, or the caught error's `message`/`stack`/`meta` or raw object returned from a `catch`. Severity `low` (`info` when the text is generic framework wording with nothing internal), CWE-209. Report every instance with `file:line`, write it to the ledger, and give the fix: log the real error server-side, return a generic message plus a stable code, ideally from one error handler every route falls through to. It names the ORM, tables, columns and code paths an attacker needs for the next step, so it is never dropped as noise; in a bug-bounty hunt it stays out of the submission (rule 4) but is still listed to the user as noted.
 
 ## Persistent Vulnerability Ledger (white-box, always active)
 

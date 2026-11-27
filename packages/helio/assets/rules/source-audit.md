@@ -157,6 +157,7 @@ Run this for every file classified as CRITICAL or HIGH risk:
 ```
 [ ] Sensitive fields in API responses (password hash, SSN, full card)
 [ ] Stack traces in error responses
+[ ] Raw ORM/DB errors in responses (Prisma `Invalid ... invocation`, SQL errors): grep every `catch` for `.message`/`.stack`/`.meta`/the raw error in a 5xx body (`res.status(500).json({ message: error.message })`, `json({ error })`) - always report, rule 13
 [ ] Internal paths/server info in headers or errors
 [ ] User enumeration via different error messages (user not found vs wrong password)
 ```

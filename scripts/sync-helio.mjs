@@ -30,7 +30,8 @@ const PRESERVE = [
 const AGENTS_MARKERS = [
     ["- `skills/security-audit/`", "the security-audit entry in the skills list"],
     ["| `/audit` |", "the /audit row in the commands table"],
-    ["**When asked to audit / security-review a codebase you can read (white-box):**", "the white-box audit routing block"]
+    ["**When asked to audit / security-review a codebase you can read (white-box):**", "the white-box audit routing block"],
+    ["13. WHITE-BOX INTERNAL-ERROR DISCLOSURE IS ALWAYS REPORTED.", "rule 13, internal-error disclosure always reported"]
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));   // scripts/
